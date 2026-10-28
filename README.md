@@ -22,7 +22,8 @@ The tests cover world-generation reachability over many seeds, dungeon solvabili
 |---|---|---|---|---|
 | Move | WASD / arrows | | Interact / talk | E or Enter |
 | Attack | J or Z | | Pull a block | hold E and step back |
-| Use item | K or X | | Cycle item | Q or Tab |
+| Use item | K or X | | Item menu | I or Y |
+| Quick-swap item | Q or Tab | | | |
 | Shield (hold) | L or C | | Lock-on | R |
 | Dodge | Space | | Eat a ration | F |
 | Sprint (hold) | Shift | | Map | M |

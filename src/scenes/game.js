@@ -15,6 +15,7 @@ import { CLASSES } from '../data/classes.js';
 import { Camera } from '../gfx/render.js';
 import { Dialog, Menu } from '../gfx/ui.js';
 import { drawHUD, drawMinimap, drawWorldMap, drawOverworldMinimap, FOG_CELL } from '../gfx/hud.js';
+import { ItemMenu } from '../gfx/inventory.js';
 import { ROOM_W, ROOM_H } from '../world/dungeons.js';
 
 class MapOverlay {
@@ -191,6 +192,7 @@ export class GameScene {
     const input = this.input;
     if (input.pressed('pause')) { this.openPause(); return; }
     if (input.pressed('map')) { this.pushUI(new MapOverlay(this.area.kind === 'dungeon' ? 'dungeon' : 'world')); this.audio.sfx('menu'); return; }
+    if (input.pressed('inventory') && this.player.mode !== 'dead') { this.pushUI(new ItemMenu(this)); this.audio.sfx('menu'); return; }
     if (input.pressed('interact') && this.player.mode !== 'dead') {
       if (this.area.interact()) return;
     }
@@ -503,6 +505,7 @@ export class GameScene {
     const s = this.state;
     const menu = new Menu('Paused', [
       { label: 'Resume', onSelect: () => { menu.done = true; } },
+      { label: 'Items', onSelect: () => this.pushUI(new ItemMenu(this)) },
       { label: 'Quest log', onSelect: () => this.pushUI(this.questLog()) },
       { label: 'Equipment & stats', onSelect: () => this.pushUI(this.equipmentMenu()) },
       { label: 'Talents', value: () => `${s.talents.points} pts`, onSelect: () => this.pushUI(talentMenu(this, false)) },
@@ -577,7 +580,8 @@ export function controlsMenu() {
     lines: [
       'Move ............ WASD / Arrow keys',
       'Attack .......... J or Z',
-      'Use item ........ K or X        Cycle item ... Q or Tab',
+      'Use item ........ K or X        Item menu .... I or Y',
+      'Quick-swap item . Q or Tab',
       'Shield (hold) ... L or C        Dodge ........ Space',
       'Sprint (hold) ... Shift         Lock-on ...... R',
       'Interact / talk . E or Enter    Pull block ... hold E + step back',

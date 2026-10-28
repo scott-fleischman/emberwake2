@@ -15,6 +15,7 @@ export const KEYMAP = {
   lock: ['KeyR'],
   eat: ['KeyF'],
   map: ['KeyM'],
+  inventory: ['KeyI', 'KeyY'],
   pause: ['Escape', 'KeyP'],
   confirm: ['Enter', 'KeyE', 'KeyJ', 'KeyZ', 'Space'],
   cancel: ['Escape', 'Backspace', 'KeyK', 'KeyX'],

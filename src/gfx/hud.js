@@ -80,7 +80,7 @@ export function drawHUD(u, game) {
     const it = USE_ITEMS[id];
     const n = it.mana ? `${it.mana === 6 ? d.fireboltCost : it.mana}✦` : String(p[it.ammo] ?? 0);
     text(u, n, 474, 18, { size: 5.5, align: 'right', bold: true, color: it.mana && p.mana < d.fireboltCost ? UI.danger : UI.text });
-    if (items.length > 1) text(u, 'Q', 449, 18, { size: 4.5, color: UI.dim });
+    text(u, 'I', 449, 18, { size: 4.5, color: UI.dim });
   }
   // Objective
   if (game.objective) text(u, `◆ ${game.objective}`, 288, 9, { size: 5.5, align: 'center', color: '#ffe48a' });
