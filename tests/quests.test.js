@@ -2,33 +2,63 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateOverworld } from '../src/world/overworld.js';
 import { newGameState } from '../src/game/state.js';
-import { advanceMain, mainObjective, generateSideQuests, recordKill, grantReward } from '../src/game/quests.js';
+import { advanceMain, mainObjective, generateSideQuests, recordKill, grantReward, MAIN_STAGES } from '../src/game/quests.js';
 
 const W = generateOverworld('quests');
 
 test('main quest advances only on the right events', () => {
   const s = newGameState('quests', 'mage');
-  assert.equal(advanceMain(s, W, { type: 'talk', role: 'smith', settlementId: 'home' }).advanced, false);
-  assert.equal(advanceMain(s, W, { type: 'talk', role: 'elder', settlementId: 'home' }).stage, 'scout');
-  assert.equal(advanceMain(s, W, { type: 'talk', role: 'scout', settlementId: 'outpost' }).stage, 'camp');
-  assert.equal(advanceMain(s, W, { type: 'cleared', quest: false }).advanced, false);
-  assert.equal(advanceMain(s, W, { type: 'cleared', quest: true }).stage, 'sigil');
-  advanceMain(s, W, { type: 'talk', role: 'scout', settlementId: 'outpost' });
+  const ev = (e) => advanceMain(s, W, e);
+  const relics = (kind) => { for (const r of W.pois.relics[kind]) { s.progress.relics.push(r.id); ev({ type: 'relic', kind, id: r.id }); } };
+  assert.equal(ev({ type: 'talk', role: 'smith', settlementId: 'home' }).advanced, false);
+  assert.equal(ev({ type: 'talk', role: 'elder', settlementId: 'home' }).stage, 'scout');
+  assert.equal(ev({ type: 'talk', role: 'scout', settlementId: 'outpost' }).stage, 'lookout');
+  assert.equal(ev({ type: 'reach', id: 'windcrest' }).advanced, false);
+  assert.equal(ev({ type: 'reach', id: 'lookout' }).stage, 'camp');
+  assert.equal(ev({ type: 'cleared', quest: false }).advanced, false);
+  assert.equal(ev({ type: 'cleared', quest: true }).stage, 'sigil');
+  assert.equal(ev({ type: 'talk', role: 'scout', settlementId: 'outpost' }).stage, 'leaves');
+  // Two leaves aren't enough; the third sends you to the thornwall.
+  s.progress.relics.push(W.pois.relics.leaves[0].id, W.pois.relics.leaves[1].id);
+  assert.equal(ev({ type: 'relic', kind: 'leaves' }).advanced, false);
+  s.progress.relics.push(W.pois.relics.leaves[2].id);
+  assert.equal(ev({ type: 'relic', kind: 'leaves' }).stage, 'thornwall');
+  assert.equal(ev({ type: 'seal', key: 'ashen' }).advanced, false);
+  assert.ok(!s.artifacts.includes('verdantSigil'));
+  assert.equal(ev({ type: 'seal', key: 'verdant' }).stage, 'vault');
   assert.ok(s.artifacts.includes('verdantSigil'));
-  assert.equal(s.quest.main, 'vault');
-  advanceMain(s, W, { type: 'boss', kind: 'thornmaw' });
-  advanceMain(s, W, { type: 'talk', role: 'smith', settlementId: 'home' });
+  ev({ type: 'boss', kind: 'thornmaw' });
+  ev({ type: 'talk', role: 'smith', settlementId: 'home' });
   assert.equal(s.tools.bombs, true);
   assert.ok(s.gear.items.includes('bombs'));
   assert.equal(s.quest.main, 'ashpass');
+  ev({ type: 'talk', role: 'keeper', settlementId: 'desert' });
+  assert.equal(ev({ type: 'gate', region: 'volcanic' }).stage, 'cinderwatch');
+  assert.equal(ev({ type: 'talk', role: 'keeper', settlementId: 'mountain' }).advanced, false);
+  assert.equal(ev({ type: 'talk', role: 'keeper', settlementId: 'volcanic' }).stage, 'vents');
+  relics('vents');
+  assert.equal(s.quest.main, 'slagheart');
+  assert.equal(ev({ type: 'seal', key: 'ashen' }).stage, 'reliquary');
+  ev({ type: 'boss', kind: 'cinder' });
+  assert.equal(s.tools.gloves, true);
+  ev({ type: 'talk', role: 'keeper', settlementId: 'mountain' });
+  assert.equal(ev({ type: 'gate', region: 'snow' }).stage, 'rimewatch');
+  assert.equal(ev({ type: 'talk', role: 'keeper', settlementId: 'snow' }).stage, 'windcrest');
+  assert.equal(ev({ type: 'reach', id: 'windcrest' }).stage, 'beacons');
+  relics('beacons');
+  assert.equal(s.quest.main, 'frostfang');
+  assert.equal(ev({ type: 'seal', key: 'frost' }).stage, 'sanctuary');
+  ev({ type: 'boss', kind: 'rime' });
+  assert.equal(ev({ type: 'talk', role: 'elder', settlementId: 'home' }).stage, 'end');
 });
 
-test('every stage has an objective with text', () => {
+test('every stage has an objective with text, and a marker until the end', () => {
   const s = newGameState('quests', 'rogue');
-  for (const stage of ['wake', 'scout', 'camp', 'sigil', 'vault', 'smith', 'ashpass', 'ridge', 'reliquary', 'frostpass', 'boulder', 'sanctuary', 'drowned', 'end']) {
+  for (const stage of MAIN_STAGES) {
     s.quest.main = stage;
-    const o = mainObjective(s, W);
+    const o = mainObjective(s, W, W.pois.home);
     assert.ok(o.text.length > 10, stage);
+    assert.ok(o.marker, `${stage} has no marker`);
   }
 });
 
@@ -37,7 +67,19 @@ test('opening a gate early does not strand the quest', () => {
   s.quest.main = 'ridge';
   s.progress.gates.push('volcanic');
   advanceMain(s, W, { type: 'noop' });
-  assert.equal(s.quest.main, 'reliquary');
+  assert.equal(s.quest.main, 'cinderwatch');
+});
+
+test('vents capped and beacons lit before anyone asks still count', () => {
+  const s = newGameState('quests', 'rogue');
+  s.quest.main = 'cinderwatch';
+  s.progress.relics.push(...W.pois.relics.vents.map((r) => r.id));
+  advanceMain(s, W, { type: 'talk', role: 'keeper', settlementId: 'volcanic' });
+  assert.equal(s.quest.main, 'slagheart');
+  s.quest.main = 'windcrest';
+  s.progress.relics.push(...W.pois.relics.beacons.map((r) => r.id));
+  advanceMain(s, W, { type: 'reach', id: 'windcrest' });
+  assert.equal(s.quest.main, 'frostfang');
 });
 
 test('side quests vary across seeds and cover every settlement', () => {
@@ -136,5 +178,7 @@ test('clearing the quest camp before meeting the scout does not strand the quest
   advanceMain(s, W, { type: 'cleared', quest: true });
   assert.equal(s.quest.main, 'scout');
   advanceMain(s, W, { type: 'talk', role: 'scout', settlementId: 'outpost' });
+  assert.equal(s.quest.main, 'lookout');
+  advanceMain(s, W, { type: 'reach', id: 'lookout' });
   assert.equal(s.quest.main, 'sigil');
 });

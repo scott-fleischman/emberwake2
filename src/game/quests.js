@@ -5,10 +5,19 @@ import { BIOME_NAMES } from '../world/tiles.js';
 import { isPassable } from '../world/overworld.js';
 import { PETS, HERBS, RIDDLES, FETCH_TEXT, HUNT_TEXT, DELIVER_TEXT, RESCUE_TEXT, fill, cap } from '../data/sidequests.js';
 
-export const MAIN_STAGES = ['wake', 'scout', 'camp', 'sigil', 'vault', 'smith', 'ashpass', 'ridge', 'reliquary', 'frostpass', 'boulder', 'sanctuary', 'drowned', 'end'];
+export const MAIN_STAGES = ['wake', 'scout', 'lookout', 'camp', 'sigil', 'leaves', 'thornwall', 'vault', 'smith', 'ashpass', 'ridge', 'cinderwatch', 'vents', 'slagheart', 'reliquary', 'frostpass', 'boulder', 'rimewatch', 'windcrest', 'beacons', 'frostfang', 'sanctuary', 'drowned', 'end'];
+
+// The named guardians of the quest chains.
+export const ELITES = {
+  warchief: { name: 'Gorrak the Warchief', archetype: 'brute', biome: 0, hp: 4 },
+  slagheart: { name: 'Slagheart', archetype: 'brute', biome: 5, hp: 3.5 },
+  frostfang: { name: 'Frostfang, the Pale Alpha', archetype: 'lunger', biome: 4, hp: 5.5 },
+};
 
 const settlement = (W, id) => W.settlements.find((s) => s.id === id);
 const npcBy = (W, settlementId, role) => W.npcs.find((n) => n.settlementId === settlementId && n.role === role);
+export const relicCount = (state, W, kind) => W.pois.relics[kind].filter((r) => state.progress.relics.includes(r.id)).length;
+const allRelics = (state, W, kind) => relicCount(state, W, kind) >= W.pois.relics[kind].length;
 
 // Applies an event to the main quest. Mutates state. Returns {advanced, stage, notes[]}.
 export function advanceMain(state, W, ev) {
@@ -17,15 +26,18 @@ export function advanceMain(state, W, ev) {
   const notes = [];
   const go = (stage, note) => { q.main = stage; if (note) notes.push(note); };
   const talk = (role, sid) => ev.type === 'talk' && ev.role === role && (!sid || ev.settlementId === sid);
+  const sealed = (key) => ev.type === 'seal' && ev.key === key;
   switch (q.main) {
     case 'wake': if (talk('elder', 'home')) go('scout'); break;
-    case 'scout': if (talk('scout', 'outpost')) go('camp'); break;
+    case 'scout': if (talk('scout', 'outpost')) go('lookout'); break;
+    case 'lookout': if (ev.type === 'reach' && ev.id === 'lookout') go('camp'); break;
     case 'camp': if (ev.type === 'cleared' && ev.quest) go('sigil'); break;
-    case 'sigil':
-      if (talk('scout', 'outpost')) {
+    case 'sigil': if (talk('scout', 'outpost')) go('leaves'); break;
+    case 'leaves': if (ev.type === 'relic' && allRelics(state, W, 'leaves')) go('thornwall', 'All three leaves of the Sigil recovered.'); break;
+    case 'thornwall':
+      if (sealed('verdant')) {
         if (!state.artifacts.includes('verdantSigil')) state.artifacts.push('verdantSigil');
-        reveal(state, 'dungeon:verdant');
-        go('vault', 'Received the Verdant Sigil.');
+        go('vault', 'The Verdant Sigil is whole again.');
       }
       break;
     case 'vault': if (ev.type === 'boss' && ev.kind === 'thornmaw') go('smith'); break;
@@ -39,7 +51,10 @@ export function advanceMain(state, W, ev) {
       }
       break;
     case 'ashpass': if (talk('keeper', 'desert')) { reveal(state, 'gate:volcanic'); go('ridge'); } break;
-    case 'ridge': if (ev.type === 'gate' && ev.region === 'volcanic') { reveal(state, 'dungeon:ashen'); go('reliquary'); } break;
+    case 'ridge': if (ev.type === 'gate' && ev.region === 'volcanic') go('cinderwatch'); break;
+    case 'cinderwatch': if (talk('keeper', 'volcanic')) go('vents'); break;
+    case 'vents': if (ev.type === 'relic' && allRelics(state, W, 'vents')) go('slagheart', 'The firewall gutters...'); break;
+    case 'slagheart': if (sealed('ashen')) go('reliquary'); break;
     case 'reliquary':
       if (ev.type === 'boss' && ev.kind === 'cinder') {
         state.tools.gloves = true;
@@ -48,44 +63,86 @@ export function advanceMain(state, W, ev) {
       }
       break;
     case 'frostpass': if (talk('keeper', 'mountain')) { reveal(state, 'gate:snow'); go('boulder'); } break;
-    case 'boulder': if (ev.type === 'gate' && ev.region === 'snow') { reveal(state, 'dungeon:frost'); go('sanctuary'); } break;
+    case 'boulder': if (ev.type === 'gate' && ev.region === 'snow') go('rimewatch'); break;
+    case 'rimewatch': if (talk('keeper', 'snow')) go('windcrest'); break;
+    case 'windcrest': if (ev.type === 'reach' && ev.id === 'windcrest') go('beacons'); break;
+    case 'beacons': if (ev.type === 'relic' && allRelics(state, W, 'beacons')) go('frostfang', 'The beacons blaze on the heights...'); break;
+    case 'frostfang': if (sealed('frost')) go('sanctuary'); break;
     case 'sanctuary': if (ev.type === 'boss' && ev.kind === 'rime') go('drowned'); break;
     case 'drowned': if (talk('elder', 'home')) go('end'); break;
   }
-  // Things done out of order (a camp cleared before the scout asked, gates opened early)
-  // should not strand the quest.
-  const questCamp = W.pois.camps.find((c) => c.quest);
-  if (q.main === 'camp' && questCamp && state.progress.cleared.includes(questCamp.id)) q.main = 'sigil';
-  if (q.main === 'ridge' && state.progress.gates.includes('volcanic')) { reveal(state, 'dungeon:ashen'); q.main = 'reliquary'; }
-  if (q.main === 'boulder' && state.progress.gates.includes('snow')) { reveal(state, 'dungeon:frost'); q.main = 'sanctuary'; }
+  // Things done out of order (a camp cleared before the scout asked, gates opened early, vents
+  // capped before anyone explained them) should not strand the quest.
+  const pr = state.progress;
+  for (let guard = 0; guard < 4; guard++) {
+    const st = q.main;
+    const questCamp = W.pois.camps.find((c) => c.quest);
+    if (st === 'lookout' && !W.pois.lookouts.some((l) => l.id === 'lookout')) q.main = 'camp';
+    if (st === 'camp' && questCamp && pr.cleared.includes(questCamp.id)) q.main = 'sigil';
+    if (st === 'ridge' && pr.gates.includes('volcanic')) q.main = 'cinderwatch';
+    if (st === 'vents' && allRelics(state, W, 'vents')) q.main = 'slagheart';
+    if (st === 'boulder' && pr.gates.includes('snow')) q.main = 'rimewatch';
+    if (st === 'windcrest' && !W.pois.lookouts.some((l) => l.id === 'windcrest')) q.main = 'beacons';
+    if (st === 'beacons' && allRelics(state, W, 'beacons')) q.main = 'frostfang';
+    if (q.main === st) break;
+  }
+  const past = (stage) => MAIN_STAGES.indexOf(q.main) >= MAIN_STAGES.indexOf(stage);
+  if (past('lookout')) reveal(state, 'dungeon:verdant');
+  if (past('vents')) reveal(state, 'dungeon:ashen');
+  if (past('beacons')) reveal(state, 'dungeon:frost');
   return { advanced: q.main !== before, stage: q.main, notes };
 }
+
+// Which elite (if any) the current stage is waiting on.
+export function stageElite(stage) { return { slagheart: 'slagheart', frostfang: 'frostfang' }[stage] || null; }
+// Which ward's relics the current stage is gathering.
+export function stageRelics(stage) { return { leaves: 'leaves', vents: 'vents', beacons: 'beacons' }[stage] || null; }
 
 export function reveal(state, id) {
   if (!state.progress.revealed) state.progress.revealed = [];
   if (!state.progress.revealed.includes(id)) state.progress.revealed.push(id);
 }
 
-// Current objective text plus an overworld tile marker when one applies.
-export function mainObjective(state, W) {
+// Current objective text plus an overworld tile marker when one applies. `here` (a tile) picks the
+// nearest of several relics.
+export function mainObjective(state, W, here = null) {
   const s = (id) => settlement(W, id);
   const n = (sid, role) => npcBy(W, sid, role);
   const home = s('home'), out = s('outpost');
   const D = W.pois.dungeons;
   const gate = (region) => W.pois.gates.find((g) => g.region === region);
   const camp = W.pois.camps.find((c) => c.quest);
+  const look = (id) => { const l = W.pois.lookouts.find((x) => x.id === id); return l ? { x: l.x, y: l.y + 1 } : null; };
+  const arena = (key) => W.pois.seals[key]?.arena || D[key].front;
+  const relic = (kind) => {
+    const left = W.pois.relics[kind].filter((r) => !state.progress.relics.includes(r.id));
+    const from = here || W.pois.relics[kind][0] || home.center;
+    left.sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y));
+    return left[0] ? { x: left[0].x, y: left[0].y + (kind === 'leaves' ? 0 : 1) } : null;
+  };
+  const count = (kind) => `${relicCount(state, W, kind)}/${W.pois.relics[kind].length}`;
   switch (state.quest.main) {
     case 'wake': return { text: `Speak with ${n('home', 'elder').name} in ${home.name}'s great hall.`, marker: hallDoor(home) };
     case 'scout': return { text: `Find Scout ${n('outpost', 'scout').name} at ${out.name}.`, marker: out.center };
-    case 'camp': return { text: `Clear the ${FAMILIES[0].names.brute} camp the scout spotted.`, marker: camp ? { x: camp.x, y: camp.y } : null };
+    case 'lookout': return { text: 'Climb the old watchtower on the road to the Vault and look out over the woods.', marker: look('lookout') };
+    case 'camp': return { text: `Clear the ${FAMILIES[0].names.brute} warband camp and defeat its warchief.`, marker: camp ? { x: camp.x, y: camp.y } : null };
     case 'sigil': return { text: `Return to Scout ${n('outpost', 'scout').name} at ${out.name}.`, marker: out.center };
+    case 'leaves': return { text: `Recover the leaves of the Verdant Sigil from the raided leaf-shrines (${count('leaves')}).`, marker: relic('leaves') };
+    case 'thornwall': return { text: 'Carry the three leaves to the thornwall around the Verdant Vault.', marker: arena('verdant') };
     case 'vault': return { text: 'Enter the Verdant Vault and defeat its warden.', marker: D.verdant.front };
     case 'smith': return { text: `Bring the Ember Shard to ${n('home', 'smith').name}, the smith of ${home.name}.`, marker: doorOf(home, 'smith') };
     case 'ashpass': return { text: `Ask the captain of ${s('desert').name} about the ash ridge.`, marker: hallDoor(s('desert')) };
     case 'ridge': return { text: 'Blast through the cracked ridge into the volcanic wastes.', marker: gate('volcanic') };
-    case 'reliquary': return { text: 'Find the Ashen Reliquary and defeat the Cinder Warden.', marker: D.ashen.front };
+    case 'cinderwatch': return { text: `Find the captain of ${s('volcanic').name}, the last outpost in the wastes.`, marker: hallDoor(s('volcanic')) };
+    case 'vents': return { text: `Cap the magma vents feeding the Reliquary's firewall with bombs (${count('vents')}).`, marker: relic('vents') };
+    case 'slagheart': return { text: 'Defeat Slagheart, the molten guardian of the firewall.', marker: arena('ashen') };
+    case 'reliquary': return { text: 'Enter the Ashen Reliquary and defeat the Cinder Warden.', marker: D.ashen.front };
     case 'frostpass': return { text: `Ask the keeper of ${s('mountain').name} about the frozen pass.`, marker: hallDoor(s('mountain')) };
     case 'boulder': return { text: 'Lift the boulder that seals the northern pass.', marker: gate('snow') };
+    case 'rimewatch': return { text: `Find the captain of ${s('snow').name}, high in the snows.`, marker: hallDoor(s('snow')) };
+    case 'windcrest': return { text: 'Climb to the Windcrest and look for the old signal beacons.', marker: look('windcrest') };
+    case 'beacons': return { text: `Break the ice off the old signal beacons and light them (${count('beacons')}).`, marker: relic('beacons') };
+    case 'frostfang': return { text: 'Defeat Frostfang, the Pale Alpha, at the ice wall.', marker: arena('frost') };
     case 'sanctuary': return { text: 'Reach the Frostbound Sanctuary and face the Rime Sovereign.', marker: D.frost.front };
     case 'drowned': return { text: `Return to ${n('home', 'elder').name} with three shards.`, marker: hallDoor(home) };
     default: return { text: 'The fourth ward sleeps beneath the drowned west. Explore freely.', marker: D.drowned.front };
@@ -370,13 +427,13 @@ export function trackableQuests(state, sideQuests) {
 }
 
 // The tracked quest's objective; falls back to the main quest when the tracked one is gone.
-export function trackedObjective(state, W, sideQuests) {
+export function trackedObjective(state, W, sideQuests, here = null) {
   const id = state.quest.tracked || 'main';
   if (id !== 'main') {
     const q = sideQuests.find((x) => x.id === id);
     if (q && trackableQuests(state, sideQuests).includes(id)) return { id, title: questTitle(q, W), ...sideObjective(state, q, W), dungeon: null };
   }
-  return { id: 'main', title: questTitle(null, W), ...mainObjective(state, W), dungeon: MAIN_DUNGEON[state.quest.main] || null };
+  return { id: 'main', title: questTitle(null, W), ...mainObjective(state, W, here), dungeon: MAIN_DUNGEON[state.quest.main] || null };
 }
 
 export function cycleTracked(state, sideQuests) {

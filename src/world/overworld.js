@@ -9,6 +9,7 @@ import { astar, bfsDistances, components } from '../core/grid.js';
 import { T, D, BIOME, GROUND, TILE_INFO, DECO_SOLID } from './tiles.js';
 import { placeName } from '../data/names.js';
 import { SETTLEMENT_SPECS, layoutSettlement, rosterFor } from './settlements.js';
+import { stageWardFeatures, stageSeals } from './wards.js';
 
 export const WORLD_W = 192;
 export const WORLD_H = 160;
@@ -556,8 +557,10 @@ export function stageRoads(W) {
 export function isPassable(W, x, y, tools = {}) {
   if (!inside(W, x, y)) return false;
   const i = y * W.w + x, t = W.tiles[i];
-  if (t === T.CRACKED) return !!tools.bombs;
+  if (t === T.CRACKED || t === T.VENT) return !!tools.bombs;
   if (t === T.BOULDER) return !!tools.gloves;
+  if (t === T.SEAL) return !!tools.seals;
+  if (t === T.CAVE) return false; // stepping in takes you into the cave, not across it
   if (TILE_INFO[t].solid) return false;
   const d = W.deco[i];
   return !(DECO_SOLID.has(d) && d !== D.BUSH);
@@ -565,15 +568,14 @@ export function isPassable(W, x, y, tools = {}) {
 
 // Lava isn't solid, but it burns and throws you back, so it is no path. Anything that can only be
 // reached across lava gets a cooled crust trail: the cheapest route from home, lava turned to ash.
-export function coolLavaPaths(W) {
-  const tools = { bombs: true, gloves: true };
+export function coolLavaPaths(W, tools = { bombs: true, gloves: true, seals: true }) {
   const safe = (x, y) => isPassable(W, x, y, tools) && W.tiles[at(W, x, y)] !== T.LAVA;
   const sites = [
     ...W.pois.caves.map((c) => c.front), ...W.pois.camps.map((c) => c.entry), ...W.pois.spawns,
     ...W.pois.caches.map((c) => (c.kind === 'glint' ? c : { x: c.x, y: c.y + 2 })),
     ...Object.values(W.pois.dungeons).map((d) => d.front), W.pois.spire.front,
     ...W.settlements.map((st) => st.center),
-    ...[...W.pois.lore, ...W.pois.shrines, ...W.pois.signs].map((p) => N4.map(([dx, dy]) => ({ x: p.x + dx, y: p.y + dy })).find((q) => isPassable(W, q.x, q.y, tools)) || p),
+    ...[...W.pois.lore, ...W.pois.shrines, ...W.pois.signs, ...(W.pois.lookouts || []), ...Object.values(W.pois.relics || {}).flat()].map((p) => N4.map(([dx, dy]) => ({ x: p.x + dx, y: p.y + dy })).find((q) => isPassable(W, q.x, q.y, tools) && W.tiles[at(W, q.x, q.y)] !== T.VENT) || p),
   ];
   let reach = bfsDistances(W.w, W.h, safe, [W.pois.home]);
   for (const t of sites) {
@@ -793,7 +795,16 @@ export function stageContent(W) {
     if (pts.some((p) => nearSettlement(p.x, p.y, 10))) continue;
     W.pois.patrols.push({ id: `pt${W.pois.patrols.length}`, path: pts, biome: W.biome[at(W, pts[0].x, pts[0].y)] });
   }
+  stageWardFeatures(W, { rng, free, tryPlace, randomTile, keepClear, roadDist, nearSettlement });
   coolLavaPaths(W);
+  // Seals go last. Whatever the quest needs before a ward breaks must stay reachable around it.
+  const beside = (r) => N4.map(([dx, dy]) => ({ x: r.x + dx, y: r.y + dy })).find((q) => pass(q.x, q.y)) || r;
+  const needed = () => [...W.settlements.map((s) => s.center), ...[...W.pois.lookouts, ...Object.values(W.pois.relics).flat()].map(beside), ...W.pois.gates];
+  stageSeals(W, pass, (extra) => {
+    const d = bfsDistances(W.w, W.h, pass, [W.pois.home]);
+    return [...needed(), ...extra].every((p) => d[at(W, p.x, p.y)] >= 0 || !pass(p.x, p.y));
+  });
+  coolLavaPaths(W, { bombs: true, gloves: true }); // a seal may have cut the only lava-free way somewhere
   // Clear decoration from anything solid it ended up on.
   for (let i = 0; i < W.w * W.h; i++) if (TILE_INFO[W.tiles[i]].solid && W.deco[i]) W.deco[i] = D.NONE;
 }

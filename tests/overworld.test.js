@@ -40,20 +40,26 @@ for (const seed of SEEDS) {
     const start = W.pois.homeDoor;
     const reach = (tools, p) => reachableFrom(W, start, tools)[p.y * W.w + p.x] >= 0;
     const none = {}, bombs = { bombs: true }, all = { bombs: true, gloves: true };
+    const open = (t) => ({ ...t, seals: true });
     const S = Object.fromEntries(W.settlements.map((s) => [s.id, s.center]));
     for (const id of ['home', 'outpost', 'swamp', 'desert', 'mountain']) assert.ok(reach(none, S[id]), `${id} unreachable`);
-    assert.ok(reach(none, W.pois.dungeons.verdant.front), 'verdant unreachable');
+    // Each ward's door is sealed until its quest chain breaks the seal.
+    assert.ok(!reach(all, W.pois.dungeons.verdant.front) || W.pois.seals.verdant.r === 0, 'verdant reachable through its seal');
+    assert.ok(reach(open(none), W.pois.dungeons.verdant.front), 'verdant unreachable');
+    assert.ok(reach(none, W.pois.seals.verdant.arena), 'thornwall unreachable');
     assert.ok(reach(none, W.pois.dungeons.drowned.front), 'drowned unreachable');
     assert.ok(reach(none, W.pois.spire.front), 'spire unreachable');
     // Ashen region needs bombs, snow region needs gloves.
     assert.ok(!reach(none, S.volcanic), 'volcanic reachable without bombs');
     assert.ok(reach(bombs, S.volcanic), 'volcanic unreachable with bombs');
-    assert.ok(reach(bombs, W.pois.dungeons.ashen.front), 'ashen unreachable with bombs');
+    assert.ok(reach(bombs, W.pois.seals.ashen.arena), 'firewall unreachable with bombs');
+    assert.ok(reach(open(bombs), W.pois.dungeons.ashen.front), 'ashen unreachable with bombs');
     assert.ok(!reach(bombs, S.snow), 'snow reachable without gloves');
     assert.ok(reach(all, S.snow), 'snow unreachable with gloves');
-    assert.ok(reach(all, W.pois.dungeons.frost.front), 'frost unreachable');
-    for (const c of W.pois.caves) assert.ok(reach(all, c.front), `cave ${c.id} unreachable`);
-    for (const c of W.pois.camps) assert.ok(reach(all, c.entry), `camp ${c.id} unreachable`);
+    assert.ok(reach(all, W.pois.seals.frost.arena), 'ice wall unreachable');
+    assert.ok(reach(open(all), W.pois.dungeons.frost.front), 'frost unreachable');
+    for (const c of W.pois.caves) assert.ok(reach(open(all), c.front), `cave ${c.id} unreachable`);
+    for (const c of W.pois.camps) assert.ok(reach(open(all), c.entry), `camp ${c.id} unreachable`);
     const quest = W.pois.camps.find((c) => c.quest);
     assert.ok(reach(none, quest.entry), 'quest camp needs tools');
   });
@@ -71,7 +77,7 @@ test('nothing worth visiting sits behind lava', async () => {
   const { bfsDistances } = await import('../src/core/grid.js');
   for (const seed of ['quests', 'ember123', 'lava1', 'lava2', 'ash9']) {
     const W = generateOverworld(seed);
-    const safe = (x, y) => isPassable(W, x, y, { bombs: true, gloves: true }) && W.tiles[y * W.w + x] !== T.LAVA;
+    const safe = (x, y) => isPassable(W, x, y, { bombs: true, gloves: true, seals: true }) && W.tiles[y * W.w + x] !== T.LAVA;
     const reach = bfsDistances(W.w, W.h, safe, [W.pois.home]);
     const near = (p) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => reach[(p.y + dy) * W.w + p.x + dx] >= 0);
     for (const c of W.pois.caves) assert.ok(near(c.front), `${seed} cave ${c.id}`);

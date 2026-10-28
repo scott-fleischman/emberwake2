@@ -95,7 +95,7 @@ export function rosterFor(settlement, rng, usedNames) {
   for (const [role, btype, questGiver] of ROSTERS[key]) {
     const building = btype ? settlement.buildings.find((b) => b.type === btype && !b.taken) : null;
     if (btype && !building) {
-      if (role !== 'villager') continue; // skip roles whose building failed to place
+      if (role !== 'villager' && role !== 'keeper') continue; // skip roles whose building failed to place; captains stand outside
     }
     if (building && role !== 'villager') building.taken = true;
     const outdoor = !building;

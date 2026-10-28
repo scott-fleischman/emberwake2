@@ -151,18 +151,25 @@ export const fullMethods = {
 
   *mainStep(full) {
     const g = this.g, W = g.world, st = g.state.quest.main;
-    if (['vault', 'reliquary', 'sanctuary'].includes(st) && g.area.kind !== 'dungeon' && this.needsSupplies()) yield* this.resupply();
+    if (['vault', 'reliquary', 'sanctuary', 'vents', 'slagheart', 'frostfang'].includes(st) && g.area.kind !== 'dungeon' && this.needsSupplies()) yield* this.resupply();
     switch (st) {
       case 'wake': case 'drowned': yield* this.talkTo(this.npc('home', 'elder').id); break;
       case 'scout': case 'sigil': yield* this.talkTo(this.npc('outpost', 'scout').id); break;
+      case 'lookout': case 'windcrest': yield* this.climbLookout(st); break;
       case 'camp': yield* this.clearCamp(W.pois.camps.find((c) => c.quest)); break;
+      case 'leaves': case 'vents': case 'beacons': yield* this.gatherRelics(st); break;
+      case 'thornwall': yield* this.atSeal('verdant', 'Carrying the leaves to the thornwall'); break;
       case 'vault': yield* this.runDungeon('verdant', full); break;
       case 'smith': yield* this.talkTo(this.npc('home', 'smith').id); break;
       case 'ashpass': yield* this.talkTo(this.npc('desert', 'keeper').id); break;
       case 'ridge': yield* this.openGate('volcanic'); break;
+      case 'cinderwatch': yield* this.talkTo(this.npc('volcanic', 'keeper').id); break;
+      case 'slagheart': yield* this.atSeal('ashen', 'Facing Slagheart'); break;
       case 'reliquary': yield* this.runDungeon('ashen', full); break;
       case 'frostpass': yield* this.talkTo(this.npc('mountain', 'keeper').id); break;
       case 'boulder': yield* this.openGate('snow'); break;
+      case 'rimewatch': yield* this.talkTo(this.npc('snow', 'keeper').id); break;
+      case 'frostfang': yield* this.atSeal('frost', 'Facing Frostfang'); break;
       case 'sanctuary': yield* this.runDungeon('frost', full); break;
     }
   },

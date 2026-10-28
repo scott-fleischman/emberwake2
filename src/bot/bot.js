@@ -19,9 +19,11 @@ const OUT = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
 
 // Speedrun splits: the moment the main quest moves past each stage.
 export const SPLITS = {
-  scout: 'Spoke with the elder', camp: 'Found the scout', sigil: 'Warband camp cleared', vault: 'Verdant Sigil',
-  smith: 'Thornmaw quieted', ashpass: 'Bomb Satchel', ridge: 'Ash captain', reliquary: 'Ridge blasted',
-  frostpass: 'Cinder Warden quieted', boulder: 'Mountain keeper', sanctuary: 'Boulder lifted', drowned: 'Rime Sovereign quieted', end: 'Hearth rekindled',
+  scout: 'Spoke with the elder', lookout: 'Found the scout', camp: 'Watchtower', sigil: 'Warband camp cleared', leaves: 'Scout\'s tale',
+  thornwall: 'Sigil leaves', vault: 'Thornwall withered', smith: 'Thornmaw quieted', ashpass: 'Bomb Satchel', ridge: 'Ash captain',
+  cinderwatch: 'Ridge blasted', vents: 'Cinderwatch', slagheart: 'Vents capped', reliquary: 'Firewall fallen', frostpass: 'Cinder Warden quieted',
+  boulder: 'Mountain keeper', rimewatch: 'Boulder lifted', windcrest: 'Rimewatch', beacons: 'Windcrest', frostfang: 'Beacons lit',
+  sanctuary: 'Ice wall shattered', drowned: 'Rime Sovereign quieted', end: 'Hearth rekindled',
 };
 
 const segDist = (px, py, ax, ay, bx, by) => {
@@ -169,9 +171,18 @@ export class Bot {
   }
 
   // What the merchant should sell us right now: [shop label, still needed?, price].
+  // Bombs the main quest still needs: the ridge, then one per uncapped vent (plus a spare).
+  bombsNeeded() {
+    const s = this.g.state, W = this.g.world, st = s.quest.main;
+    if (!s.tools.bombs || !['ashpass', 'ridge', 'cinderwatch', 'vents'].includes(st)) return 0;
+    const vents = W.pois.relics.vents.filter((v) => !s.progress.relics.includes(v.id)).length;
+    return vents + 1 + (s.progress.gates.includes('volcanic') ? 0 : 1);
+  }
+
   shoppingList() {
     const s = this.g.state, p = s.player, d = this.g.derived;
     return [
+      ['Bombs ×4', () => p.bombs < this.bombsNeeded() && p.bombs < d.maxBombs - 3, 20],
       ['Arrows ×10', () => s.gear.items.includes('bow') && p.arrows < d.maxArrows - 9, 15],
       ['Throwing knives ×5', () => s.gear.items.includes('knives') && p.knives < d.maxKnives - 4, 15],
       ['Ration', () => p.food < 3, 10],
@@ -180,7 +191,7 @@ export class Bot {
 
   needsSupplies() {
     const s = this.g.state, p = s.player;
-    const low = (s.gear.items.includes('bow') && p.arrows < 15) || (s.gear.items.includes('knives') && p.knives < 8) || p.food < 2;
+    const low = (s.gear.items.includes('bow') && p.arrows < 15) || (s.gear.items.includes('knives') && p.knives < 8) || p.food < 2 || p.bombs < this.bombsNeeded();
     return low && this.shoppingList().length > 0;
   }
 
@@ -228,7 +239,7 @@ export class Bot {
       const d = Math.hypot(e.x - p.x, e.y - p.y);
       if ((ignore.get(e) || 0) > this.time) return false;
       if (e === this.engaged && d < 120) return true; // stay on a target once engaged
-      if (!e.aggro || d > 110) return false;
+      if (!e.aggro || d > (e.elite ? 170 : 110)) return false;
       const t = tileOf(e.x, e.y), r = this.reach.map[t.y * a.map.w + t.x];
       return e.flying ? d < 70 : r >= 0 && r < 14;
     });
@@ -240,10 +251,12 @@ export class Bot {
     this.engageTotal += this.dt;
     const a = this.g.area, locked = a.kind === 'dungeon' && (a.shut || a.shutPending);
     // A chip of damage now and then shouldn't keep us brawling forever with something we can't finish.
-    if (!e.boss && !locked && this.engageTotal > 40) { this.ignore.set(e, this.time + 40); this.engaged = null; this.note(`Leaving a ${e.archetype} be`); return; }
+    if (!e.boss && !e.elite && !locked && this.engageTotal > 40) { this.ignore.set(e, this.time + 40); this.engaged = null; this.note(`Leaving a ${e.archetype} be`); return; }
     if (e.hp < this.engageHp) { this.engageHp = e.hp; this.engageT = 0; return; }
     this.engageT += this.dt;
-    if (!e.boss && this.engageT > 8) { this.ignore.set(e, this.time + 40); this.engaged = null; this.note(`Giving up on a ${e.archetype}`); }
+    // A guardian that won't take damage is usually across a cliff: back off briefly and walk round.
+    if (e.elite && this.engageT > 8) { this.ignore.set(e, this.time + 5); this.engaged = null; this.note(`Circling round to ${e.name}`); return; }
+    if (!e.boss && !e.elite && this.engageT > 8) { this.ignore.set(e, this.time + 40); this.engaged = null; this.note(`Giving up on a ${e.archetype}`); }
   }
 
   combat() {
@@ -912,6 +925,51 @@ export class Bot {
       const W = this.g.world, home = W.settlements.find((s) => s.id === 'outpost').center;
       const away = { x: Math.round(camp.x + (home.x - camp.x) * 0.5), y: Math.round(camp.y + (home.y - camp.y) * 0.5) };
       yield* this.goTo({ kind: 'overworld', x: away.x, y: away.y, near: 3 });
+    }
+  }
+
+  *climbLookout(id) {
+    const l = this.g.world.pois.lookouts.find((x) => x.id === id);
+    if (!l) return;
+    this.status = id === 'lookout' ? 'Climbing the watchtower' : 'Climbing the Windcrest';
+    yield* this.goTo({ kind: 'overworld', x: l.x, y: l.y + 1, near: 1 });
+    if (this.g.state.quest.main === id && this.g.area.kind === 'overworld' && !this.g.uiStack.length) yield* this.useTile({ x: l.x, y: l.y });
+    yield* this.wait(0.5);
+  }
+
+  *gatherRelics(kind) {
+    const g = this.g, W = g.world, pr = g.state.progress, stage = g.state.quest.main;
+    for (let guard = 0; guard < 12 && g.state.quest.main === stage; guard++) {
+      const here = g.overworldPos() || W.pois.home;
+      const left = W.pois.relics[kind].filter((r) => !pr.relics.includes(r.id)).sort((a, b) => Math.hypot(a.x - here.x, a.y - here.y) - Math.hypot(b.x - here.x, b.y - here.y));
+      if (!left.length) return;
+      const r = left[0], done = () => pr.relics.includes(r.id);
+      if (kind === 'leaves') { this.status = 'Recovering a leaf of the Sigil'; yield* this.collectAt({ x: r.x, y: r.y }, done); }
+      else if (kind === 'vents') {
+        if (g.state.player.bombs <= 0) { yield* this.resupply(); if (g.state.player.bombs <= 0) return; }
+        this.status = 'Capping a magma vent';
+        yield* this.goTo({ kind: 'overworld', x: r.x, y: r.y, near: 3 });
+        if (g.area.kind === 'overworld' && !done()) yield* this.bombTile({ x: r.x, y: r.y });
+      } else {
+        this.status = 'Lighting a signal beacon';
+        yield* this.goTo({ kind: 'overworld', x: r.x, y: r.y + 1, near: 2 });
+        if (g.area.kind === 'overworld' && !done()) yield* this.useTile({ x: r.x, y: r.y });
+      }
+      yield;
+    }
+  }
+
+  // Walk up to a seal's arena: the thornwall ritual triggers there, and the elites climb out there.
+  *atSeal(key, label) {
+    const g = this.g, seal = g.world.pois.seals[key], stage = g.state.quest.main;
+    if (!seal) return;
+    this.status = label;
+    yield* this.goTo({ kind: 'overworld', x: seal.arena.x, y: seal.arena.y, near: 1 });
+    // Guardians don't path around obstacles, so go to them.
+    for (let t = 0; t < 12 && g.state.quest.main === stage && g.area.kind === 'overworld'; t++) {
+      const e = g.area.enemyList.find((x) => x.elite && !x.dead && x.state !== 'dying');
+      if (e) yield* this.walkTo(tileOf(e.x, e.y), { near: 1, timeout: 3 });
+      else yield* this.wait(0.5);
     }
   }
 

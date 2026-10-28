@@ -1,11 +1,15 @@
 // Cutscene Theater (debug): every story scene back to back, like a movie. Warden scenes play in
 // their real boss rooms. Uses a throwaway world and never saves.
 import { GameScene } from './game.js';
+import { Particles } from '../game/entities.js';
 import { newGameState } from '../game/state.js';
 import { CLASSES } from '../data/classes.js';
 import { introShots, elderShots, endingShots, bossIntroShots, bossOutroShots, WARDENS } from '../data/story.js';
 import { dirWord } from '../game/quests.js';
 import { DUNGEON_INFO } from '../world/dungeons.js';
+import { lookoutShots, sealShots } from '../data/wards.js';
+import { openSeal } from '../world/wards.js';
+import { TILE } from '../world/tiles.js';
 
 const CHAPTERS = [['verdant', 'thornmaw', 'I'], ['ashen', 'cinder', 'II'], ['frost', 'rime', 'III']];
 
@@ -28,11 +32,26 @@ export class TheaterScene extends GameScene {
     ];
     for (const [id, kind, num] of CHAPTERS) {
       list.push(play([{ art: 'titlecard', title: DUNGEON_INFO[id].name, sub: `Chapter ${num} · ${WARDENS[kind].sub}`, hold: 2.2 }], { music: 'story' }));
+      // The road to the ward: its lookout (if it has one), then the seal breaking.
+      const look = { verdant: 'lookout', frost: 'windcrest' }[id];
+      if (look && W.pois.lookouts.some((l) => l.id === look)) list.push(() => { this.toWorld(W.pois.lookouts.find((l) => l.id === look), 1); play(lookoutShots(W, look), { letterbox: true, music: 'story' })(); });
+      if (W.pois.seals[id]) list.push(() => { this.toWorld(W.pois.seals[id].arena, 0); play(sealShots(W, id, () => this.openSealFx(id)), { letterbox: true, liveFx: true, music: 'story' })(); });
       list.push(() => { this.toBossRoom(id); play(bossIntroShots(kind), { letterbox: true, music: 'boss' })(); });
       list.push(() => { const focus = this.quietBoss(); play(bossOutroShots(kind, focus), { letterbox: true, music: 'story' })(); });
     }
     list.push(play(endingShots({ elder: N('home', 'elder').name }), { music: 'story' }));
     return list;
+  }
+
+  // Stand on the overworld beside a tile, camera already there.
+  toWorld(t, dy) {
+    this.exitToOverworld(t.x, t.y + dy, true);
+    this.cam.follow(this.player.x, this.player.y, this.area.map.pixelW, this.area.map.pixelH, 0, true);
+    this.fade = 0;
+  }
+
+  openSealFx(id) {
+    for (const t of openSeal(this.world, this.overworldMap, id)) this.area.spawn(new Particles(t.x * TILE + 8, t.y * TILE + 4, { count: 10, color: ['#ffffff', '#ffe0a0', '#a0a0a0'], speed: 70, life: 1.1, up: 30 }));
   }
 
   toBossRoom(id) {

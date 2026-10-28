@@ -18,6 +18,8 @@ import { FAMILIES } from '../data/enemies.js';
 import { drawHUD, drawMinimap, drawWorldMap, drawOverworldMinimap, FOG_CELL } from '../gfx/hud.js';
 import { ItemMenu } from '../gfx/inventory.js';
 import { Cutscene } from '../gfx/cutscene.js';
+import { lookoutShots, sealShots } from '../data/wards.js';
+import { openSeal } from '../world/wards.js';
 import { LoreJournal } from '../gfx/journal.js';
 import { LOOKS } from '../gfx/sprites.js';
 import { introShots, endingShots, learnLore, LORE_ENTRIES, stonesRead } from '../data/story.js';
@@ -189,6 +191,7 @@ export class GameScene {
     const top = this.uiStack[this.uiStack.length - 1];
     if (top) {
       top.update(dt, this);
+      if (top.liveFx) this.area.updateFx(dt);
       if (this.uiStack.some((ui) => ui.done)) this.uiStack = this.uiStack.filter((ui) => !ui.done);
       return;
     }
@@ -371,6 +374,15 @@ export class GameScene {
       case 'mana': p.mana = Math.min(d.maxMana, p.mana + 12); this.audio.sfx('pickup', { pitch: 1.3 }); break;
       case 'food': p.food++; this.audio.sfx('pickup'); this.area.spawn(new FloatText(pk.x, pk.y - 8, '+1 ration', '#ffc080')); break;
       case 'bombs': p.bombs = Math.min(d.maxBombs, p.bombs + pk.value); this.audio.sfx('pickup'); break;
+      case 'relic': {
+        const pr = s.progress, list = this.world.pois.relics.leaves;
+        if (!pr.relics.includes(pk.relic.id)) pr.relics.push(pk.relic.id);
+        this.audio.sfx('levelup');
+        this.area.spawn(new Particles(pk.x, pk.y - 6, { count: 16, color: ['#8aff6a', '#c8a050', '#ffffff'], speed: 50, life: 0.7 }));
+        this.toast(`A leaf of the Verdant Sigil! (${list.filter((r) => pr.relics.includes(r.id)).length}/${list.length})`);
+        this.questEvent({ type: 'relic', kind: 'leaves', id: pk.relic.id });
+        return true;
+      }
       case 'herb': {
         const q = this.sideQuests.find((x) => x.id === pk.questId);
         if (q) this.gatherHerb(q, pk.id);
@@ -482,6 +494,7 @@ export class GameScene {
   questEvent(ev) {
     const r = advanceMain(this.state, this.world, ev);
     if (r.advanced) {
+      if (r.stage === 'leaves' && this.overworld) this.overworld.spawnWardItems();
       for (const n of r.notes) this.toast(n);
       this.audio.sfx('levelup');
       this.updateObjective();
@@ -491,6 +504,44 @@ export class GameScene {
         this.playCutscene(endingShots({ elder: elder.name }), { music: 'story', onDone: () => { this.restoreMusic(); this.showEnding(); } });
       }
     }
+  }
+
+  // ---------------------------------------------------------------- ward quests
+  reachLookout(id) {
+    if (this.uiStack.length || this.state.quest.flags[`reach:${id}`]) return;
+    this.state.quest.flags[`reach:${id}`] = true;
+    this.playCutscene(lookoutShots(this.world, id), {
+      letterbox: true,
+      music: 'story',
+      onDone: () => { this.restoreMusic(); this.questEvent({ type: 'reach', id }); },
+    });
+  }
+
+  breakSeal(key) {
+    const pr = this.state.progress;
+    if (this.uiStack.length || pr.seals.includes(key)) return;
+    const W = this.world;
+    const open = () => {
+      pr.seals.push(key);
+      const tiles = openSeal(W, this.overworldMap, key);
+      const color = { verdant: ['#3a2a1a', '#6a5a3a', '#2e4a1e'], ashen: ['#ff7030', '#ffd060', '#3a2a2a'], frost: ['#e0f8ff', '#ffffff', '#a8d8f0'] }[key];
+      if (this.area === this.overworld) for (const t of tiles) this.area.spawn(new Particles(t.x * TILE + 8, t.y * TILE + 4, { count: 10, color, speed: 70, life: 1.1, up: 30 }));
+    };
+    this.playCutscene(sealShots(W, key, open), {
+      letterbox: true,
+      liveFx: true,
+      music: 'story',
+      onDone: () => { if (!pr.seals.includes(key)) open(); this.restoreMusic(); this.questEvent({ type: 'seal', key }); this.saveGame(true); },
+    });
+  }
+
+  onEliteDefeated(e) {
+    const pr = this.state.progress;
+    if (!pr.elites.includes(e.eliteId)) pr.elites.push(e.eliteId);
+    this.audio.sfx('levelup');
+    if (e.eliteId === 'warchief') { this.toast('Gorrak the Warchief falls! The warband breaks.'); return; }
+    const key = e.eliteId === 'slagheart' ? 'ashen' : 'frost';
+    this.queueCutscene(() => this.breakSeal(key), 1.2);
   }
 
   onSideQuestAccepted(q) {
@@ -545,7 +596,7 @@ export class GameScene {
   }
 
   updateObjective() {
-    const o = trackedObjective(this.state, this.world, this.sideQuests);
+    const o = trackedObjective(this.state, this.world, this.sideQuests, this.overworldPos());
     this.state.quest.tracked = o.id;
     this.objective = o.text;
     this.objectiveTitle = o.title;
@@ -554,7 +605,7 @@ export class GameScene {
     // Faint markers for the quests you're not tracking.
     this.otherMarkers = trackableQuests(this.state, this.sideQuests).filter((id) => id !== o.id).map((id) => {
       const q = this.sideQuests.find((x) => x.id === id);
-      const so = q ? sideObjective(this.state, q, this.world) : mainObjective(this.state, this.world);
+      const so = q ? sideObjective(this.state, q, this.world) : mainObjective(this.state, this.world, this.overworldPos());
       return so.marker;
     }).filter(Boolean);
     const others = this.otherMarkers.length;
@@ -607,7 +658,7 @@ export class GameScene {
     return (d.role === 'elder' && d.settlementId === 'home' && (st === 'wake' || st === 'drowned'))
       || (d.role === 'scout' && (st === 'scout' || st === 'sigil'))
       || (d.role === 'smith' && d.settlementId === 'home' && st === 'smith')
-      || (d.role === 'keeper' && ((d.settlementId === 'desert' && st === 'ashpass') || (d.settlementId === 'mountain' && st === 'frostpass')));
+      || (d.role === 'keeper' && ({ desert: 'ashpass', mountain: 'frostpass', volcanic: 'cinderwatch', snow: 'rimewatch' })[d.settlementId] === st);
   }
 
   showBanner(title, sub) { this.banner = { title, sub, t: 3, max: 3 }; }

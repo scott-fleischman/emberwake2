@@ -6,13 +6,17 @@ import { generateCave } from '../world/caves.js';
 import { OverworldRenderer, RoomRenderer, drawDarkness, drawCampfire, drawEmberGlow } from '../gfx/render.js';
 import { THEMES, CAVE_THEMES } from '../gfx/palette.js';
 import { R } from '../gfx/sprites.js';
-import { NPC, Chest, Cache, Pickup, Particles, Explosion, FloatText, Critter, DigSpot } from './entities.js';
+import { NPC, Chest, Cache, Pickup, Particles, Explosion, FloatText, Critter, DigSpot, Poof } from './entities.js';
 import { HERBS } from '../data/sidequests.js';
 import { bookFor } from '../data/story.js';
 import { Enemy } from './enemies.js';
 import { meleeTargets, knockbackVector, isBehind } from './combat.js';
 import { findFreeSpot } from './physics.js';
 import { makeRng } from '../core/rng.js';
+import { openSeal } from '../world/wards.js';
+import { stageElite, stageRelics } from './quests.js';
+import { Elite, SigilLeaf } from './elites.js';
+import { collectWardProps } from '../gfx/wards.js';
 
 const overlap = (a, b, pad = 0) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 + pad && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + pad;
 
@@ -55,6 +59,12 @@ export class Area {
     this.afterUpdate(dt, ctx);
   }
   afterUpdate() {}
+  // Effects only (sparks, dust, smoke): keeps a cutscene's world alive while everything else waits.
+  updateFx(dt) {
+    const ctx = this.ctx;
+    for (const e of this.entities) if (!e.dead && (e instanceof Particles || e instanceof Explosion || e instanceof FloatText || e instanceof Poof)) e.update(dt, ctx);
+    this.entities = this.entities.filter((e) => !e.dead);
+  }
 
   draw(g, cam) {
     this.drawGround(g, cam);
@@ -194,6 +204,7 @@ export class OverworldArea extends Area {
     this.groupT = 0;
     this.regionKey = null;
     this.spawnQuestItems();
+    this.spawnWardItems();
     for (const camp of W.pois.camps) {
       if (game.state.progress.cleared.includes(camp.id) && !game.state.progress.opened.includes(`campchest:${camp.id}`)) this.spawnCampChest(camp);
     }
@@ -201,6 +212,8 @@ export class OverworldArea extends Area {
 
   applyProgress() {
     const W = this.W, pr = this.game.state.progress;
+    for (const key of pr.seals) openSeal(W, this.map, key);
+    for (const v of W.pois.relics.vents) if (pr.relics.includes(v.id) && this.map.get(v.x, v.y) === T.VENT) this.map.set(v.x, v.y, T.ASH);
     for (const g of W.pois.gates) if (pr.gates.includes(g.region) && (this.map.get(g.x, g.y) === T.CRACKED || this.map.get(g.x, g.y) === T.BOULDER)) this.map.set(g.x, g.y, T.ROAD);
     for (const c of W.pois.caches) {
       if (!pr.caches.includes(c.id) && !pr.opened.includes(`blocker:${c.id}`)) continue;
@@ -226,8 +239,21 @@ export class OverworldArea extends Area {
     }
   }
 
+  // The Sigil's leaves only lie out on their shrines while the quest is looking for them.
+  spawnWardItems() {
+    const st = this.game.state;
+    if (st.quest.main !== 'leaves') return;
+    for (const r of this.W.pois.relics.leaves) {
+      if (st.progress.relics.includes(r.id) || this.entities.some((e) => e.id === `relic:${r.id}` && !e.dead)) continue;
+      this.spawn(new SigilLeaf(r, r.x * TILE + 8, r.y * TILE + 8));
+    }
+  }
+
   drawGround(g, cam) { this.renderer.drawGround(g, cam, this.time); }
-  collectTall(list, cam) { this.renderer.collectTall(cam, list, this.time, this.game.player); }
+  collectTall(list, cam) {
+    this.renderer.collectTall(cam, list, this.time, this.game.player);
+    collectWardProps(list, cam, this.time, this.map, this.W, this.game.state.progress);
+  }
 
   afterUpdate(dt) {
     this.groupT -= dt;
@@ -235,6 +261,19 @@ export class OverworldArea extends Area {
     this.checkTransitions();
     if (this.game.area !== this) return; // we just left; player coordinates now belong to the new area
     this.updateRegion();
+    this.wardTriggers();
+  }
+
+  // Standing atop a lookout, or bringing the leaves to the thornwall, moves the quest along.
+  wardTriggers() {
+    const g = this.game, p = g.player, st = g.state.quest.main, W = this.W;
+    if (p.mode === 'dead' || g.uiStack.length) return;
+    const near = (t, r) => Math.hypot(p.x - (t.x * TILE + 8), p.y - (t.y * TILE + 8)) < r * TILE;
+    if (st === 'lookout' || st === 'windcrest') {
+      const l = W.pois.lookouts.find((x) => x.id === st);
+      if (l && near(l, 1.7)) g.reachLookout(l.id);
+    }
+    if (st === 'thornwall' && W.pois.seals.verdant && near(W.pois.seals.verdant.arena, 2.5)) g.breakSeal('verdant');
   }
 
   // ------------------------------------------------ encounter groups
@@ -245,8 +284,9 @@ export class OverworldArea extends Area {
     for (const c of W.pois.camps) defs.push({ id: c.id, kind: 'camp', x: c.x, y: c.y, biome: c.biome, count: c.size, data: c });
     for (const k of ['verdant', 'ashen', 'frost']) {
       const d = W.pois.dungeons[k];
-      defs.push({ id: `guard:${k}`, kind: 'guard', x: d.front.x, y: d.front.y + 3, biome: d.biome, count: 3 });
+      defs.push({ id: `guard:${k}`, kind: 'guard', x: d.front.x, y: d.front.y + 3, biome: d.biome, count: 3, ward: k });
     }
+    for (const [kind, list] of Object.entries(W.pois.relics)) for (const r of list) defs.push({ id: `relic:${r.id}`, kind: 'relic', x: r.x, y: r.y + 2, biome: W.biome[r.y * W.w + r.x], count: 3, relic: r, relicKind: kind });
     for (const s of W.pois.spawns) defs.push({ id: s.id, kind: 'wild', x: s.x, y: s.y, biome: s.biome, count: s.count });
     for (const p of W.pois.patrols) defs.push({ id: p.id, kind: 'patrol', x: p.path[0].x, y: p.path[0].y, biome: p.biome, count: 2, path: p.path });
     this.defs = defs;
@@ -256,10 +296,14 @@ export class OverworldArea extends Area {
   updateGroups() {
     const p = this.game.player, pr = this.game.state.progress;
     const ptx = p.x / TILE, pty = p.y / TILE;
+    const stage = this.game.state.quest.main;
+    this.updateElite(ptx, pty);
     for (const def of this.groupDefs()) {
       const d = Math.hypot(def.x - ptx, def.y - pty);
       let grp = this.groups.get(def.id);
       if ((def.kind === 'camp' || def.kind === 'guard') && pr.cleared.includes(def.id)) continue;
+      if (def.kind === 'guard' && !pr.seals.includes(def.ward)) continue; // nothing gets past the seal, not even them
+      if (def.kind === 'relic' && !grp && (stageRelics(stage) !== def.relicKind || pr.relics.includes(def.relic.id))) continue;
       if (!grp && d < 22 && d > 12) {
         if (def.down && (performance.now() - def.downAt < 45000)) continue;
         grp = { def, enemies: [] };
@@ -271,6 +315,11 @@ export class OverworldArea extends Area {
           if (def.kind === 'patrol') e.patrol = def.path.map((q) => ({ x: q.x * TILE + 8, y: q.y * TILE + 8 }));
           if (!findFreeSpot(this.map, e, 4)) continue;
           grp.enemies.push(this.spawnEnemy(e));
+        }
+        if (def.kind === 'camp' && def.data.quest) {
+          const chief = new Elite('warchief', def.x * TILE + 8, (def.y - 1) * TILE + 8, { spawnId: def.id, hpMult: this.game.diff.enemyHp });
+          chief.aggro = false; chief.leash = 170;
+          if (findFreeSpot(this.map, chief, 4)) grp.enemies.push(this.spawnEnemy(chief));
         }
         this.groups.set(def.id, grp);
       } else if (grp) {
@@ -289,11 +338,30 @@ export class OverworldArea extends Area {
   enemyKilled(e) {
     const grp = e.spawnId && this.groups.get(e.spawnId);
     if (grp) grp.killed = true;
+    if (e.elite) this.game.onEliteDefeated(e);
+  }
+
+  // A chain's guardian climbs out of its seal once the stage calls for it, and stays until beaten.
+  updateElite(ptx, pty) {
+    const g = this.game, pr = g.state.progress, id = stageElite(g.state.quest.main);
+    const live = this.entities.find((e) => e.elite && e.eliteId !== 'warchief' && !e.dead);
+    if (live && live.eliteId !== id) { live.dead = true; this.tokens.delete(live); }
+    if (!id || live || pr.elites.includes(id)) return;
+    const key = id === 'slagheart' ? 'ashen' : 'frost', seal = this.W.pois.seals[key];
+    if (!seal || Math.hypot(seal.arena.x - ptx, seal.arena.y - pty) > 20) return;
+    const e = new Elite(id, seal.arena.x * TILE + 8, seal.arena.y * TILE + 8, { hpMult: g.diff.enemyHp });
+    e.state = 'spawn'; e.timer = 0.9;
+    if (!findFreeSpot(this.map, e, 5)) return;
+    this.spawnEnemy(e);
+    this.spawn(new Particles(e.x, e.y, { count: 24, color: id === 'slagheart' ? ['#ff7030', '#ffd060', '#3a2a2a'] : ['#e0f8ff', '#ffffff', '#a8c8e0'], speed: 90, life: 0.8 }));
+    g.cam.shake(3, 0.5);
+    g.audio.sfx('boss', { pitch: 1.2 });
+    g.showBanner(e.name.split(',')[0], id === 'slagheart' ? 'Guardian of the firewall' : 'Leader of the pale pack');
   }
 
   groupCleared(def) {
     const g = this.game, pr = g.state.progress;
-    if (def.kind === 'wild' || def.kind === 'patrol') { def.down = true; def.downAt = performance.now(); return; }
+    if (def.kind === 'wild' || def.kind === 'patrol' || def.kind === 'relic') { def.down = true; def.downAt = performance.now(); return; }
     if (pr.cleared.includes(def.id)) return;
     pr.cleared.push(def.id);
     if (def.kind === 'camp') {
@@ -332,6 +400,7 @@ export class OverworldArea extends Area {
     for (let ty = t0y; ty <= t1y; ty++) for (let tx = t0x; tx <= t1x; tx++) {
       if (Math.hypot(tx * TILE + 8 - x, ty * TILE + 8 - y) > r + 8) continue;
       if (this.map.getDeco(tx, ty) === D.BUSH) this.cutBush(tx, ty);
+      if (this.map.get(tx, ty) === T.VENT) { this.capVent(tx, ty); continue; }
       if (this.map.get(tx, ty) !== T.CRACKED) continue;
       const gate = W.pois.gates.find((q) => q.x === tx && q.y === ty);
       this.map.set(tx, ty, gate ? T.ROAD : W.ground[ty * W.w + tx]);
@@ -348,9 +417,58 @@ export class OverworldArea extends Area {
     }
   }
 
+  capVent(tx, ty) {
+    const g = this.game, pr = g.state.progress;
+    const v = this.W.pois.relics.vents.find((q) => q.x === tx && q.y === ty);
+    this.map.set(tx, ty, T.ASH);
+    this.spawn(new Particles(tx * TILE + 8, ty * TILE + 8, { count: 26, color: ['#ff7030', '#ffd060', '#5a4a4a', '#2a2222'], speed: 90, life: 0.9, up: 50 }));
+    g.audio.sfx('gate', { pitch: 0.7 });
+    g.cam.shake(3, 0.3);
+    if (!v || pr.relics.includes(v.id)) return;
+    pr.relics.push(v.id);
+    const n = this.W.pois.relics.vents.filter((q) => pr.relics.includes(q.id)).length;
+    g.toast(`The vent collapses in on itself. (${n}/${this.W.pois.relics.vents.length} capped)`);
+    g.questEvent({ type: 'relic', kind: 'vents', id: v.id });
+  }
+
+  lightBeacon(b) {
+    const g = this.game, pr = g.state.progress;
+    if (pr.relics.includes(b.id)) { g.message('The old beacon roars with Kindler fire. You can feel its warmth from here.', 'Signal Beacon'); return; }
+    if (!g.state.tools.gloves) { g.message('A great stone beacon, capped with a slab of ancient ice. It would take a giant to lift it.', 'Signal Beacon'); return; }
+    pr.relics.push(b.id);
+    const x = b.x * TILE + 8, y = b.y * TILE + 8;
+    this.spawn(new Particles(x, y - 8, { count: 22, color: ['#e0f8ff', '#ffffff', '#a8c8e0'], speed: 80, life: 0.7 }));
+    this.spawn(new Particles(x, y - 16, { count: 18, color: ['#ff9030', '#ffd060', '#fff0c0'], speed: 50, life: 1, up: 60 }));
+    g.audio.sfx('lift'); g.audio.sfx('shrine');
+    g.cam.shake(2, 0.25);
+    const n = this.W.pois.relics.beacons.filter((q) => pr.relics.includes(q.id)).length;
+    g.toast(`You heave the ice cap aside and the beacon blazes to life! (${n}/${this.W.pois.relics.beacons.length} lit)`);
+    g.questEvent({ type: 'relic', kind: 'beacons', id: b.id });
+  }
+
   interact() {
     if (super.interact()) return true;
     const g = this.game, p = g.player, W = this.W;
+    const ft0 = p.frontTile(), deco0 = this.map.getDeco(ft0.x, ft0.y), tile0 = this.map.get(ft0.x, ft0.y);
+    if (deco0 === D.LOOKOUT) {
+      const l = W.pois.lookouts.find((q) => q.x === ft0.x && q.y === ft0.y);
+      if (l && g.state.quest.main === l.id) g.reachLookout(l.id);
+      else g.message(l?.id === 'windcrest' ? 'A Kindler cairn on the Windcrest, its banner snapping in the wind. You can see the whole north from here.' : 'The old watchtower creaks in the wind. From the top you can see clear to the Vault.', l?.id === 'windcrest' ? 'The Windcrest' : 'Watchtower');
+      return true;
+    }
+    if (deco0 === D.BEACON) { const b = W.pois.relics.beacons.find((q) => q.x === ft0.x && q.y === ft0.y); if (b) this.lightBeacon(b); return true; }
+    if (deco0 === D.ALTAR) { g.message(g.state.progress.relics.includes(W.pois.relics.leaves.find((q) => q.x === ft0.x && q.y === ft0.y)?.id) ? 'An empty leaf-shrine, its moss pressed flat where the bronze leaf lay.' : 'A leaf-shrine of the Kindlers, overgrown and broken open. Thorn-beasts have been nesting here.', 'Leaf-shrine'); return true; }
+    if (tile0 === T.VENT) { g.message('A magma vent, spitting heat straight up into the sky. A bomb thrown down its throat might bring it crashing in.', 'Magma Vent'); return true; }
+    if (tile0 === T.SEAL) {
+      const key = Object.keys(W.pois.seals).find((k) => W.pois.seals[k].tiles.some((t) => t.x === ft0.x && t.y === ft0.y));
+      if (key === 'verdant' && g.state.quest.main === 'thornwall') { g.breakSeal('verdant'); return true; }
+      g.message({
+        verdant: 'A wall of black thorns, thick as your arm and still growing. Your blade can\'t even scratch them. They part for no one... no one without the Sigil.',
+        ashen: 'A wall of roaring fire, taller than a house. It doesn\'t burn down; it burns up, fed from somewhere deep below.',
+        frost: 'A wall of ancient blue ice. Your reflection stares back at you, warped and tiny. Nothing short of Kindler fire will melt this.',
+      }[key] || 'An unnatural barrier bars the way.', { verdant: 'Thornwall', ashen: 'Firewall', frost: 'Ice Wall' }[key]);
+      return true;
+    }
     const cache = this.entities.find((e) => e instanceof Cache && Math.hypot(e.x - p.x, e.y - p.y) < 16);
     if (cache) { g.digCache(cache); return true; }
     const dig = this.entities.find((e) => e instanceof DigSpot && Math.hypot(e.x - p.x, e.y - p.y) < 18);

@@ -75,6 +75,7 @@ export function conversation(game, npc) {
 function mainLines(game, npc, c) {
   const W = game.world, s = game.state, d = npc.data, { S, N, home, out, cls, stage, page, event } = c;
   const scout = N('outpost', 'scout');
+  const vol = S('volcanic'), snw = S('snow');
   if (d.role === 'elder' && d.settlementId === 'home') {
     if (stage === 'wake') {
       event();
@@ -86,15 +87,25 @@ function mainLines(game, npc, c) {
     }
     const hint = {
       scout: `Scout ${scout.name} waits at ${out.name}. Follow the road ${dirWord(home.center, out.center)}.`,
+      lookout: `${scout.name} sent you up the old watchtower? Good. You can't fight what you haven't seen.`,
       camp: `${scout.name} needs that camp cleared before they'll trust anyone near the Vault.`,
       sigil: `Go back to ${scout.name}. If the camp is gone, they'll keep their word.`,
-      vault: 'The Verdant Vault waits in the deep woods. The warden there charges like a bull — let it break itself against the walls, then strike.',
+      leaves: 'Three leaves of green bronze. The Kindlers made the Sigil so that no single thief could carry the forest\'s door away. Clever. Inconvenient, but clever.',
+      thornwall: 'Take the leaves to the thornwall. The Sigil remembers what it is, even in pieces. So do you.',
+      vault: 'The Verdant Vault waits in the deep woods. The warden there charges like a bull: let it break itself against the walls, then strike.',
       smith: `A shard! Feel how warm it is... and it does not burn you, does it? Take it to ${N('home', 'smith').name} at the forge. Ember-fire is a smith's business.`,
       ashpass: `The ash wastes lie past the cracked ridge beyond ${S('desert').name}. The captain there knows the way.`,
       ridge: 'Break the ridge. Bombs, child. That is what they are for.',
+      cinderwatch: `Past the ridge there is an outpost, ${vol.name}, that never once let its fires go out. Ask them how to reach the Reliquary.`,
+      vents: 'The earth itself is feeding that firewall. Starve it.',
+      slagheart: 'Something lives in that fire. Be quick on your feet.',
       reliquary: 'The Reliquary\'s warden is all fire and fury. It must stop to breathe sometime.',
-      frostpass: `With gloves like those you could move mountains — or the boulders choking the northern pass. Ask the keeper of ${S('mountain').name}.`,
-      boulder: 'Lift that boulder and climb. The Sanctuary lies in the snow beyond.',
+      frostpass: `With gloves like those you could move mountains, or the boulders choking the northern pass. Ask the keeper of ${S('mountain').name}.`,
+      boulder: 'Lift that boulder and climb.',
+      rimewatch: `High in the snows there is an outpost called ${snw.name}. Hardy folk. They'll know what the Sovereign has done.`,
+      windcrest: 'The Windcrest! I climbed it once, when I was young and foolish. You can see the whole north from up there.',
+      beacons: 'The old beacons. We lit them for festivals, before the frost. Light them for us again.',
+      frostfang: 'Wolves follow the strongest. Show them who that is.',
       sanctuary: 'The Rime Sovereign is quick as a blizzard. Make it miss, and make it pay.',
       end: 'The Hearth holds, for now. The last shard lies under the western fane, and when the waters fall we will need you again. Until then, the realm is yours to wander.',
     }[stage];
@@ -103,30 +114,29 @@ function mainLines(game, npc, c) {
   if (d.role === 'scout' && d.settlementId === 'outpost') {
     const camp = W.pois.camps.find((q) => q.quest);
     const where = camp ? dirWord(out.center, camp) : 'out';
-    if (stage === 'scout' && camp && s.progress.cleared.includes(camp.id)) {
-      event();
-      return [
-        page(`From ${home.name}? The elder sent word you'd come. Wait... that warband camp ${where} of here went quiet this morning. That was you?`),
-        page('Then you have earned this twice over. Talk to me again when you are ready for the Vault.'),
-      ];
-    }
+    const tower = W.pois.lookouts.find((l) => l.id === 'lookout');
     if (stage === 'scout') {
       event();
       return [
         page(`From ${home.name}? The elder sent word you'd come. Good. The forest has gone wrong: thorns grow across the trails overnight, and the wolves run in packs too big to feed.`),
-        page(`A ${FAMILIES[0].names.brute} warband made camp ${where} of here, right on the way. Nobody reaches the Vault while they hold that ground. Clear the camp and I'll trust you with the sigil.`),
+        page('And the Vault... the Vault is choked. A wall of living thorns grew around it in a single night. Nothing gets in. Nothing gets out.'),
+        page(`Don't take my word for it. Climb the old watchtower ${tower ? dirWord(out.center, tower) : 'down the road'} of here and look for yourself. I've marked it on your map.`),
       ];
     }
-    if (stage === 'camp') return [page(`The camp is ${where} of the outpost — I marked it on your map. Watch the archers; they hang back.`)];
+    if (stage === 'lookout') return [page('The watchtower. Go on, climb it. You need to see what we\'re up against.')];
+    if (stage === 'camp') return [page(`The warband camp is ${where} of the outpost, right on the way. Their warchief, Gorrak, is twice the size of the rest. Watch the archers; they hang back.`)];
     if (stage === 'sigil') {
       event();
       game.audio.sfx('levelup');
       return [
-        page('You actually did it. The road is quiet for the first time in a month.'),
-        page(`Here — the Verdant Sigil. The Vault's door answers to it. The Vault itself lies ${dirWord(out.center, W.pois.dungeons.verdant.front)}, deeper in the trees. I've marked it on your map.`),
+        page('You beat Gorrak? Then the road is quiet for the first time in a month. Now, listen.'),
+        page('The thornwall has a key. The Verdant Sigil. My order kept it for three hundred years, split into three bronze leaves in three leaf-shrines, so no thief could carry it off whole.'),
+        page('The warband raided the shrines. The leaves are still out there, but the thorn-beasts nest around them now. Bring all three back together at the thornwall and the Sigil will remember what it is. I\'ve marked the shrines on your map.'),
       ];
     }
-    if (stage === 'vault') return [page('The Vault is close. Use the shrine outside to rest before you go in.')];
+    if (stage === 'leaves') return [page('Three leaves, three shrines. Each one guarded. Come back alive, will you? I hate paperwork.')];
+    if (stage === 'thornwall') return [page('You have them all? Then go to the thornwall. Hold them up. The forest knows its own.')];
+    if (stage === 'vault') return [page('The thorns are gone? Then the Vault is open. Use the shrine outside to rest before you go in.')];
     return [page('The forest breathes easier since Thornmaw fell. I can hear birds again.')];
   }
   if (d.role === 'smith' && d.settlementId === 'home' && stage === 'smith') {
@@ -142,15 +152,41 @@ function mainLines(game, npc, c) {
       event();
       return [
         page('Ash falls in our wells, and at night the eastern ridge glows like a coal. It split the same night your Hearth guttered.'),
-        page('Too sheer to climb, but it rings hollow. Blast it and the wastes are yours, Ember help you. The Reliquary lies beyond. I\'ve marked the weak spot on your map.'),
+        page(`Too sheer to climb, but it rings hollow. Blast it and the wastes are yours, Ember help you. Find ${vol.name} beyond it, if anyone's still alive there. I\'ve marked the weak spot on your map.`),
       ];
+    }
+    if (d.settlementId === 'volcanic') {
+      if (stage === 'cinderwatch') {
+        event();
+        return [
+          page('Someone came through the ridge? From the green country? Sit, sit. Don\'t touch the walls, they\'re hot.'),
+          page('You want the Reliquary. Everyone who comes here wants the Reliquary. It\'s behind a wall of fire now, taller than a house, and it doesn\'t burn down. It burns up.'),
+          page('Three magma vents feed it from below. We\'ve watched them for weeks. Cap them, and the wall starves. Bombs would do it, if you had any. ...You have bombs. Of course you have bombs. I\'ve marked the vents on your map.'),
+        ];
+      }
+      if (stage === 'vents') return [page('Three vents. Throw the bomb right into the throat of each one. And mind the hounds; they like the warmth as much as we don\'t.')];
+      if (stage === 'slagheart') return [page('The wall is guttering, and something is crawling out of it. The old songs called it Slagheart. Hit it hard, and don\'t stand in the drips.')];
     }
     if (d.settlementId === 'mountain' && stage === 'frostpass') {
       event();
       return [
         page('The frost came down from the Sanctuary the same night your Hearth guttered. Since then, boulders have choked the northern pass. No team of oxen can shift them.'),
-        page('Gloves, you say? Titan-forged? Then go. I\'ve marked the pass on your map. And if you meet the Sovereign... it was gentle, once.'),
+        page(`Gloves, you say? Titan-forged? Then go. ${snw.name} lies beyond the pass; they'll know more. I\'ve marked the pass on your map. And if you meet the Sovereign... it was gentle, once.`),
       ];
+    }
+    if (d.settlementId === 'snow') {
+      const crest = W.pois.lookouts.find((l) => l.id === 'windcrest');
+      if (stage === 'rimewatch') {
+        event();
+        return [
+          page('A visitor! Up here! Get by the fire before your nose falls off.'),
+          page('The Sanctuary is sealed in a wall of ice as thick as this hall is long. The Sovereign raised it the night the cold came. Nothing we have even scratches it.'),
+          page(`But there's an old way. Three signal beacons stand on the heights. Their fire was Kindler fire, and Kindler fire could melt it. They're frozen solid now. Climb the Windcrest ${crest ? dirWord(snw.center, crest) : 'nearby'} of here and you'll spot them.`),
+        ];
+      }
+      if (stage === 'windcrest') return [page('The Windcrest. Up, up, always up. You\'ll see the beacons from the top.')];
+      if (stage === 'beacons') return [page('Those beacons are capped with old ice, heavy as a cart. You\'d need hands like a giant\'s. ...Huh. You do have hands like a giant\'s.')];
+      if (stage === 'frostfang') return [page('The wolves are howling at the ice wall. Frostfang leads them. Pale as the snow and twice as cold. Go carefully.')];
     }
   }
   return null;
@@ -300,8 +336,8 @@ function roleLines(game, npc, c) {
         swamp: 'The water rises a hand\'s breadth every week. Our grandparents said a ward slept beneath the western fane. Now it dreams of drowning us. When you\'re ready, we\'ll need you.',
         desert: 'Ash falls in our wells now. Whatever burns beyond the ridge, its anger reaches even here.',
         mountain: 'Stone remembers. The frost on the high roads isn\'t natural — it comes from the Sanctuary.',
-        volcanic: 'You broke the ridge? Ha! The Cinder Warden flits between pillars. Wait for it to vent its heat — that\'s when it\'s soft.',
-        snow: 'Few make it up here. The Rime Sovereign dashes like the blizzard itself. Dodge aside and let it hit the walls.',
+        volcanic: 'The Cinder Warden flits between pillars, they say. Wait for it to vent its heat; that\'s when it\'s soft.',
+        snow: 'The Rime Sovereign dashes like the blizzard itself. Dodge aside and let it hit the walls.',
       }[d.settlementId] || 'Keep the roads safe, traveler.')];
     case 'ranger':
       return [page('The scout\'s been out on that ridge for days. Stubborn as an old oak.')];

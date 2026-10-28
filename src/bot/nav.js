@@ -2,7 +2,8 @@
 import { astar, bfsDistances } from '../core/grid.js';
 import { TILE, T, TILE_INFO, D } from '../world/tiles.js';
 
-const AVOID = new Set([T.PIT, T.LAVA, T.HAZARD, T.THORNS]);
+// Cave mouths and doors whisk you somewhere else, so paths only use them as the destination.
+const AVOID = new Set([T.PIT, T.LAVA, T.HAZARD, T.THORNS, T.CAVE, T.DOOR]);
 
 // A bush the sword can clear (the overworld assumes you will).
 export const isBush = (map, x, y) => map.inBounds(x, y) && map.deco[y * map.w + x] === D.BUSH && !TILE_INFO[map.tiles[y * map.w + x]].solid && !map.extraSolid[y * map.w + x];

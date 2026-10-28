@@ -24,7 +24,7 @@ export function newGameState(seed, classId) {
     quest: { main: 'wake', tracked: 'main', flags: {}, side: {}, kills: {} },
     progress: {
       opened: [], cleared: [], caches: [], gates: [], bosses: [], solved: [], unlocked: [], keys: {},
-      visited: {}, dungeonMaps: [], fog: '', shards: 0, revealed: [], lore: [],
+      visited: {}, dungeonMaps: [], fog: '', shards: 0, revealed: [], lore: [], seals: [], relics: [], elites: [],
     },
     location: { area: 'interior', id: 'home', x: null, y: null },
     respawn: { area: 'overworld', x: null, y: null, label: 'home' },

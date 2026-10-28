@@ -25,6 +25,7 @@ export class Cutscene {
     this.ctx = opts.ctx || {};
     this.letterbox = !!opts.letterbox;
     this.autoplay = !!opts.autoplay; // movie mode: dialogue advances on its own
+    this.liveFx = !!opts.liveFx;     // keep particles moving in the frozen world
     this.hint = opts.hint || 'Enter: next · Esc: skip';
     this.bars = 0;
     this.leaving = 0;     // >0 while fading out of the current shot
@@ -49,6 +50,8 @@ export class Cutscene {
     if (!s) return;
     if (s.sfx) game.audio.sfx(s.sfx);
     if (s.music) game.audio.playMusic(s.music);
+    if (s.run) s.run(game);
+    if (s.shake && !s.art && game.cam && this.ctx.shake !== false) game.cam.shake(s.shake, 0.8);
   }
 
   advance(game) {
@@ -91,6 +94,8 @@ export class Cutscene {
     const s = this.shot;
     if (!s) { this.finish(game); return; }
     this.t += dt;
+    // In-engine shots can steer the camera: a slow pan toward `look` (world pixels).
+    if (s.look && game.cam && game.area?.map) game.cam.follow(s.look.x, s.look.y, game.area.map.pixelW, game.area.map.pixelH, dt * 0.22);
     if (s.spirit) this.spiritA = Math.min(1, this.spiritA + dt * (s.fadeSpirit ? 0 : 1.2));
     if (s.fadeSpirit) this.spiritA = Math.max(0, this.spiritA - dt * 0.8);
     if (s.text && this.chars < s.text.length) {
@@ -126,6 +131,11 @@ export class Cutscene {
     }
     const cam = game.cam;
     if (s.spotlight && game.area?.boss) drawDarkness(g, cam, [{ x: game.area.boss.x, y: game.area.boss.y - 6, r: 64 }], 0.72 * this.bars);
+    if (s.glow && game.player && cam) {
+      const r = 18 + Math.min(1, this.t) * 26 + Math.sin(this.total * 6) * 3;
+      g.fillStyle = `rgba(${s.glow},0.22)`; g.beginPath(); g.arc(game.player.x - cam.left, game.player.y - cam.top - 10, r, 0, Math.PI * 2); g.fill();
+      g.fillStyle = `rgba(${s.glow},0.5)`; g.beginPath(); g.arc(game.player.x - cam.left, game.player.y - cam.top - 18, 4 + Math.sin(this.total * 9), 0, Math.PI * 2); g.fill();
+    }
     if (s.gloam) {
       g.fillStyle = 'rgba(24,6,36,0.55)'; g.fillRect(0, 0, 480, 270);
       tendrils(g, this.total, 0.45, 0.9);
