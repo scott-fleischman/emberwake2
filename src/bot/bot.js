@@ -235,9 +235,12 @@ export class Bot {
     if (!this.reach || this.reach.area !== a || this.time - this.reach.t > 0.5) {
       this.reach = { area: a, t: this.time, map: reachMap(a.map, tileOf(p.x, p.y)) };
     }
+    // Fights are leashed to where they began, so kiting foes can't drag us across the map.
+    const at = this.fightAt && this.time - this.fightAt.t < 1.5 ? this.fightAt : { x: p.x, y: p.y };
     return list.filter((e) => {
       const d = Math.hypot(e.x - p.x, e.y - p.y);
       if ((ignore.get(e) || 0) > this.time) return false;
+      if (!e.elite && Math.hypot(e.x - at.x, e.y - at.y) > 165) return false;
       if (e === this.engaged && d < 120) return true; // stay on a target once engaged
       if (!e.aggro || d > (e.elite ? 170 : 110)) return false;
       const t = tileOf(e.x, e.y), r = this.reach.map[t.y * a.map.w + t.x];
@@ -262,6 +265,8 @@ export class Bot {
   combat() {
     const list = this.threats();
     if (!list.length) { this.calm = null; return false; }
+    const p = this.g.player;
+    this.fightAt = this.fightAt && this.time - this.fightAt.t < 1.5 ? { ...this.fightAt, t: this.time } : { x: p.x, y: p.y, t: this.time };
     // Juggling several foes resets each give-up timer; if nobody takes damage for a while, move on.
     const a = this.g.area, hp = list.reduce((t, e) => t + e.hp, 0);
     if (!this.calm || hp < this.calm.hp) this.calm = { hp, t: 0 };

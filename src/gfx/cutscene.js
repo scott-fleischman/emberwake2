@@ -292,7 +292,7 @@ export class Cutscene {
       });
       if (this.typed && s.wait && !this.autoplay && Math.floor(this.total * 3) % 2 === 0) text(u, '▾', 452, 262, { size: 8, color: UI.gold });
     }
-    if (TOUCH.active && !this.noSkip) return;
+    if (TOUCH.active) return; // touch screens get buttons, not key hints
     if (this.skipArm > 0) text(u, 'Press Esc again to skip', 472, 12, { size: 6.5, align: 'right', color: UI.gold });
     else if (this.total < 4) { u.globalAlpha = 0.6; text(u, this.hint, 472, 12, { size: 5.5, align: 'right', color: UI.dim }); u.globalAlpha = 1; }
   }
