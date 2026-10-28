@@ -563,6 +563,28 @@ export function isPassable(W, x, y, tools = {}) {
   return !(DECO_SOLID.has(d) && d !== D.BUSH);
 }
 
+// Lava isn't solid, but it burns and throws you back, so it is no path. Anything that can only be
+// reached across lava gets a cooled crust trail: the cheapest route from home, lava turned to ash.
+export function coolLavaPaths(W) {
+  const tools = { bombs: true, gloves: true };
+  const safe = (x, y) => isPassable(W, x, y, tools) && W.tiles[at(W, x, y)] !== T.LAVA;
+  const sites = [
+    ...W.pois.caves.map((c) => c.front), ...W.pois.camps.map((c) => c.entry), ...W.pois.spawns,
+    ...W.pois.caches.map((c) => (c.kind === 'glint' ? c : { x: c.x, y: c.y + 2 })),
+    ...Object.values(W.pois.dungeons).map((d) => d.front), W.pois.spire.front,
+    ...W.settlements.map((st) => st.center),
+    ...[...W.pois.lore, ...W.pois.shrines, ...W.pois.signs].map((p) => N4.map(([dx, dy]) => ({ x: p.x + dx, y: p.y + dy })).find((q) => isPassable(W, q.x, q.y, tools)) || p),
+  ];
+  let reach = bfsDistances(W.w, W.h, safe, [W.pois.home]);
+  for (const t of sites) {
+    if (!inside(W, t.x, t.y) || reach[at(W, t.x, t.y)] >= 0 || !isPassable(W, t.x, t.y, tools)) continue;
+    const path = astar(W.w, W.h, (ax, ay, nx, ny) => (!isPassable(W, nx, ny, tools) ? Infinity : W.tiles[at(W, nx, ny)] === T.LAVA ? 25 : 1), W.pois.home, t);
+    if (!path) continue;
+    for (const q of path) if (W.tiles[at(W, q.x, q.y)] === T.LAVA) { W.tiles[at(W, q.x, q.y)] = T.ASH; W.ground[at(W, q.x, q.y)] = T.ASH; }
+    reach = bfsDistances(W.w, W.h, safe, [W.pois.home]);
+  }
+}
+
 export function reachableFrom(W, start, tools = {}) {
   return bfsDistances(W.w, W.h, (x, y) => isPassable(W, x, y, tools), [start]);
 }
@@ -771,6 +793,7 @@ export function stageContent(W) {
     if (pts.some((p) => nearSettlement(p.x, p.y, 10))) continue;
     W.pois.patrols.push({ id: `pt${W.pois.patrols.length}`, path: pts, biome: W.biome[at(W, pts[0].x, pts[0].y)] });
   }
+  coolLavaPaths(W);
   // Clear decoration from anything solid it ended up on.
   for (let i = 0; i < W.w * W.h; i++) if (TILE_INFO[W.tiles[i]].solid && W.deco[i]) W.deco[i] = D.NONE;
 }

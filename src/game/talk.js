@@ -103,6 +103,13 @@ function mainLines(game, npc, c) {
   if (d.role === 'scout' && d.settlementId === 'outpost') {
     const camp = W.pois.camps.find((q) => q.quest);
     const where = camp ? dirWord(out.center, camp) : 'out';
+    if (stage === 'scout' && camp && s.progress.cleared.includes(camp.id)) {
+      event();
+      return [
+        page(`From ${home.name}? The elder sent word you'd come. Wait... that warband camp ${where} of here went quiet this morning. That was you?`),
+        page('Then you have earned this twice over. Talk to me again when you are ready for the Vault.'),
+      ];
+    }
     if (stage === 'scout') {
       event();
       return [

@@ -128,3 +128,13 @@ test('each world gets the handwritten quests, and their spots are reachable', as
     }
   }
 });
+
+test('clearing the quest camp before meeting the scout does not strand the quest', () => {
+  const s = newGameState('quests', 'rogue');
+  s.quest.main = 'scout';
+  s.progress.cleared.push(W.pois.camps.find((c) => c.quest).id);
+  advanceMain(s, W, { type: 'cleared', quest: true });
+  assert.equal(s.quest.main, 'scout');
+  advanceMain(s, W, { type: 'talk', role: 'scout', settlementId: 'outpost' });
+  assert.equal(s.quest.main, 'sigil');
+});

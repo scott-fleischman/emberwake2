@@ -52,7 +52,10 @@ export function advanceMain(state, W, ev) {
     case 'sanctuary': if (ev.type === 'boss' && ev.kind === 'rime') go('drowned'); break;
     case 'drowned': if (talk('elder', 'home')) go('end'); break;
   }
-  // Tools gained out of order (e.g., gates opened early) should not strand the quest.
+  // Things done out of order (a camp cleared before the scout asked, gates opened early)
+  // should not strand the quest.
+  const questCamp = W.pois.camps.find((c) => c.quest);
+  if (q.main === 'camp' && questCamp && state.progress.cleared.includes(questCamp.id)) q.main = 'sigil';
   if (q.main === 'ridge' && state.progress.gates.includes('volcanic')) { reveal(state, 'dungeon:ashen'); q.main = 'reliquary'; }
   if (q.main === 'boulder' && state.progress.gates.includes('snow')) { reveal(state, 'dungeon:frost'); q.main = 'sanctuary'; }
   return { advanced: q.main !== before, stage: q.main, notes };

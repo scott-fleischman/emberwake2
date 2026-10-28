@@ -3,6 +3,7 @@ import { Area } from './areas.js';
 import { Entity, Chest, Particles, FloatText } from './entities.js';
 import { Enemy } from './enemies.js';
 import { createBoss } from './bosses.js';
+import { findFreeSpot } from './physics.js';
 import { WARDENS, MEMORIES, bossIntroShots, bossOutroShots, learnLore } from '../data/story.js';
 import { meleeTargets } from './combat.js';
 import { generateDungeon, ROOM_W, ROOM_H, DOOR_TILES, DUNGEON_INFO } from '../world/dungeons.js';
@@ -192,11 +193,12 @@ export class DungeonArea extends Area {
   key(room = this.room) { return `${this.id}:${room.id}`; }
   get solved() { return this.pr.solved.includes(this.key()); }
 
-  // The puzzle room a door belongs to, if either side of it holds a puzzle.
+  // The puzzle room a door leads out of. Door ids are `${parent}-${child}`, and a puzzle only ever
+  // gates the way onward from its own room: a locked door *into* a puzzle room is just locked.
   puzzleRoomFor(door, roles = PUZZLE_ROLES) {
     if (!door.id || door.id === 'exit') return null;
-    const [a, b] = door.id.split('-').map(Number);
-    return [this.byId.get(a), this.byId.get(b)].find((r) => r && roles.has(r.role)) || null;
+    const room = this.byId.get(Number(door.id.split('-')[0]));
+    return room && roles.has(room.role) ? room : null;
   }
 
   isDoorSealed(door) {
@@ -397,7 +399,7 @@ export class DungeonArea extends Area {
       this.shut = false;
       if (!this.boss) {
         this.pr.cleared.push(`d:${this.key()}`);
-        for (const c of this.entities) if (c instanceof Chest && c.hidden && c.contents !== 'shard') { c.hidden = false; this.map.extraSolid[Math.floor(c.y / TILE) * ROOM_W + Math.floor(c.x / TILE)] = 1; this.spawn(new Particles(c.x, c.y, { count: 14, color: '#ffe080', speed: 50, life: 0.6 })); g.audio.sfx('chest'); }
+        for (const c of this.entities) if (c instanceof Chest && c.hidden && c.contents !== 'shard') { this.revealChest(c); this.spawn(new Particles(c.x, c.y, { count: 14, color: '#ffe080', speed: 50, life: 0.6 })); g.audio.sfx('chest'); }
         g.audio.sfx('puzzle');
       }
       this.applyDoors();
@@ -503,6 +505,13 @@ export class DungeonArea extends Area {
     return false;
   }
 
+  // A chest appearing out of thin air must not trap whoever is standing where it lands.
+  revealChest(c) {
+    c.hidden = false;
+    this.map.extraSolid[Math.floor(c.y / TILE) * ROOM_W + Math.floor(c.x / TILE)] = 1;
+    findFreeSpot(this.map, this.game.player, 4);
+  }
+
   onBossDefeated(boss) {
     const g = this.game, pr = this.pr;
     if (!pr.bosses.includes(this.id)) {
@@ -518,7 +527,7 @@ export class DungeonArea extends Area {
     this.portalActive = true;
     this.shut = false;
     this.applyDoors();
-    for (const c of this.entities) if (c instanceof Chest && c.hidden) { c.hidden = false; this.map.extraSolid[Math.floor(c.y / TILE) * ROOM_W + Math.floor(c.x / TILE)] = 1; }
+    for (const c of this.entities) if (c instanceof Chest && c.hidden) this.revealChest(c);
     g.audio.playMusic('victory');
     const celebrate = () => {
       g.showBanner('Warden Quieted', 'A return seal awakens. Claim the Ember Shard.');

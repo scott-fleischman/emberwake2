@@ -229,3 +229,37 @@ function checkTimed(r, where) {
   assert.ok(fromGate >= 12 && fromGate <= 18, `${where} switch distance ${fromGate}`);
   assert.ok(Math.abs(duration - (fromGate * 16 / 100 + 0.5)) < 0.01, `${where} duration ${duration}`);
 }
+
+test('every dungeon can be walked to its warden under the runtime door rules', async () => {
+  const { makeApp } = await import('../tools/headless.mjs');
+  const { GameScene } = await import('../src/scenes/game.js');
+  const { newGameState } = await import('../src/game/state.js');
+  const app = await makeApp();
+  for (const seed of ['d1', 'ember123', 'fen77', 'quests', 'zz9']) {
+    const game = new GameScene(app, newGameState(seed, 'swordsman'));
+    for (const id of ['verdant', 'ashen', 'frost']) {
+      game.enterDungeon(id);
+      const a = game.area, pr = game.state.progress;
+      // Explore like a player: rooms you stand in get their puzzle solved and chests looted,
+      // locked doors take a key, sealed doors open only once their puzzle is solved.
+      const seen = new Set([a.dungeon.entranceId]);
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const rid of [...seen]) {
+          const room = a.byId.get(rid);
+          if (room.puzzle && !pr.solved.includes(`${id}:${rid}`)) { pr.solved.push(`${id}:${rid}`); changed = true; }
+          for (const o of room.objects) if (o.type === 'chest' && o.contents === 'key' && !pr.opened.includes(`d:${id}:${rid}:chest`)) { pr.opened.push(`d:${id}:${rid}:chest`); pr.keys[id] = (pr.keys[id] || 0) + 1; changed = true; }
+          for (const door of Object.values(room.doors)) {
+            if (door.to === null || seen.has(door.to) || a.isDoorSealed(door)) continue;
+            if (door.type === 'locked' && !pr.unlocked.includes(`${id}:${door.id}`)) {
+              if (!pr.keys[id]) continue;
+              pr.keys[id]--; pr.unlocked.push(`${id}:${door.id}`);
+            }
+            seen.add(door.to); changed = true;
+          }
+        }
+      }
+      assert.ok(seen.has(a.dungeon.bossId), `${seed}/${id}`);
+    }
+  }
+});

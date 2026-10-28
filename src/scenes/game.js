@@ -189,7 +189,7 @@ export class GameScene {
     const top = this.uiStack[this.uiStack.length - 1];
     if (top) {
       top.update(dt, this);
-      if (top.done) { const i = this.uiStack.indexOf(top); if (i >= 0) this.uiStack.splice(i, 1); }
+      if (this.uiStack.some((ui) => ui.done)) this.uiStack = this.uiStack.filter((ui) => !ui.done);
       return;
     }
     if (this.deathT > 0) { this.updateDeath(dt); return; }

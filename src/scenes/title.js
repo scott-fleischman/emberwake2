@@ -52,12 +52,24 @@ export class TitleScene {
     const items = [];
     if (app.store.has()) items.push({ label: 'Continue', onSelect: () => app.continueGame() });
     items.push({ label: 'New Game', onSelect: () => { this.enterSelect(); } });
+    items.push({ label: 'Cutscene Theater (debug)', onSelect: () => app.startTheater() });
+    items.push({ label: 'Watch Autoplay (debug)', onSelect: () => this.ui.push(this.autoplayMenu()) });
     items.push({ label: 'Combat Arena (debug)', onSelect: () => app.startArena() });
     items.push({ label: 'Terrain Viewer (debug)', onSelect: () => app.startViewer() });
     items.push({ label: 'Options', onSelect: () => this.ui.push(app.optionsMenu()) });
     items.push({ label: 'Controls', onSelect: () => this.ui.push(controlsMenu()) });
     this.items = items;
     this.sel = 0;
+  }
+
+  autoplayMenu() {
+    const app = this.app, o = this.auto || (this.auto = { classId: 'swordsman' });
+    const cycle = (d) => { o.classId = CLASS_ORDER[(CLASS_ORDER.indexOf(o.classId) + d + CLASS_ORDER.length) % CLASS_ORDER.length]; };
+    return new Menu('Watch Autoplay', [
+      { label: 'Any% speedrun', detail: 'Straight down the main quest: elder to the third warden.', onSelect: () => app.startAutoplay({ mode: 'any', classId: o.classId }) },
+      { label: '100% run', detail: 'Every side quest, lore page, cave, cache and dungeon chest.', onSelect: () => app.startAutoplay({ mode: 'full', classId: o.classId }) },
+      { label: 'Class', value: () => `${CLASSES[o.classId].name}  ◂▸`, onLeft: () => cycle(-1), onRight: () => cycle(1), onSelect: () => cycle(1) },
+    ], { width: 250, footer: 'A fresh random world each time. Never touches your save.' });
   }
 
   enterSelect() {

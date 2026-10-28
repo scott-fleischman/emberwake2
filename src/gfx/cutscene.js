@@ -24,6 +24,8 @@ export class Cutscene {
     this.music = opts.music || null;
     this.ctx = opts.ctx || {};
     this.letterbox = !!opts.letterbox;
+    this.autoplay = !!opts.autoplay; // movie mode: dialogue advances on its own
+    this.hint = opts.hint || 'Enter: next · Esc: skip';
     this.bars = 0;
     this.leaving = 0;     // >0 while fading out of the current shot
     this.skipArm = 0;     // >0 after the first Esc press
@@ -35,6 +37,7 @@ export class Cutscene {
   get typed() { const s = this.shot; return !s || !s.text || this.chars >= s.text.length; }
 
   holdTime(s) {
+    if (this.autoplay && s.wait) return 1.6 + (s.text ? s.text.length * 0.035 : 1);
     if (s.hold !== undefined) return s.hold;
     return 1.5 + (s.text ? s.text.length * 0.03 : 1);
   }
@@ -101,7 +104,7 @@ export class Cutscene {
       else this.advance(game);
       return;
     }
-    if (this.typed && !s.wait && this.t > (s.text ? s.text.length / CPS : 0) + this.holdTime(s)) this.advance(game);
+    if (this.typed && (!s.wait || this.autoplay) && this.t > (s.text ? s.text.length / CPS : 0) + this.holdTime(s)) this.advance(game);
   }
 
   // Pixel layer: painted panels, or effects over the frozen world.
@@ -172,9 +175,9 @@ export class Cutscene {
         const jx = s.shakeText ? (Math.random() - 0.5) * 0.8 : 0, jy = s.shakeText ? (Math.random() - 0.5) * 0.8 : 0;
         text(u, l, 240 + jx, top + 8 + k * lh + jy, { size, align: 'center', family: s.speaker ? undefined : SERIF, color: s.speaker ? UI.text : s.color || '#f4ead8' });
       });
-      if (this.typed && s.wait && Math.floor(this.total * 3) % 2 === 0) text(u, '▾', 452, 262, { size: 8, color: UI.gold });
+      if (this.typed && s.wait && !this.autoplay && Math.floor(this.total * 3) % 2 === 0) text(u, '▾', 452, 262, { size: 8, color: UI.gold });
     }
     if (this.skipArm > 0) text(u, 'Press Esc again to skip', 472, 12, { size: 6.5, align: 'right', color: UI.gold });
-    else if (this.total < 4) { u.globalAlpha = 0.6; text(u, 'Enter: next · Esc: skip', 472, 12, { size: 5.5, align: 'right', color: UI.dim }); u.globalAlpha = 1; }
+    else if (this.total < 4) { u.globalAlpha = 0.6; text(u, this.hint, 472, 12, { size: 5.5, align: 'right', color: UI.dim }); u.globalAlpha = 1; }
   }
 }

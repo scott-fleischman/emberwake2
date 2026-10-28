@@ -64,3 +64,18 @@ test('gate tiles are cracked walls and boulders on ridges', () => {
   const types = W.pois.gates.map((g) => W.tiles[g.y * W.w + g.x]).sort();
   assert.deepEqual(types, [T.CRACKED, T.BOULDER].sort());
 });
+
+test('nothing worth visiting sits behind lava', async () => {
+  const { T } = await import('../src/world/tiles.js');
+  const { isPassable } = await import('../src/world/overworld.js');
+  const { bfsDistances } = await import('../src/core/grid.js');
+  for (const seed of ['quests', 'ember123', 'lava1', 'lava2', 'ash9']) {
+    const W = generateOverworld(seed);
+    const safe = (x, y) => isPassable(W, x, y, { bombs: true, gloves: true }) && W.tiles[y * W.w + x] !== T.LAVA;
+    const reach = bfsDistances(W.w, W.h, safe, [W.pois.home]);
+    const near = (p) => [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => reach[(p.y + dy) * W.w + p.x + dx] >= 0);
+    for (const c of W.pois.caves) assert.ok(near(c.front), `${seed} cave ${c.id}`);
+    for (const l of W.pois.lore) assert.ok(near(l), `${seed} stone ${l.id}`);
+    for (const c of W.pois.camps) assert.ok(near(c.entry), `${seed} camp ${c.id}`);
+  }
+});

@@ -10,6 +10,8 @@ import { GameScene } from './scenes/game.js';
 import { ArenaScene } from './scenes/arena.js';
 import { ViewerScene } from './scenes/viewer.js';
 import { IntroScene } from './scenes/intro.js';
+import { TheaterScene } from './scenes/theater.js';
+import { AutoplayScene } from './scenes/autoplay.js';
 
 function safeStorage() {
   try { const s = window.localStorage; s.getItem('probe'); return s; } catch { return undefined; }
@@ -134,6 +136,8 @@ class App {
     this.scene.toast('Welcome back.');
   }
   startArena() { this.scene = new ArenaScene(this); }
+  startTheater() { this.scene = new TheaterScene(this); }
+  startAutoplay(opts) { this.scene = new AutoplayScene(this, opts); }
   startViewer() { this.scene = new ViewerScene(this); }
 }
 

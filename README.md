@@ -14,7 +14,7 @@ Then open http://localhost:5173. There are no dependencies to install; it is pla
 npm test
 ```
 
-The tests cover world-generation reachability over many seeds, dungeon solvability, caves, quests, dialog, save/load, combat rules, and physics.
+The tests cover world-generation reachability over many seeds, dungeon solvability under the real door rules, caves, quests, dialog, save/load, combat rules, physics, and a full autoplay run of the game.
 
 ## Controls
 
@@ -44,8 +44,22 @@ The tests cover world-generation reachability over many seeds, dungeon solvabili
 - **Progression.** Classes differ in stats, gear, rhythm, and resources. Cave chests hold convergence items (steel sword, bow, ember tome, kite shield). Shrine talents include a class-flavored opening. Also included: food, hidden caches (the rogue spots them from farther away), shops, an inn, a seer, procedural side quests, and heart pieces.
 - **Saving.** Save shrines, sleeping in your home bed, and save from anywhere via the pause menu. Death costs 20% of your coins and returns you to your last shrine.
 - **Debug modes** on the title screen:
+  - Cutscene Theater: every story scene back to back like a film (prologue, the elder, each warden in its real boss room, the ending). Enter advances, Esc twice skips a scene, Backspace leaves.
+  - Watch Autoplay: a bot plays a fresh random world while you watch, as an **Any%** speedrun or a **100%** run, with a speedrun timer and splits. ←/→ change speed (1× to 32×), Space pauses, Esc quits. Pick the class in the menu.
   - Combat Arena: spawn archetypes or bosses, swap class or enemy family, and watch a balance log.
   - Terrain Viewer: inspect any seed layer by layer.
+
+## Autoplay: proof the game can be beaten
+
+The bot in `src/bot/` plays through the real input system: every frame it holds or taps the same keys you would. It never teleports and is never invincible. What it has is route knowledge, like a practiced speedrunner. It reads the map, quest markers and enemy telegraphs; blocks or sidesteps attacks; solves every puzzle type; and skips cutscenes. The 100% route keeps taking the nearest unfinished job it can reach: side quests, standing stones, books, caves, caches, camps, and full dungeon clears.
+
+Run it headless (no browser) on any seed and class:
+
+```bash
+node tools/autoplay.mjs ember123 swordsman any
+```
+
+The last argument is `any` or `full`. The run is deterministic for a given seed, class and mode. It prints splits, the finish time and falls, or where it stalled.
 
 ## Known deviations from the spec
 
