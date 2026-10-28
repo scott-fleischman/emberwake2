@@ -43,6 +43,7 @@ set(T.COUNTER, info(true));
 set(T.DWALL, info(true));
 set(T.PIT, info(false, { pit: true }));
 set(T.GATE, info(true));
+set(T.DDOOR, info(true));
 set(T.CWALL, info(true));
 set(T.HAZARD, info(false, { damage: 1 }));
 set(T.DWATER, info(true, { water: true }));

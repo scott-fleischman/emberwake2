@@ -1,0 +1,353 @@
+// Conversations, shops and reward handling. Builds Dialog pages from world + quest state.
+import { advanceMain, reveal, sideStatus, grantReward } from './quests.js';
+import { FAMILIES } from '../data/enemies.js';
+import { CAVE_REWARDS } from '../data/items.js';
+import { TALENTS, talentCost } from '../data/talents.js';
+import { CLASSES } from '../data/classes.js';
+import { Menu } from '../gfx/ui.js';
+import { makeRng } from '../core/rng.js';
+import { BIOME_NAMES } from '../world/tiles.js';
+
+const dirWord = (from, to) => {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const ns = dy < -Math.abs(dx) * 0.4 ? 'north' : dy > Math.abs(dx) * 0.4 ? 'south' : '';
+  const ew = dx < -Math.abs(dy) * 0.4 ? 'west' : dx > Math.abs(dy) * 0.4 ? 'east' : '';
+  return ns && ew ? `${ns}${ew}` : ns || ew || 'nearby';
+};
+
+const CLASS_TIP = {
+  swordsman: 'trust that buckler of yours. Hold L to raise it, and let them break on it',
+  mage: 'mind your mana. A firebolt (K) at the right moment is worth ten wild ones',
+  ranger: 'keep your distance. Arrows (K) do their best work before teeth reach you',
+  rogue: 'keep those sharp eyes open. You notice glints the rest of us walk past',
+};
+
+export function conversation(game, npc) {
+  const W = game.world, s = game.state, d = npc.data;
+  const S = (id) => W.settlements.find((q) => q.id === id);
+  const N = (sid, role) => W.npcs.find((q) => q.settlementId === sid && q.role === role);
+  const home = S('home'), out = S('outpost');
+  const me = d.name;
+  const page = (text, options) => ({ speaker: me, text, options });
+  const cls = CLASSES[s.classId].name;
+  const stage = s.quest.main;
+  const event = () => game.questEvent({ type: 'talk', role: d.role, settlementId: d.settlementId });
+
+  // Rescued wanderer in a cave
+  if (d.lost) {
+    const q = game.sideQuests.find((x) => x.id === d.lost);
+    if (q && s.quest.side[q.id] === 'active') {
+      s.quest.side[q.id] = 'ready';
+      npc.leaving = true;
+      return [page('You found me! I got turned around in the dark and every passage looked the same. I can see the way out now — thank you. Tell them I\'m coming home!')];
+    }
+    return [page('I\'ll be right behind you.')];
+  }
+
+  // Delivery targets
+  const delivery = game.sideQuests.find((q) => q.type === 'deliver' && q.targetNpc === d.id && sideStatus(s, q) === 'active');
+  if (delivery) {
+    const giver = W.npcs.find((n) => n.id === delivery.giverId);
+    s.quest.side[delivery.id] = 'done';
+    const got = grantReward(s, delivery.reward);
+    game.audio.sfx('coin');
+    return [page(`${delivery.parcel[0].toUpperCase()}${delivery.parcel.slice(1)} from ${giver.name}? Oh, at last. Here — for your trouble. (Received ${got}.)`)];
+  }
+
+  // Main quest voices
+  const mainPages = mainLines(game, npc, { S, N, home, out, cls, stage, page, event });
+  if (mainPages) return mainPages;
+
+  // Side quests
+  const sq = game.sideQuests.find((q) => q.giverId === d.id);
+  if (sq) {
+    const st = sideStatus(s, sq);
+    if (st === 'available') {
+      return [page(sq.text, [
+        { label: 'I\'ll do it.', onSelect: () => { s.quest.side[sq.id] = 'active'; game.onSideQuestAccepted(sq); return { pages: [page(acceptLine(sq))] }; } },
+        { label: 'Not right now.', onSelect: () => ({ pages: [page('I understand. If you change your mind, I\'ll be here.')] }) },
+      ])];
+    }
+    if (st === 'ready') {
+      s.quest.side[sq.id] = 'done';
+      const got = grantReward(s, sq.reward);
+      game.refreshDerived();
+      game.audio.sfx('levelup');
+      return [page(`${thanksLine(sq)} Please, take this. (Received ${got}.)`)];
+    }
+    if (st === 'active') return [page(reminderLine(sq, game))];
+  }
+  return roleLines(game, npc, { S, N, home, out, page, stage });
+}
+
+function mainLines(game, npc, c) {
+  const W = game.world, s = game.state, d = npc.data, { S, N, home, out, cls, stage, page, event } = c;
+  const scout = N('outpost', 'scout');
+  if (d.role === 'elder' && d.settlementId === 'home') {
+    if (stage === 'wake') {
+      event();
+      return [
+        page(`${cls}! You're awake — good. The Hearth Ember guttered again in the night. I have tended it for forty years and never seen it burn so low.`),
+        page('The Ember keeps the four wards quiet. Without its warmth they have turned feral: the woods choke, the ash plains burn, the peaks freeze over, and the western fane drowns.'),
+        page(`Each ward guards a shard of the Ember. Bring the shards home and the flame can be rekindled. Begin with the forest — Scout ${scout.name} keeps watch at ${out.name}, ${dirWord(home.center, out.center)} of here.`),
+        page(`One more thing: ${CLASS_TIP[s.classId]}. Press M to see your map; I've marked the way.`),
+      ];
+    }
+    if (stage === 'drowned') {
+      event();
+      return [
+        page('Three shards... Look at the Hearth. It burns brighter than it has in my lifetime. The woods have stopped creeping and the frost is lifting from the high roads.'),
+        page('But the fourth ward sank with the western fane, and the water there still rises. When it falls — and it will — we will need you again.'),
+        page(`Rest now, ${cls}. You have done what no one else could.`),
+      ];
+    }
+    const hint = {
+      scout: `Scout ${scout.name} waits at ${out.name}. Follow the road ${dirWord(home.center, out.center)}.`,
+      camp: `${scout.name} needs that camp cleared before they'll trust anyone near the Vault.`,
+      sigil: `Go back to ${scout.name}. If the camp is gone, they'll keep their word.`,
+      vault: 'The Verdant Vault waits in the deep woods. The warden there charges like a bull — let it break itself against the walls, then strike.',
+      smith: `A shard! Feel how warm it is. Take it to ${N('home', 'smith').name} at the forge — ember-fire is a smith's business.`,
+      ashpass: `The ash wastes lie past the cracked ridge beyond ${S('desert').name}. The captain there knows the way.`,
+      ridge: 'Break the ridge. Bombs, child. That is what they are for.',
+      reliquary: 'The Reliquary\'s warden is all fire and fury. It must stop to breathe sometime.',
+      frostpass: `With gloves like those you could move mountains — or the boulders choking the northern pass. Ask the keeper of ${S('mountain').name}.`,
+      boulder: 'Lift that boulder and climb. The Sanctuary lies in the snow beyond.',
+      sanctuary: 'The Rime Sovereign is quick as a blizzard. Make it miss, and make it pay.',
+      end: 'The Ember holds, for now. Go where you like — the realm is yours to wander.',
+    }[stage];
+    return [page(hint)];
+  }
+  if (d.role === 'scout' && d.settlementId === 'outpost') {
+    const camp = W.pois.camps.find((q) => q.quest);
+    const where = camp ? dirWord(out.center, camp) : 'out';
+    if (stage === 'scout') {
+      event();
+      return [
+        page(`From ${home.name}? The elder sent word you'd come. I've watched the Vault road for weeks.`),
+        page(`A ${FAMILIES[0].names.brute} warband made camp ${where} of here, right on the way. Nobody reaches the Vault while they hold that ground. Clear the camp and I'll trust you with the sigil.`),
+      ];
+    }
+    if (stage === 'camp') return [page(`The camp is ${where} of the outpost — I marked it on your map. Watch the archers; they hang back.`)];
+    if (stage === 'sigil') {
+      event();
+      game.audio.sfx('levelup');
+      return [
+        page('You actually did it. The road is quiet for the first time in a month.'),
+        page(`Here — the Verdant Sigil. The Vault's door answers to it. The Vault itself lies ${dirWord(out.center, W.pois.dungeons.verdant.front)}, deeper in the trees. I've marked it on your map.`),
+      ];
+    }
+    if (stage === 'vault') return [page('The Vault is close. Use the shrine outside to rest before you go in.')];
+    return [page('The forest breathes easier since Thornmaw fell. I can hear birds again.')];
+  }
+  if (d.role === 'smith' && d.settlementId === 'home' && stage === 'smith') {
+    event();
+    return [
+      page('Is that... an Ember shard? Hold it still — yes. With heat like this I can finally pack proper blasting powder.'),
+      page('There. A Bomb Satchel, with eight to start. Select bombs with Q and throw with K. Cracked rock won\'t stand a chance.'),
+      page(`They say the ridge past ${S('desert').name} cracked when the ash vents woke. Ask the captain there.`),
+    ];
+  }
+  if (d.role === 'keeper') {
+    if (d.settlementId === 'desert' && stage === 'ashpass') {
+      event();
+      return [page('The ridge east of here split when the vents woke — too sheer to climb, but it rings hollow. Blast it and the wastes are yours, Ember help you. The Reliquary lies beyond. I\'ve marked the weak spot on your map.')];
+    }
+    if (d.settlementId === 'mountain' && stage === 'frostpass') {
+      event();
+      return [page('The northern pass has been choked by boulders since the frost came down. No team of oxen can shift them. Gloves, you say? Titan-forged? Then go — I\'ve marked the pass on your map.')];
+    }
+  }
+  return null;
+}
+
+const acceptLine = (q) => ({ fetch: 'Thank you! It glints when the light catches it.', hunt: 'Good. Come back when it\'s done.', deliver: 'Here it is. Mind you don\'t drop it.', rescue: 'Please hurry. Caves are no place to be lost.' }[q.type]);
+const thanksLine = (q) => ({ fetch: `My ${q.item}! I thought it was gone for good.`, hunt: 'The roads feel safer already.', rescue: `${q.kin[0].toUpperCase()}${q.kin.slice(1)} came stumbling home, filthy and grinning. Thank you.`, deliver: 'Thank you.' }[q.type]);
+
+function reminderLine(q, game) {
+  if (q.type === 'hunt') return `${game.state.quest.kills[q.id] || 0} of ${q.count} so far. Keep at it.`;
+  if (q.type === 'fetch') return `My ${q.item} should be out past the roads. I marked where I think I dropped it.`;
+  if (q.type === 'deliver') return 'Did you deliver the parcel yet?';
+  return `Please, find ${q.kin}. The cave is marked on your map.`;
+}
+
+const RUMORS = [
+  (W, s) => `They say ${W.regions[s.biome].name} hides caves with old steel inside. Worth a look, if you've got a light heart.`,
+  () => 'Shrines remember you. Rest at one and you\'ll wake there if the worst happens — lighter in the purse, mind.',
+  () => 'If you see a glint where there shouldn\'t be one, dig. Folk used to hide supplies from tax collectors.',
+  () => 'Hungry? Press F to eat a ration. It heals slow, but it heals.',
+  () => 'Enemies telegraph. Brutes rear back, wolves crouch, archers take aim. Watch, then move.',
+  () => 'Lock on with R and you\'ll keep your eyes on the worst of them while you circle.',
+  () => 'Sprint with Shift. Dodge with Space — you can slip right through an attack if you time it.',
+];
+
+function roleLines(game, npc, c) {
+  const W = game.world, s = game.state, d = npc.data, { S, page, stage } = c;
+  const here = S(d.settlementId);
+  const rng = makeRng(`${W.seed}/${d.id}/${Math.floor(game.time / 30)}`);
+  switch (d.role) {
+    case 'merchant':
+      return [page('Supplies for the road? Good prices, fair weights.', [
+        { label: 'Browse wares', onSelect: () => { game.openShop('merchant', d); } },
+        { label: 'Leave', onSelect: () => {} },
+      ])];
+    case 'smith':
+      return [page('Steel and leather — that\'s my trade. What do you need?', [
+        { label: 'See upgrades', onSelect: () => { game.openShop('smith', d); } },
+        { label: 'Leave', onSelect: () => {} },
+      ])];
+    case 'innkeeper':
+      return [page('Welcome, traveler. A warm bed or a hot meal?', [
+        { label: 'Rest (8 coins)', onSelect: () => game.buy(8, () => { const dd = game.derived; Object.assign(s.player, { hp: dd.maxHp, mana: dd.maxMana, stamina: dd.maxStamina }); game.audio.sfx('shrine'); }, 'You sleep soundly and wake restored.') },
+        { label: 'Hot meal to go (12 coins, +2 rations)', onSelect: () => game.buy(12, () => { s.player.food += 2; }, 'Two rations wrapped in cloth.') },
+        { label: 'Leave', onSelect: () => {} },
+      ])];
+    case 'seer':
+      return [page('The Ember speaks in smoke and sparks. For a few coins, I will listen on your behalf.', [
+        { label: 'A reading (15 coins)', onSelect: () => game.buy(15, () => {}, game.seerReading()) },
+        { label: 'What troubles the realm?', onSelect: () => ({ pages: [page('Four wards, four wardens, one flame between them. When the flame gutters, the wardens forget they were guardians. Remind them — gently or otherwise.')] }) },
+        { label: 'Leave', onSelect: () => {} },
+      ])];
+    case 'informant': {
+      const caves = W.pois.caves.filter((q) => q.biome === here.biome && !(s.progress.revealed || []).includes(`cave:${q.id}`));
+      if (caves.length) {
+        const cv = rng.pick(caves);
+        reveal(s, `cave:${cv.id}`);
+        return [page(`Psst. There's a cave ${dirWord(here.center, cv)} of here. Folk say something shiny sits at the back of it. I've marked it on your map — you didn't hear it from me.`)];
+      }
+      return [page(rng.pick(RUMORS)(W, here))];
+    }
+    case 'keeper':
+      return [page({
+        swamp: 'The water rises a hand\'s breadth every week. Our grandparents said a ward slept beneath the western fane. Now it dreams of drowning us. When you\'re ready, we\'ll need you.',
+        desert: 'Ash falls in our wells now. Whatever burns beyond the ridge, its anger reaches even here.',
+        mountain: 'Stone remembers. The frost on the high roads isn\'t natural — it comes from the Sanctuary.',
+        volcanic: 'You broke the ridge? Ha! The Cinder Warden flits between pillars. Wait for it to vent its heat — that\'s when it\'s soft.',
+        snow: 'Few make it up here. The Rime Sovereign dashes like the blizzard itself. Dodge aside and let it hit the walls.',
+      }[d.settlementId] || 'Keep the roads safe, traveler.')];
+    case 'ranger':
+      return [page('The scout\'s been out on that ridge for days. Stubborn as an old oak.')];
+    case 'elder':
+      return [page('Mind the Ember. Mind each other.')];
+    default:
+      return [page(rng.pick(RUMORS)(W, here))];
+  }
+}
+
+// ---------------------------------------------------------------- shops
+export function shopItems(game, kind) {
+  const s = game.state, d = game.derived, p = s.player;
+  const add = (label, cost, can, apply, detail) => ({ label, cost, can, apply, detail });
+  if (kind === 'merchant') {
+    return [
+      add('Ration', 10, () => true, () => { p.food++; }, 'Heals over time when eaten (F).'),
+      add('Arrows ×10', 15, () => s.gear.items.includes('bow') && p.arrows < d.maxArrows, () => { p.arrows = Math.min(d.maxArrows, p.arrows + 10); }, 'Requires a bow.'),
+      add('Throwing knives ×5', 15, () => s.gear.items.includes('knives') && p.knives < d.maxKnives, () => { p.knives = Math.min(d.maxKnives, p.knives + 5); }, 'Requires knives.'),
+      add('Bombs ×4', 20, () => s.tools.bombs && p.bombs < d.maxBombs, () => { p.bombs = Math.min(d.maxBombs, p.bombs + 4); }, 'Requires the Bomb Satchel.'),
+      add('Mana tonic', 15, () => p.mana < d.maxMana, () => { p.mana = Math.min(d.maxMana, p.mana + 25); }, 'Restores 25 mana at once.'),
+      add('Heart piece', 120, () => !s.upgrades.boughtPiece, () => { s.upgrades.boughtPiece = true; grantReward(s, { heartPiece: 1 }); game.refreshDerived(); }, 'Two pieces make a new heart. Only one for sale.'),
+    ];
+  }
+  return [
+    add('Kite Shield', 90, () => s.gear.shield !== 'kite', () => { s.gear.shield = 'kite'; }, 'Blocks a wider arc for less stamina. Hold L.'),
+    add('Steel Sword', 120, () => !s.gear.owned.includes('steelsword'), () => { s.gear.owned.push('steelsword'); s.gear.weapon = 'steelsword'; }, 'Hits harder. Swap weapons in the pause menu.'),
+    add('Deep Quiver', 60, () => s.upgrades.quiver < 2, () => { s.upgrades.quiver++; game.refreshDerived(); }, '+10 arrows and +5 knives carried.'),
+    add('Bomb Bag', 80, () => s.tools.bombs && s.upgrades.bombBag < 2, () => { s.upgrades.bombBag++; game.refreshDerived(); }, '+4 bombs carried.'),
+  ];
+}
+
+export function shopMenu(game, kind) {
+  const s = game.state;
+  const items = shopItems(game, kind);
+  return new Menu(kind === 'merchant' ? 'General Goods' : 'Smithy', items.map((it) => ({
+    label: it.label,
+    value: () => `${it.cost}c`,
+    detail: () => (it.can() ? it.detail : 'Unavailable — ' + it.detail),
+    disabled: () => !it.can() || s.player.coins < it.cost,
+    onSelect: () => { s.player.coins -= it.cost; it.apply(); game.audio.sfx('coin'); game.toast(`Bought ${it.label}.`); },
+  })), { width: 260, footer: () => `Coins: ${s.player.coins}` });
+}
+
+// ---------------------------------------------------------------- shrine & talents
+export function talentMenu(game, atShrine) {
+  const s = game.state;
+  const list = TALENTS.filter((t) => !t.cls || t.cls === s.classId);
+  const m = new Menu(`Talents — ${s.talents.points} point${s.talents.points === 1 ? '' : 's'}`, list.map((t) => ({
+    label: t.name,
+    value: () => `${s.talents.ranks[t.id] || 0}/${t.max}`,
+    detail: t.desc,
+    disabled: () => !atShrine || s.talents.points <= 0 || (s.talents.ranks[t.id] || 0) >= t.max,
+    onSelect: () => {
+      s.talents.points--;
+      s.talents.ranks[t.id] = (s.talents.ranks[t.id] || 0) + 1;
+      game.refreshDerived();
+      game.audio.sfx('levelup');
+      m.title = `Talents — ${s.talents.points} point${s.talents.points === 1 ? '' : 's'}`;
+    },
+  })), { width: 280, footer: atShrine ? 'Spend points to grow stronger.' : 'Talents can only be learned at a shrine.' });
+  return m;
+}
+
+export function shrineMenu(game, shrine) {
+  const s = game.state;
+  return new Menu('Ember Shrine', [
+    { label: 'Rest and save', detail: 'Restore health and set this shrine as your return point.', onSelect: () => game.shrineRest(shrine) },
+    { label: 'Learn talents', value: () => `${s.talents.points} pts`, onSelect: () => game.pushUI(talentMenu(game, true)) },
+    {
+      label: 'Offer coins', value: () => `${talentCost(s)}c`, detail: 'Trade coins for a talent point.',
+      disabled: () => s.player.coins < talentCost(s),
+      onSelect: () => { s.player.coins -= talentCost(s); s.talents.bought++; s.talents.points++; game.audio.sfx('levelup'); game.toast('The shrine accepts your offering. +1 talent point.'); },
+    },
+  ], { width: 240 });
+}
+
+// ---------------------------------------------------------------- rewards
+export function chestReward(game, contents) {
+  const s = game.state, p = s.player, d = game.derived;
+  switch (contents) {
+    case 'home': p.coins += 10; p.food += 1; if (s.classId === 'ranger') p.arrows += 5; if (s.classId === 'rogue') p.knives += 5; return 'Your old travel chest: 10 coins and a ration. A note on top reads: "The Elder asked for you. Don\'t dawdle."';
+    case 'camp': { const c = 15 + Math.floor(Math.random() * 16); p.coins += c; p.food += 1; refillAmmo(game, 0.5); return `The warband's stash: ${c} coins, a ration, and some ammunition.`; }
+    case 'key': s.progress.keys[game.area.id] = (s.progress.keys[game.area.id] || 0) + 1; game.audio.sfx('key'); return 'You found a small key! It will open one locked door in this place.';
+    case 'map': if (!s.progress.dungeonMaps.includes(game.area.id)) s.progress.dungeonMaps.push(game.area.id); return 'You found the vault map! Every room now appears on your minimap. (Press M for a larger view.)';
+    case 'heart': return `A heart piece! ${grantReward(s, { heartPiece: 1 }).includes('new heart') ? 'Two pieces fuse into a new heart!' : 'Find another to form a full heart.'}`;
+    case 'coins': p.coins += 30; return 'A pouch of 30 coins.';
+    case 'bombs': if (s.tools.bombs) { p.bombs = Math.min(d.maxBombs, p.bombs + 5); return 'Five bombs!'; } p.coins += 20; return 'A pouch of 20 coins.';
+    case 'arrows': refillAmmo(game, 1); return 'A bundle of ammunition.';
+    case 'shard': return `An Ember Shard pulses in your hands, warm as a heartbeat. (${s.progress.shards} of 4)`;
+    default: {
+      const r = CAVE_REWARDS[contents];
+      if (!r) { p.coins += 20; return '20 coins.'; }
+      switch (contents) {
+        case 'sword': if (!s.gear.owned.includes('steelsword')) s.gear.owned.push('steelsword'); s.gear.weapon = 'steelsword'; break;
+        case 'bow': if (!s.gear.items.includes('bow')) s.gear.items.push('bow'); else s.upgrades.quiver++; p.arrows += 15; break;
+        case 'tome': if (!s.gear.items.includes('firebolt')) s.gear.items.push('firebolt'); else s.upgrades.tomeMastery = true; break;
+        case 'shield': s.gear.shield = 'kite'; break;
+        case 'quiver': s.upgrades.quiver++; refillAmmo(game, 1); break;
+        case 'heart': s.upgrades.hearts++; break;
+        case 'coins': p.coins += 60; break;
+      }
+      game.refreshDerived();
+      if (contents === 'heart') p.hp = game.derived.maxHp;
+      return `${r.name}! ${r.text}`;
+    }
+  }
+}
+
+function refillAmmo(game, frac) {
+  const s = game.state, p = s.player, d = game.derived;
+  if (s.gear.items.includes('bow')) p.arrows = Math.min(d.maxArrows, p.arrows + Math.ceil(10 * frac));
+  if (s.gear.items.includes('knives')) p.knives = Math.min(d.maxKnives, p.knives + Math.ceil(6 * frac));
+  if (s.tools.bombs) p.bombs = Math.min(d.maxBombs, p.bombs + Math.ceil(3 * frac));
+  p.mana = Math.min(d.maxMana, p.mana + 15 * frac);
+}
+
+export function cacheReward(game, cache) {
+  const s = game.state, p = s.player;
+  const rng = makeRng(`${game.world.seed}/${cache.data.id}`);
+  const roll = rng.next();
+  if (roll < 0.15) return `A heart piece wrapped in oilcloth! ${grantReward(s, { heartPiece: 1 })}.`;
+  if (roll < 0.45) { const c = rng.int(15, 35); p.coins += c; return `A buried purse: ${c} coins.`; }
+  if (roll < 0.7) { p.food += 2; return 'Two well-wrapped rations.'; }
+  refillAmmo(game, 1.5);
+  p.coins += 10;
+  return `A forgotten supply bundle in the ${BIOME_NAMES[cache.data.biome].toLowerCase()}: ammunition and 10 coins.`;
+}

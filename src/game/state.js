@@ -16,7 +16,7 @@ export function newGameState(seed, classId) {
     classId,
     playTime: 0,
     player: { hp: c.maxHp, mana: c.maxMana, stamina: c.maxStamina, coins: c.coins, food: c.food, arrows: c.ammo.arrows, knives: c.ammo.knives, bombs: 0 },
-    gear: { weapon: c.weapon, shield: c.shield, items: [...c.items], selected: 0 },
+    gear: { weapon: c.weapon, owned: [c.weapon], shield: c.shield, items: [...c.items], selected: 0 },
     upgrades: { hearts: 0, heartPieces: 0, quiver: 0, bombBag: 0, tomeMastery: false },
     artifacts: [],
     tools: { bombs: false, gloves: false },
@@ -24,7 +24,7 @@ export function newGameState(seed, classId) {
     quest: { main: 'wake', flags: {}, side: {}, kills: {} },
     progress: {
       opened: [], cleared: [], caches: [], gates: [], bosses: [], solved: [], unlocked: [], keys: {},
-      visited: {}, dungeonMaps: [], fog: '', shards: 0,
+      visited: {}, dungeonMaps: [], fog: '', shards: 0, revealed: [],
     },
     location: { area: 'interior', id: 'home', x: null, y: null },
     respawn: { area: 'overworld', x: null, y: null, label: 'home' },

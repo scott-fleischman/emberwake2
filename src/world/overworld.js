@@ -356,6 +356,8 @@ function claimSite(W, site, margin = 3) {
     if (!inside(W, x, y) || isBorder(W, x, y)) continue;
     const i = y * W.w + x;
     W.reserved[i] = 1;
+    // Keep tall trees off the approach so canopies never bury people standing at doors.
+    if (W.deco[i] === D.TREE && x >= x0 - 2 && x < x0 + bw + 2 && y >= y0 - 1 && y < y0 + bh + 2) W.deco[i] = D.NONE;
     if (x >= x0 && x < x0 + bw && y >= y0 && y < y0 + bh) {
       W.elev[i] = level;
       if (W.ground[i] === T.RIDGE || LIQUID.has(W.ground[i])) W.ground[i] = GROUND[W.biome[i]];

@@ -94,6 +94,20 @@ export class Enemy extends Actor {
 
   idle(dt, ctx) {
     const map = ctx.map;
+    if (this.patrol) {
+      // Walk the road back and forth.
+      this.pi = this.pi ?? 0; this.pdir = this.pdir ?? 1;
+      const wp = this.patrol[this.pi];
+      const wx = wp.x - this.x, wy = wp.y - this.y;
+      if (Math.hypot(wx, wy) < 6) {
+        this.pi += this.pdir;
+        if (this.pi >= this.patrol.length || this.pi < 0) { this.pdir *= -1; this.pi += this.pdir * 2; }
+        this.pi = Math.max(0, Math.min(this.patrol.length - 1, this.pi));
+      } else this.moveDir(wx, wy, this.speed * 0.45, dt, map);
+      this.home = { x: this.x, y: this.y };
+      this.moving = true;
+      return;
+    }
     const hx = this.home.x - this.x, hy = this.home.y - this.y, hd = Math.hypot(hx, hy);
     if (hd > 40) { this.moveDir(hx, hy, this.speed * 0.8, dt, map); this.moving = true; return; }
     this.wanderT -= dt;

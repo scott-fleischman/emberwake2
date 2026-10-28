@@ -270,6 +270,7 @@ export class Pickup extends Entity {
       case 'mana': g.fillStyle = '#4a8ae8'; g.beginPath(); g.arc(x, y, 3.5, 0, TAU); g.fill(); R(g, x - 1, y - 2, 2, 2, '#c0e0ff'); break;
       case 'food': R(g, x - 3, y - 2, 6, 5, '#d0603a'); R(g, x - 2, y - 3, 4, 1, '#d0603a'); R(g, x - 2, y - 2, 2, 1, '#ffa080'); R(g, x, y - 5, 1, 2, '#5a3a20'); R(g, x + 1, y - 5, 2, 1, '#4a9a3a'); break;
       case 'bombs': g.fillStyle = '#24242c'; g.beginPath(); g.arc(x, y, 3.5, 0, TAU); g.fill(); R(g, x, y - 6, 1, 3, '#a08050'); break;
+      case 'quest': R(g, x - 3, y - 2, 6, 5, '#8a6a3a'); R(g, x - 2, y - 4, 4, 2, '#a08050'); R(g, x - 1, y, 2, 1, '#f0c850'); g.fillStyle = 'rgba(255,240,180,0.35)'; g.beginPath(); g.arc(x, y, 8 + Math.sin(this.t * 5), 0, TAU); g.fill(); break;
       case 'key': R(g, x - 1, y - 5, 3, 3, '#f0d050'); R(g, x, y - 2, 1, 6, '#f0d050'); R(g, x + 1, y + 1, 2, 1, '#f0d050'); R(g, x + 1, y + 3, 2, 1, '#f0d050'); g.fillStyle = 'rgba(255,230,120,0.3)'; g.beginPath(); g.arc(x, y, 7, 0, TAU); g.fill(); break;
     }
   }

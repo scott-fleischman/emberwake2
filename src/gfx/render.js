@@ -92,8 +92,10 @@ export class OverworldRenderer {
   }
 
   // Push tall decoration and building/landmark props within view into the y-sorted list.
-  collectTall(cam, list, time) {
+  collectTall(cam, list, time, player = null) {
     const m = this.map;
+    // Props that hide the player fade so they never lose sight of themselves.
+    const fadeIf = (px, py, w, h, sortY) => player && sortY > player.y + 4 && player.x - cam.left > px - 2 && player.x - cam.left < px + w + 2 && player.y - cam.top - 10 > py && player.y - cam.top - 14 < py + h;
     const L = cam.left, Tp = cam.top;
     const x0 = Math.max(0, Math.floor(L / TILE) - 1), x1 = Math.min(m.w - 1, Math.floor((L + cam.vw) / TILE) + 1);
     const y0 = Math.max(0, Math.floor(Tp / TILE) - 1), y1 = Math.min(m.h - 1, Math.floor((Tp + cam.vh) / TILE) + 2);
@@ -108,7 +110,8 @@ export class OverworldRenderer {
       const spr = decoSprite(d, m.biome[i], x, y, m.ground ? m.ground[i] : m.tiles[i]);
       if (!spr) continue;
       const px = x * TILE + 8 - (spr.width >> 1) - L, py = (y + 1) * TILE - spr.height - Tp;
-      list.push({ y: y * TILE + 14, draw: (g) => g.drawImage(spr, px, py) });
+      const fade = fadeIf(px, py, spr.width, spr.height - 8, y * TILE + 14);
+      list.push({ y: y * TILE + 14, draw: (g) => { if (fade) g.globalAlpha = 0.5; g.drawImage(spr, px, py); g.globalAlpha = 1; } });
       if (d === D.SHRINE) list.push({ y: y * TILE + 15, draw: (g) => drawEmberGlow(g, x * TILE + 8 - L, y * TILE - 8 - Tp, time) });
     }
     for (const p of this.props) {
@@ -116,7 +119,8 @@ export class OverworldRenderer {
       if (px > cam.vw + 16 || py > cam.vh + 16 || px + p.w * TILE < -16 || py + p.h * TILE < -120) continue;
       const spr = p.kind === 'building' ? buildingSprite(p) : landmarkSprite(p);
       const top = (p.y + p.h) * TILE - spr.height - Tp;
-      list.push({ y: (p.y + p.h) * TILE - 1, draw: (g) => g.drawImage(spr, px, top) });
+      const fade = fadeIf(px, top, spr.width, spr.height, (p.y + p.h) * TILE - 1);
+      list.push({ y: (p.y + p.h) * TILE - 1, draw: (g) => { if (fade) g.globalAlpha = 0.55; g.drawImage(spr, px, top); g.globalAlpha = 1; } });
     }
   }
 }
