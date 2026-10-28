@@ -79,3 +79,15 @@ test('nothing worth visiting sits behind lava', async () => {
     for (const c of W.pois.camps) assert.ok(near(c.entry), `${seed} camp ${c.id}`);
   }
 });
+
+test('no two outdoor villagers start on the same tile', () => {
+  for (const seed of ['hollow404', 'quests', 'ember9', 's1', 's2']) {
+    const W = generateOverworld(seed);
+    const seen = new Set();
+    for (const n of W.npcs.filter((x) => x.x !== null)) {
+      const k = `${n.x},${n.y}`;
+      assert.ok(!seen.has(k), `${seed}: ${n.name} shares ${k}`);
+      seen.add(k);
+    }
+  }
+});

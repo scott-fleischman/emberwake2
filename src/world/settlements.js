@@ -72,8 +72,12 @@ export function layoutSettlement(spec, box, rng) {
   const shrine = { x: x0 + plaza.x - 2, y: y0 + plaza.y + 1 };
   if (occ[(shrine.y - y0) * w + (shrine.x - x0)] === 1) { shrine.x = x0 + plaza.x + pw + 1; }
   const well = { x: x0 + plaza.x, y: y0 + plaza.y };
+  // Distinct standing spots, so two villagers never share a tile (one could never be spoken to).
   const spots = [];
-  for (let i = 0; i < 8; i++) spots.push({ x: x0 + plaza.x + rng.int(0, pw - 1), y: y0 + plaza.y + rng.pick([0, ph - 1]) });
+  for (let i = 0; i < 40 && spots.length < 8; i++) {
+    const sp = { x: x0 + plaza.x + rng.int(0, pw - 1), y: y0 + plaza.y + rng.pick([0, ph - 1]) };
+    if (!spots.some((q) => q.x === sp.x && q.y === sp.y)) spots.push(sp);
+  }
 
   return {
     buildings,

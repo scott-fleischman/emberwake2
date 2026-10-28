@@ -270,7 +270,8 @@ export class Bot {
     const g = this.g, p = g.player, map = g.area.map;
     const from = tileOf(p.x, p.y), to = tileOf(e.x, e.y);
     if (!this.chase || this.chase.e !== e || this.time - this.chase.t > 0.4) {
-      this.chase = { e, t: this.time, path: findPath(map, from, to) };
+      const portal = this.portalTile();
+      this.chase = { e, t: this.time, path: findPath(map, from, to, portal ? new Set([portal.y * map.w + portal.x]) : null) };
     }
     const path = this.chase.path;
     if (!path || path.length < 3) return null;
@@ -290,8 +291,16 @@ export class Bot {
     return g.state.player[it.ammo] > 2;
   }
 
+  // The return seal ends the dungeon the moment you touch it; only step on it on purpose.
+  portalTile() {
+    const a = this.g.area;
+    if (a.kind !== 'dungeon' || !a.portalActive) return null;
+    return a.room.objects.find((o) => o.type === 'portal') || null;
+  }
+
   bestMove(list, focus, desired, here) {
     const g = this.g, p = g.player, map = g.area.map;
+    const portal = this.portalTile();
     let best = null, bs = -Infinity;
     const step = 7;
     for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
@@ -299,6 +308,7 @@ export class Bot {
       const qx = p.x + (dx / l) * step, qy = p.y + (dy / l) * step;
       const qt = tileOf(qx, qy);
       if ((dx || dy) && !walkable(map, qt.x, qt.y)) continue;
+      if (portal && Math.hypot(qx - (portal.x * TILE + 8), qy - (portal.y * TILE + 8)) < 14) continue;
       const dz = this.danger(qx, qy, list);
       let s = -dz.lv * 12;
       s -= Math.abs(Math.hypot(focus.x - qx, focus.y - (qy - 2)) - desired) * 0.25;
@@ -330,6 +340,8 @@ export class Bot {
       repath -= this.dt;
       if (!path || repath <= 0) {
         const avoid = new Set(opts.avoid || []);
+        const portal = this.portalTile();
+        if (portal && (portal.x !== goal.x || portal.y !== goal.y)) avoid.add(portal.y * map.w + portal.x);
         for (const n of g.area.npcs()) {
           // Every tile whose centre we'd bump the villager from.
           for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
