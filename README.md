@@ -6,6 +6,8 @@ A browser prototype of the top-down 2.5D fantasy action-adventure described in [
 
 Every push to `main` that passes the tests deploys to GitHub Pages (`.github/workflows/pages.yml`): https://scott-fleischman.github.io/emberwake2/. Pull requests run the tests without deploying.
 
+It plays on iPhone and iPad too. Touch the screen and on-screen controls appear: a floating stick on the left (push it to the rim to sprint), HIT, ITEM, GUARD, ROLL and USE on the right, and Menu, Map, Bag, Swap, Eat and Lock buttons. Tap menus, dialogs and cutscenes to choose or read on. Sideways gives the biggest view; held upright, the game sits at the top with the controls below like a handheld. Add it to the home screen to play full screen.
+
 ## Run it
 
 ```bash
@@ -42,14 +44,27 @@ The tests cover world-generation reachability over many seeds, dungeon solvabili
 - **Kind to newcomers.** A Story difficulty (foes barely scratch you) is chosen on the new-game screen alongside Gentle, Normal and Hard. The new quests are low-combat, and pickups drift to you from farther away.
 
 - **Staged world generation.** Terrain and geology, then water, regional growth, settlements, roads, and finally encounters and quest content. There are six surface biomes plus caves. Cliffs can only be crossed at carved stairs. The volcanic and snow regions are ringed by ridges whose single road crossing needs bombs or the Titan Gloves.
-- **Main quest.** Wake at home, then: elder, scout, warband camp, Verdant Sigil, Verdant Vault (Thornmaw), the smith's bomb satchel, the cracked ridge, Ashen Reliquary (Cinder Warden, which gives the gloves), the boulder pass, Frostbound Sanctuary (Rime Sovereign), and back to the elder.
+- **Main quest, and the seals on every ward.** You can't walk up to any ward. A living seal rings its door until the quest chain before it breaks it, and each chain mixes different kinds of steps:
+  - **Verdant Vault (the thornwall).** Climb the old watchtower for a camera-pan vista, beat Gorrak the Warchief at the warband camp, then recover the three bronze leaves of the Verdant Sigil from guarded leaf-shrines. Raise them at the thornwall and it withers.
+  - **Ashen Reliquary (the firewall).** Get the bomb satchel from the smith, blast the cracked ridge, and find the captain of the last outpost in the wastes. Cap three magma vents with bombs to starve the wall, then beat Slagheart when it crawls out.
+  - **Frostbound Sanctuary (the ice wall).** The Cinder Warden gives you the Titan Gloves. Use them to lift the boulder pass, climb the Windcrest to spot the old signal beacons, and heave the ice off each beacon to light it. Then beat Frostfang, the Pale Alpha, and the wall shatters.
+
+  Each seal breaks in its own cutscene. Then you face the warden and return the shards to the elder.
+- **Bosses.** Thornmaw (a root-and-bark boar with a flytrap maw), the Cinder Warden (a floating obsidian knight with a living-flame crown) and the Rime Sovereign (a crystalline owl-queen) are big, animated, and have a pose for every attack. Each enters with a quake, a burst from the earth (or fire, or blizzard), a roaring close-up and a title slam. Phase changes flash and shockwave, and deaths crack apart in light.
+- **Living villages.** People breathe, blink and go about their trades. The smith hammers, the merchant beckons, the elder leans on a staff, and captains thump their spears. Every shop hangs a swinging sign with its trade's icon (anvil, potion, mug, crystal ball, crowned shield, arrows), and the same icons mark the doors on the map.
 - **Dungeons.** Rooms are generated from templates with seeded remixing. They include combat rooms that lock their doors, small keys and locked doors, timed gates, linked floor plates, ordered crystals, push/pull blocks, an antechamber fountain, a boss, and a return seal. Each dungeon has a minimap and a findable full map.
 - **Combat.** Four enemy archetypes: brutes, lungers, skirmishers, and ranged. Each telegraphs and has a recovery window, and attack tokens keep crowds readable. There are shields, dodge invulnerability, sprinting, lock-on, knockback, and spirit-poof defeats. Each boss has phases and its own punish window.
 - **Progression.** Classes differ in stats, gear, rhythm, and resources. Cave chests hold convergence items (steel sword, bow, ember tome, kite shield). Shrine talents include a class-flavored opening. Also included: food, hidden caches (the rogue spots them from farther away), shops, an inn, a seer, procedural side quests, and heart pieces.
 - **Saving.** Save shrines, sleeping in your home bed, and save from anywhere via the pause menu. Death costs 20% of your coins and returns you to your last shrine.
 - **Debug modes** on the title screen:
-  - Cutscene Theater: every story scene back to back like a film (prologue, the elder, each warden in its real boss room, the ending). Enter advances, Esc twice skips a scene, Backspace leaves.
-  - Watch Autoplay: a bot plays a fresh random world while you watch, as an **Any%** speedrun or a **100%** run, with a speedrun timer and splits. ←/→ change speed (1× to 32×), Space pauses, Esc quits. Pick the class in the menu.
+  - **Cutscene Theater.** Every story scene back to back like a film: the prologue, the elder, then for each ward its lookout vista, its seal breaking, and its warden's arrival and fall, then the ending.
+    - A bar of buttons steps to the previous or next scene, pauses, and sets the speed from 0.25× to 4×.
+    - Keys: ←/→ change scene, −/+ change speed, P pauses, Enter reads on, Backspace leaves.
+  - **Watch Autoplay.** A bot plays a fresh random world while you watch, as an **Any%** speedrun or a **100%** run, with a speedrun timer and splits.
+    - The buttons set the speed (0.5× to 32×) and pause the run.
+    - **Skip** fast-forwards to the next dungeon, then to its warden. **To the end** fast-forwards to the win.
+    - Keys: ←/→ speed, Space pause, N skip, End finish, Esc quit.
+    - Pick the class in the menu.
   - Combat Arena: spawn archetypes or bosses, swap class or enemy family, and watch a balance log.
   - Terrain Viewer: inspect any seed layer by layer.
 
