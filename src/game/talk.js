@@ -1,5 +1,7 @@
 // Conversations, shops and reward handling. Builds Dialog pages from world + quest state.
-import { advanceMain, reveal, sideStatus, grantReward } from './quests.js';
+import { reveal, sideStatus, grantReward, dirWord } from './quests.js';
+import { elderShots, stonesRead } from '../data/story.js';
+import { RIDDLES } from '../data/sidequests.js';
 import { FAMILIES } from '../data/enemies.js';
 import { CAVE_REWARDS } from '../data/items.js';
 import { TALENTS, talentCost } from '../data/talents.js';
@@ -8,12 +10,6 @@ import { Menu } from '../gfx/ui.js';
 import { makeRng } from '../core/rng.js';
 import { BIOME_NAMES } from '../world/tiles.js';
 
-const dirWord = (from, to) => {
-  const dx = to.x - from.x, dy = to.y - from.y;
-  const ns = dy < -Math.abs(dx) * 0.4 ? 'north' : dy > Math.abs(dx) * 0.4 ? 'south' : '';
-  const ew = dx < -Math.abs(dy) * 0.4 ? 'west' : dx > Math.abs(dy) * 0.4 ? 'east' : '';
-  return ns && ew ? `${ns}${ew}` : ns || ew || 'nearby';
-};
 
 const CLASS_TIP = {
   swordsman: 'trust that buckler of yours. Hold L to raise it, and let them break on it',
@@ -44,6 +40,15 @@ export function conversation(game, npc) {
     return [page('I\'ll be right behind you.')];
   }
 
+  // Letter carriers: the recipient writes back.
+  const letters = game.sideQuests.find((q) => q.type === 'letters' && q.targetNpc === d.id && sideStatus(s, q) === 'active');
+  if (letters) {
+    s.quest.side[letters.id] = 'ready';
+    game.audio.sfx('levelup');
+    const giver = W.npcs.find((n) => n.id === letters.giverId);
+    return [page(`A letter? From ${giver.name}? ${letters.reply}`), page(`(Received a reply for ${giver.name}.)`)];
+  }
+
   // Delivery targets
   const delivery = game.sideQuests.find((q) => q.type === 'deliver' && q.targetNpc === d.id && sideStatus(s, q) === 'active');
   if (delivery) {
@@ -61,21 +66,8 @@ export function conversation(game, npc) {
   // Side quests
   const sq = game.sideQuests.find((q) => q.giverId === d.id);
   if (sq) {
-    const st = sideStatus(s, sq);
-    if (st === 'available') {
-      return [page(sq.text, [
-        { label: 'I\'ll do it.', onSelect: () => { s.quest.side[sq.id] = 'active'; game.onSideQuestAccepted(sq); return { pages: [page(acceptLine(sq))] }; } },
-        { label: 'Not right now.', onSelect: () => ({ pages: [page('I understand. If you change your mind, I\'ll be here.')] }) },
-      ])];
-    }
-    if (st === 'ready') {
-      s.quest.side[sq.id] = 'done';
-      const got = grantReward(s, sq.reward);
-      game.refreshDerived();
-      game.audio.sfx('levelup');
-      return [page(`${thanksLine(sq)} Please, take this. (Received ${got}.)`)];
-    }
-    if (st === 'active') return [page(reminderLine(sq, game))];
+    const pages = sideQuestLines(game, sq, page);
+    if (pages) return pages;
   }
   return roleLines(game, npc, { S, N, home, out, page, stage });
 }
@@ -86,34 +78,25 @@ function mainLines(game, npc, c) {
   if (d.role === 'elder' && d.settlementId === 'home') {
     if (stage === 'wake') {
       event();
-      return [
-        page(`${cls}! You're awake — good. The Hearth Ember guttered again in the night. I have tended it for forty years and never seen it burn so low.`),
-        page('The Ember keeps the four wards quiet. Without its warmth they have turned feral: the woods choke, the ash plains burn, the peaks freeze over, and the western fane drowns.'),
-        page(`Each ward guards a shard of the Ember. Bring the shards home and the flame can be rekindled. Begin with the forest — Scout ${scout.name} keeps watch at ${out.name}, ${dirWord(home.center, out.center)} of here.`),
-        page(`One more thing: ${CLASS_TIP[s.classId]}. Press M to see your map; I've marked the way.`),
-      ];
+      return { cutscene: elderShots({ cls, elder: d.name, scout: scout.name, outpost: out.name, dir: dirWord(home.center, out.center), tip: CLASS_TIP[s.classId] }) };
     }
     if (stage === 'drowned') {
       event();
-      return [
-        page('Three shards... Look at the Hearth. It burns brighter than it has in my lifetime. The woods have stopped creeping and the frost is lifting from the high roads.'),
-        page('But the fourth ward sank with the western fane, and the water there still rises. When it falls — and it will — we will need you again.'),
-        page(`Rest now, ${cls}. You have done what no one else could.`),
-      ];
+      return [page('You did it. Three shards! Look how the Hearth leans toward them, like a cat toward a warm lap. Come. Let us give them back to the flame.')];
     }
     const hint = {
       scout: `Scout ${scout.name} waits at ${out.name}. Follow the road ${dirWord(home.center, out.center)}.`,
       camp: `${scout.name} needs that camp cleared before they'll trust anyone near the Vault.`,
       sigil: `Go back to ${scout.name}. If the camp is gone, they'll keep their word.`,
       vault: 'The Verdant Vault waits in the deep woods. The warden there charges like a bull — let it break itself against the walls, then strike.',
-      smith: `A shard! Feel how warm it is. Take it to ${N('home', 'smith').name} at the forge — ember-fire is a smith's business.`,
+      smith: `A shard! Feel how warm it is... and it does not burn you, does it? Take it to ${N('home', 'smith').name} at the forge. Ember-fire is a smith's business.`,
       ashpass: `The ash wastes lie past the cracked ridge beyond ${S('desert').name}. The captain there knows the way.`,
       ridge: 'Break the ridge. Bombs, child. That is what they are for.',
       reliquary: 'The Reliquary\'s warden is all fire and fury. It must stop to breathe sometime.',
       frostpass: `With gloves like those you could move mountains — or the boulders choking the northern pass. Ask the keeper of ${S('mountain').name}.`,
       boulder: 'Lift that boulder and climb. The Sanctuary lies in the snow beyond.',
       sanctuary: 'The Rime Sovereign is quick as a blizzard. Make it miss, and make it pay.',
-      end: 'The Ember holds, for now. Go where you like — the realm is yours to wander.',
+      end: 'The Hearth holds, for now. The last shard lies under the western fane, and when the waters fall we will need you again. Until then, the realm is yours to wander.',
     }[stage];
     return [page(hint)];
   }
@@ -123,7 +106,7 @@ function mainLines(game, npc, c) {
     if (stage === 'scout') {
       event();
       return [
-        page(`From ${home.name}? The elder sent word you'd come. I've watched the Vault road for weeks.`),
+        page(`From ${home.name}? The elder sent word you'd come. Good. The forest has gone wrong: thorns grow across the trails overnight, and the wolves run in packs too big to feed.`),
         page(`A ${FAMILIES[0].names.brute} warband made camp ${where} of here, right on the way. Nobody reaches the Vault while they hold that ground. Clear the camp and I'll trust you with the sigil.`),
       ];
     }
@@ -142,7 +125,7 @@ function mainLines(game, npc, c) {
   if (d.role === 'smith' && d.settlementId === 'home' && stage === 'smith') {
     event();
     return [
-      page('Is that... an Ember shard? Hold it still — yes. With heat like this I can finally pack proper blasting powder.'),
+      page('Is that... an Ember shard? It\'s humming. My grandmother swore the Kindlers could hear the shards sing. Hold it still. Yes. With heat like this I can finally pack proper blasting powder.'),
       page('There. A Bomb Satchel, with eight to start. Select bombs with Q and throw with K. Cracked rock won\'t stand a chance.'),
       page(`They say the ridge past ${S('desert').name} cracked when the ash vents woke. Ask the captain there.`),
     ];
@@ -150,31 +133,109 @@ function mainLines(game, npc, c) {
   if (d.role === 'keeper') {
     if (d.settlementId === 'desert' && stage === 'ashpass') {
       event();
-      return [page('The ridge east of here split when the vents woke — too sheer to climb, but it rings hollow. Blast it and the wastes are yours, Ember help you. The Reliquary lies beyond. I\'ve marked the weak spot on your map.')];
+      return [
+        page('Ash falls in our wells, and at night the eastern ridge glows like a coal. It split the same night your Hearth guttered.'),
+        page('Too sheer to climb, but it rings hollow. Blast it and the wastes are yours, Ember help you. The Reliquary lies beyond. I\'ve marked the weak spot on your map.'),
+      ];
     }
     if (d.settlementId === 'mountain' && stage === 'frostpass') {
       event();
-      return [page('The northern pass has been choked by boulders since the frost came down. No team of oxen can shift them. Gloves, you say? Titan-forged? Then go — I\'ve marked the pass on your map.')];
+      return [
+        page('The frost came down from the Sanctuary the same night your Hearth guttered. Since then, boulders have choked the northern pass. No team of oxen can shift them.'),
+        page('Gloves, you say? Titan-forged? Then go. I\'ve marked the pass on your map. And if you meet the Sovereign... it was gentle, once.'),
+      ];
     }
   }
   return null;
 }
 
-const acceptLine = (q) => ({ fetch: 'Thank you! It glints when the light catches it.', hunt: 'Good. Come back when it\'s done.', deliver: 'Here it is. Mind you don\'t drop it.', rescue: 'Please hurry. Caves are no place to be lost.' }[q.type]);
-function thanksLine(q) {
-  switch (q.type) {
-    case 'fetch': return `My ${q.item}! I thought it was gone for good.`;
-    case 'hunt': return 'The roads feel safer already.';
-    case 'rescue': return `${q.kin[0].toUpperCase()}${q.kin.slice(1)} came stumbling home, filthy and grinning. Thank you.`;
-    default: return 'Thank you.';
+// ---------------------------------------------------------------- side quest conversations
+const ACCEPT = {
+  fetch: 'Thank you! It glints when the light catches it.',
+  hunt: 'Good. Come back when it\'s done.',
+  deliver: 'Here it is. Mind you don\'t drop it.',
+  rescue: 'Please hurry. Caves are no place to be lost.',
+  pet: 'Thank you! Don\'t chase too hard, they spook easily. Just keep after them.',
+  gather: 'Wonderful. I\'ve marked the patch on your map.',
+  letters: 'Here. Don\'t read it! ...You can read it a little. No. Don\'t.',
+  treasure: 'Here\'s the map. Stand on the X and press E to dig.',
+  scholar: 'Bless you. Your journal (Esc › Lore journal) will keep every word.',
+};
+const WRONG = ['Ha! No, no, no. Think on it and come back.', 'Close! Well. Not close. Come back when you\'ve had a think.', 'Hee hee. No. But I admire the confidence.'];
+const CORRECT = ['Not bad! Here\'s the next one.', 'Two for two! Last one, and it\'s a stinker.'];
+
+function sideQuestLines(game, q, page) {
+  const s = game.state, W = game.world;
+  const st = sideStatus(s, q);
+  const finish = (lead) => {
+    s.quest.side[q.id] = 'done';
+    const got = grantReward(s, q.reward);
+    game.refreshDerived();
+    game.audio.sfx('levelup');
+    return [page(`${lead} Please, take this. (Received ${got}.)`)];
+  };
+  if (st === 'available') {
+    return [page(q.text, [
+      {
+        label: q.type === 'riddle' ? 'I love riddles.' : 'I\'ll do it.',
+        onSelect: () => {
+          s.quest.side[q.id] = 'active';
+          game.onSideQuestAccepted(q);
+          if (q.type === 'riddle') return { pages: [riddlePage(game, q, page)] };
+          if (q.type === 'scholar' && stonesRead(s) >= q.need) { s.quest.side[q.id] = 'ready'; return { pages: [page('You\'ve read them already? Then tell me everything!'), ...finish(q.thanks)] }; }
+          return { pages: [page(ACCEPT[q.type])] };
+        },
+      },
+      { label: 'Not right now.', onSelect: () => ({ pages: [page('I understand. If you change your mind, I\'ll be here.')] }) },
+    ])];
   }
+  if (st === 'active' && q.type === 'riddle') return [riddlePage(game, q, page)];
+  if (st === 'active' && q.type === 'scholar' && stonesRead(s) >= q.need) s.quest.side[q.id] = 'ready';
+  if (sideStatus(s, q) === 'ready') return finish(q.thanks || 'Thank you.');
+  if (st === 'active') return [page(reminderLine(q, game))];
+  if (st === 'done' && q.after) {
+    const rng = makeRng(`${W.seed}/${q.id}/${Math.floor(game.time / 20)}`);
+    if (rng.chance(0.7)) return [page(q.after)];
+  }
+  return null;
+}
+
+function riddlePage(game, q, page) {
+  const s = game.state;
+  const k = Math.min(2, s.quest.kills[q.id] || 0);
+  const [question, answer, ...wrong] = RIDDLES[q.riddles[k]];
+  const rng = makeRng(`${q.id}/riddle/${k}`);
+  return page(`Riddle ${k + 1} of 3: ${question}`, rng.shuffle([answer, ...wrong]).map((label) => ({
+    label,
+    onSelect: () => {
+      if (label !== answer) { game.audio.sfx('deny'); return { pages: [page(rng.pick(WRONG))] }; }
+      s.quest.kills[q.id] = k + 1;
+      game.audio.sfx('puzzle');
+      if (k + 1 >= 3) {
+        s.quest.side[q.id] = 'done';
+        const got = grantReward(s, q.reward);
+        game.refreshDerived();
+        game.audio.sfx('levelup');
+        return { pages: [page(`${answer}! ${q.thanks} (Received ${got}.)`)] };
+      }
+      return { pages: [page(`${answer}! ${CORRECT[k]}`), riddlePage(game, q, page)] };
+    },
+  })));
 }
 
 function reminderLine(q, game) {
-  if (q.type === 'hunt') return `${game.state.quest.kills[q.id] || 0} of ${q.count} so far. Keep at it.`;
-  if (q.type === 'fetch') return `My ${q.item} should be out past the roads. I marked where I think I dropped it.`;
-  if (q.type === 'deliver') return 'Did you deliver the parcel yet?';
-  return `Please, find ${q.kin}. The cave is marked on your map.`;
+  const s = game.state, n = s.quest.kills[q.id] || 0;
+  switch (q.type) {
+    case 'hunt': return `${n} of ${q.count} so far. Keep at it.`;
+    case 'fetch': return `My ${q.item} should be out past the roads. I marked where I think it fell.`;
+    case 'deliver': return 'Did you deliver the parcel yet?';
+    case 'letters': return 'Did they read it? Did they... no. Don\'t tell me. Go. Go!';
+    case 'pet': return `Any sign of ${q.pet.name}? Last I saw, they were headed ${dirWord(game.world.settlements.find((x) => x.id === q.settlementId).center, q.spot)}.`;
+    case 'gather': return `${n} of ${q.count}? Keep going, the patch is just off the road.`;
+    case 'treasure': return 'The X is marked on your map. Stand right on it and press E to dig.';
+    case 'scholar': return `You've read ${stonesRead(s)} of the ${q.need} stones I need. They stand near the old roads, carved with blue runes.`;
+    default: return `Please, find ${q.kin}. The cave is marked on your map.`;
+  }
 }
 
 const RUMORS = [
@@ -184,7 +245,11 @@ const RUMORS = [
   () => 'Hungry? Press F to eat a ration. It heals slow, but it heals.',
   () => 'Enemies telegraph. Brutes rear back, wolves crouch, archers take aim. Watch, then move.',
   () => 'Lock on with R and you\'ll keep your eyes on the worst of them while you circle.',
-  () => 'Sprint with Shift. Dodge with Space — you can slip right through an attack if you time it.',
+  () => 'Sprint with Shift. Dodge with Space. You can slip right through an attack if you time it.',
+  () => 'Hold your attack and let go for a spinning strike. My uncle swore by it. Then he got dizzy and fell in the river.',
+  () => 'The Hearth looked dim last night. My grandmother says that has never happened. Not once.',
+  () => 'They say the elder found a baby in the Hearth ashes once. Not a scratch on them. Imagine that.',
+  () => 'Old folks say the Kindlers left standing stones by the roads. Blue runes. Read one sometime.',
 ];
 
 function roleLines(game, npc, c) {
@@ -211,7 +276,7 @@ function roleLines(game, npc, c) {
     case 'seer':
       return [page('The Ember speaks in smoke and sparks. For a few coins, I will listen on your behalf.', [
         { label: 'A reading (15 coins)', onSelect: () => game.buy(15, () => {}, game.seerReading()) },
-        { label: 'What troubles the realm?', onSelect: () => ({ pages: [page('Four wards, four wardens, one flame between them. When the flame gutters, the wardens forget they were guardians. Remind them — gently or otherwise.')] }) },
+        { label: 'What troubles the realm?', onSelect: () => ({ pages: [page('Four wards, four wardens, one flame between them. When the flame gutters, the wardens forget they were guardians. Remind them, gently or otherwise.'), page('And far beneath the Spire, a cold one who would have the whole fire to himself. Lately the smoke shows him smiling. At you.')] }) },
         { label: 'Leave', onSelect: () => {} },
       ])];
     case 'informant': {
@@ -235,8 +300,11 @@ function roleLines(game, npc, c) {
       return [page('The scout\'s been out on that ridge for days. Stubborn as an old oak.')];
     case 'elder':
       return [page('Mind the Ember. Mind each other.')];
-    default:
+    default: {
+      const love = game.sideQuests.find((q) => q.type === 'letters' && q.targetNpc === d.id && sideStatus(s, q) === 'done');
+      if (love && rng.chance(0.6)) return [page(`Tell ${W.npcs.find((n) => n.id === love.giverId).name} the blue flowers are blooming. And... thank you, traveler.`)];
       return [page(rng.pick(RUMORS)(W, here))];
+    }
   }
 }
 

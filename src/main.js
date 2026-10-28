@@ -9,6 +9,7 @@ import { TitleScene } from './scenes/title.js';
 import { GameScene } from './scenes/game.js';
 import { ArenaScene } from './scenes/arena.js';
 import { ViewerScene } from './scenes/viewer.js';
+import { IntroScene } from './scenes/intro.js';
 
 function safeStorage() {
   try { const s = window.localStorage; s.getItem('probe'); return s; } catch { return undefined; }
@@ -121,6 +122,7 @@ class App {
   }
 
   toTitle() { this.scene = new TitleScene(this); }
+  startIntro(state) { this.scene = new IntroScene(this, state); }
   startGame(state) {
     this.scene = new GameScene(this, state);
     this.scene.saveGame(true);

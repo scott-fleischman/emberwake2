@@ -22,6 +22,7 @@ The tests cover world-generation reachability over many seeds, dungeon solvabili
 |---|---|---|---|---|
 | Move | WASD / arrows | | Interact / talk | E or Enter |
 | Attack | J or Z | | Pull a block | hold E and step back |
+| Spin attack | hold J, then release | | Skip a cutscene | Esc twice |
 | Use item | K or X | | Item menu | I or Y |
 | Quick-swap item | Q or Tab | | | |
 | Shield (hold) | L or C | | Lock-on | R |
@@ -30,6 +31,11 @@ The tests cover world-generation reachability over many seeds, dungeon solvabili
 | Pause / save | Esc or P | | | |
 
 ## What's in the prototype
+
+- **Story and cutscenes.** A painted prologue tells of the fallen Firstflame, the Kindlers, the four wardens and the Unkindled sealed beneath the Spire. The elder shows you the guttering Hearth over this seed's real map. Each warden gets a letterboxed introduction, and when it falls its freed spirit (a stag, a phoenix, an owl) tells you what it remembers before the Unkindled's voice cuts in. Returning three shards plays the ending. Replay the prologue from the pause menu.
+- **Lore journal.** 18 pages to find: seven Kindler standing stones by the roads, eight books on village bookshelves (your own home holds the chronicle of the night you were found), and three warden memories. Esc › Lore journal.
+- **Side quests.** Fifteen per world. Six are handwritten and appear in every world: a pet that bolts when you approach, a riddle-keeper, a two-way love-letter courier, a treasure map to dig up, an herb-gathering patch, and a scholar who wants the standing stones read. The rest are seeded fetch, hunt, deliver, rescue, pet, herb and treasure quests with varied framing. Helped villagers have epilogue lines, and townsfolk call out in speech bubbles as you pass.
+- **Kind to newcomers.** A Story difficulty (foes barely scratch you) is chosen on the new-game screen alongside Gentle, Normal and Hard. The new quests are low-combat, and pickups drift to you from farther away.
 
 - **Staged world generation.** Terrain and geology, then water, regional growth, settlements, roads, and finally encounters and quest content. There are six surface biomes plus caves. Cliffs can only be crossed at carved stairs. The volcanic and snow regions are ringed by ridges whose single road crossing needs bombs or the Titan Gloves.
 - **Main quest.** Wake at home, then: elder, scout, warband camp, Verdant Sigil, Verdant Vault (Thornmaw), the smith's bomb satchel, the cracked ridge, Ashen Reliquary (Cinder Warden, which gives the gloves), the boulder pass, Frostbound Sanctuary (Rime Sovereign), and back to the elder.

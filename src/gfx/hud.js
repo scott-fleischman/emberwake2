@@ -164,7 +164,7 @@ export function drawMinimap(u, area, game, big = false) {
 
 // ---------------------------------------------------------------- world map
 let mapCache = null;
-function worldImage(W) {
+export function worldImage(W) {
   if (mapCache && mapCache.seed === W.seed) return mapCache.canvas;
   const c = makeCanvas(W.w, W.h);
   const g = c.getContext('2d');

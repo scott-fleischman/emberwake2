@@ -4,6 +4,7 @@
 // Key rule: elevation changes are solid cliffs, crossable only at carved stairs. Gated regions are
 // additionally ringed by a ridge whose single road crossing is a tool-gated blocker.
 import { makeRng, valueNoise2D, fbm, tileHash } from '../core/rng.js';
+import { STONE_LORE } from '../data/story.js';
 import { astar, bfsDistances, components } from '../core/grid.js';
 import { T, D, BIOME, GROUND, TILE_INFO, DECO_SOLID } from './tiles.js';
 import { placeName } from '../data/names.js';
@@ -598,15 +599,7 @@ function connectComponents(W) {
 }
 
 // ---------------------------------------------------------------- 6. encounters & quest content
-const LORE = [
-  'Carved in old script: "Four wards to bind the restless deep. One Ember to keep them warm."',
-  'A weathered plaque: "When the Hearth Ember gutters, the wards turn upon their keepers."',
-  'Scratched beneath moss: "The Warden of thorns was a gardener once. It still tends something."',
-  'Etched in soot: "Ash falls upward near the Reliquary. The Cinder Warden counts every flame."',
-  'Frost-rimed runes: "The Sovereign of rime keeps a sanctuary no living hand has warmed."',
-  'Half-drowned stone: "The fourth ward sank with the western fane. The water remembers."',
-  'A cracked obelisk: "Bring back the shards, and the Spire will open for the one who carries them."',
-];
+const LORE = STONE_LORE.map((e) => e.text);
 
 export function stageContent(W) {
   const rng = makeRng(W.seed).fork('content');

@@ -5,6 +5,7 @@ import { newGameState } from '../game/state.js';
 import { humanSprite, LOOKS } from '../gfx/sprites.js';
 import { text, panel, SERIF, Menu } from '../gfx/ui.js';
 import { UI } from '../gfx/palette.js';
+import { DIFFICULTY } from '../game/state.js';
 import { controlsMenu } from './game.js';
 
 const randomSeed = () => {
@@ -97,12 +98,17 @@ export class TitleScene {
       return;
     }
     if (input.pressed('up')) { this.row = Math.max(0, this.row - 1); audio.sfx('menu'); }
-    if (input.pressed('down')) { this.row = Math.min(2, this.row + 1); audio.sfx('menu'); }
+    if (input.pressed('down')) { this.row = Math.min(3, this.row + 1); audio.sfx('menu'); }
     if (this.row === 0) {
       if (input.pressed('left')) { this.cls = (this.cls + 3) % 4; audio.sfx('menu'); }
       if (input.pressed('right')) { this.cls = (this.cls + 1) % 4; audio.sfx('menu'); }
-      if (input.keyPressed('Enter') || input.keyPressed('KeyJ') || input.keyPressed('Space')) { this.row = 2; audio.sfx('select'); }
-    } else if (this.row === 2 && (input.keyPressed('Enter') || input.keyPressed('KeyJ') || input.keyPressed('Space') || input.keyPressed('KeyE'))) {
+      if (input.keyPressed('Enter') || input.keyPressed('KeyJ') || input.keyPressed('Space')) { this.row = 3; audio.sfx('select'); }
+    } else if (this.row === 2) {
+      const o = this.app.options, keys = Object.keys(DIFFICULTY);
+      const step = (input.pressed('right') ? 1 : 0) - (input.pressed('left') ? 1 : 0);
+      if (step) { o.difficulty = keys[(keys.indexOf(o.difficulty) + step + keys.length) % keys.length]; this.app.store.saveOptions(o); audio.sfx('menu'); }
+      if (input.keyPressed('Enter') || input.keyPressed('KeyJ') || input.keyPressed('Space')) { this.row = 3; audio.sfx('select'); }
+    } else if (this.row === 3 && (input.keyPressed('Enter') || input.keyPressed('KeyJ') || input.keyPressed('Space') || input.keyPressed('KeyE'))) {
       this.begin(false);
     }
   }
@@ -111,7 +117,7 @@ export class TitleScene {
     if (!confirmed && this.app.store.has()) { this.confirmOverwrite = true; return; }
     this.app.audio.sfx('levelup');
     const seed = this.seed.trim() || randomSeed();
-    this.app.startGame(newGameState(seed, CLASS_ORDER[this.cls]));
+    this.app.startIntro(newGameState(seed, CLASS_ORDER[this.cls]));
   }
 
   drawWorld(g) { drawBackdrop(g, this.t, this.sparks); }
@@ -154,12 +160,16 @@ export class TitleScene {
       wrapInto(u, gear, x + 8, y + 108, w - 14, 5.5, '#e8dcc0');
       wrapInto(u, c.blurb, x + 8, y + 126, w - 14, 5.2, UI.dim);
     });
-    const ry = 204;
+    const ry = 200;
     text(u, 'World seed:', 170, ry, { size: 7, color: this.row === 1 ? UI.gold : UI.text, align: 'right' });
     panel(u, 176, ry - 9, 130, 13, { r: 2, edge: this.row === 1 ? UI.gold : '#6a5a48' });
     text(u, this.seed + (this.row === 1 && Math.floor(this.t * 2) % 2 ? '▏' : ''), 181, ry, { size: 7 });
     text(u, this.row === 1 ? 'type to edit · Enter = random' : 'same seed = same world', 312, ry, { size: 5.5, color: UI.dim });
-    text(u, this.row === 2 ? '▸  Begin the journey  ◂' : 'Begin the journey', 240, 228, { size: 9, align: 'center', bold: this.row === 2, color: this.row === 2 ? UI.gold : UI.text, family: SERIF });
+    const diff = DIFFICULTY[this.app.options.difficulty] || DIFFICULTY.normal;
+    text(u, 'Difficulty:', 170, 216, { size: 7, color: this.row === 2 ? UI.gold : UI.text, align: 'right' });
+    text(u, `◂ ${diff.label} ▸`, 181, 216, { size: 7, bold: this.row === 2, color: this.row === 2 ? UI.gold : UI.text });
+    text(u, { story: 'just the tale: foes barely scratch you', gentle: 'forgiving: half damage taken', normal: 'the intended challenge', hard: 'foes hit harder and last longer' }[this.app.options.difficulty] || '', 232, 216, { size: 5.5, color: UI.dim });
+    text(u, this.row === 3 ? '▸  Begin the journey  ◂' : 'Begin the journey', 240, 236, { size: 9, align: 'center', bold: this.row === 3, color: this.row === 3 ? UI.gold : UI.text, family: SERIF });
     text(u, '←→ class · ↑↓ rows · Enter confirm · Esc back', 240, 258, { size: 5.5, align: 'center', color: UI.dim });
     if (this.confirmOverwrite) {
       panel(u, 130, 110, 220, 44);

@@ -3,6 +3,7 @@ import { Area } from './areas.js';
 import { Entity, Chest, Particles, FloatText } from './entities.js';
 import { Enemy } from './enemies.js';
 import { createBoss } from './bosses.js';
+import { WARDENS, MEMORIES, bossIntroShots, bossOutroShots, learnLore } from '../data/story.js';
 import { meleeTargets } from './combat.js';
 import { generateDungeon, ROOM_W, ROOM_H, DOOR_TILES, DUNGEON_INFO } from '../world/dungeons.js';
 import { TileMap } from '../world/tilemap.js';
@@ -291,8 +292,14 @@ export class DungeonArea extends Area {
     p.lastSafe = { x: p.x, y: p.y };
     if (this.boss) {
       g.audio.playMusic('boss');
-      g.audio.sfx('boss');
-      g.showBanner(this.boss.name.split(',')[0], this.boss.name.includes(',') ? this.boss.name.split(', ')[1] : 'Warden of the deep');
+      const flags = g.state.quest.flags, key = `intro:${this.boss.kind}`;
+      if (!initial && !flags[key] && WARDENS[this.boss.kind]) {
+        flags[key] = true;
+        g.playCutscene(bossIntroShots(this.boss.kind), { letterbox: true });
+      } else {
+        g.audio.sfx('boss');
+        g.showBanner(this.boss.name.split(',')[0], this.boss.name.includes(',') ? this.boss.name.split(', ')[1] : 'Warden of the deep');
+      }
     } else g.audio.playMusic('dungeon');
     if (initial) g.showBanner(this.name, 'Find the warden. Mind the seals.');
     g.cam.follow(ROOM_W * 8, ROOM_H * 8, ROOM_W * TILE, ROOM_H * TILE, 0, true);
@@ -513,11 +520,30 @@ export class DungeonArea extends Area {
     this.applyDoors();
     for (const c of this.entities) if (c instanceof Chest && c.hidden) { c.hidden = false; this.map.extraSolid[Math.floor(c.y / TILE) * ROOM_W + Math.floor(c.x / TILE)] = 1; }
     g.audio.playMusic('victory');
-    g.showBanner('Warden Quieted', 'A return seal awakens. Claim the Ember Shard.');
-    g.toast('Heart vessel gained! Talent point gained!');
+    const celebrate = () => {
+      g.showBanner('Warden Quieted', 'A return seal awakens. Claim the Ember Shard.');
+      g.toast('Heart vessel gained! Talent point gained!');
+    };
+    const flags = g.state.quest.flags, key = `outro:${boss.kind}`;
+    if (!flags[key] && WARDENS[boss.kind]) {
+      flags[key] = true;
+      const focus = { x: boss.x, y: boss.y };
+      g.queueCutscene(() => g.playCutscene(bossOutroShots(boss.kind, focus), {
+        letterbox: true,
+        music: 'story',
+        onDone: () => {
+          if (learnLore(g.state, `memory:${boss.kind}`)) g.toast(`Journal: “${MEMORIES[boss.kind].title}”`);
+          if (g.area === this) g.audio.playMusic('dungeon');
+          celebrate();
+          g.saveGame(true);
+        },
+      }), 1.3);
+    } else {
+      celebrate();
+      setTimeout(() => { if (g.area === this) g.audio.playMusic('dungeon'); }, 7000);
+    }
     g.questEvent({ type: 'boss', kind: boss.kind });
     g.saveGame(true);
-    setTimeout(() => { if (g.area === this) g.audio.playMusic('dungeon'); }, 7000);
   }
 
   drawGround(g, cam) {

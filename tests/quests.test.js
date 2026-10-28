@@ -111,3 +111,20 @@ test('dungeon stages of the main quest name their dungeon', async () => {
   s.quest.main = 'smith';
   assert.equal(trackedObjective(s, W, []).dungeon, null);
 });
+
+test('each world gets the handwritten quests, and their spots are reachable', async () => {
+  const { reachableFrom } = await import('../src/world/overworld.js');
+  for (const seed of ['quests', 'ember123', 'fen77', 'hollow404', 'b']) {
+    const w = generateOverworld(seed);
+    const qs = generateSideQuests(w);
+    for (const type of ['scholar', 'letters', 'pet', 'treasure', 'riddle', 'gather']) assert.ok(qs.some((q) => q.type === type), `${seed} ${type}`);
+    assert.ok(qs.length >= 14, seed);
+    const reach = reachableFrom(w, w.pois.home, { bombs: true, gloves: true });
+    const ok = (p) => reach[p.y * w.w + p.x] >= 0;
+    for (const q of qs) {
+      if (q.spot) assert.ok(ok(q.spot), `${seed} ${q.type} spot`);
+      if (q.spots) for (const p of q.spots) assert.ok(ok(p), `${seed} herb`);
+      if (q.type === 'riddle') assert.equal(new Set(q.riddles).size, 3);
+    }
+  }
+});

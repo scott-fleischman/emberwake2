@@ -6,7 +6,9 @@ import { generateCave } from '../world/caves.js';
 import { OverworldRenderer, RoomRenderer, drawDarkness, drawCampfire, drawEmberGlow } from '../gfx/render.js';
 import { THEMES, CAVE_THEMES } from '../gfx/palette.js';
 import { R } from '../gfx/sprites.js';
-import { NPC, Chest, Cache, Pickup, Particles, Explosion, FloatText } from './entities.js';
+import { NPC, Chest, Cache, Pickup, Particles, Explosion, FloatText, Critter, DigSpot } from './entities.js';
+import { HERBS } from '../data/sidequests.js';
+import { bookFor } from '../data/story.js';
 import { Enemy } from './enemies.js';
 import { meleeTargets, knockbackVector, isBehind } from './combat.js';
 import { findFreeSpot } from './physics.js';
@@ -208,10 +210,19 @@ export class OverworldArea extends Area {
   }
 
   spawnQuestItems() {
+    const st = this.game.state;
+    const has = (id) => this.entities.some((e) => e.id === id && !e.dead);
     for (const q of this.game.sideQuests) {
-      if (q.type !== 'fetch' || this.game.state.quest.side[q.id] !== 'active') continue;
-      if (this.entities.some((e) => e.id === q.id)) continue;
-      this.spawn(new Pickup('quest', q.target.x * TILE + 8, q.target.y * TILE + 8, 1, { permanent: true, id: q.id }));
+      if (st.quest.side[q.id] !== 'active') continue;
+      if (q.type === 'fetch' && !has(q.id)) this.spawn(new Pickup('quest', q.target.x * TILE + 8, q.target.y * TILE + 8, 1, { permanent: true, id: q.id }));
+      if (q.type === 'pet' && !has(q.id)) this.spawn(new Critter(q, q.spot.x * TILE + 8, q.spot.y * TILE + 8));
+      if (q.type === 'treasure' && !has(`dig:${q.id}`)) this.spawn(new DigSpot(q, q.spot.x * TILE + 8, q.spot.y * TILE + 8));
+      if (q.type === 'gather') {
+        q.spots.forEach((p, k) => {
+          const id = `herb:${q.id}:${k}`;
+          if (!st.progress.opened.includes(id) && !has(id)) this.spawn(new Pickup('herb', p.x * TILE + 8, p.y * TILE + 8, 1, { permanent: true, id, questId: q.id, color: HERBS[q.herb].color }));
+        });
+      }
     }
   }
 
@@ -342,10 +353,12 @@ export class OverworldArea extends Area {
     const g = this.game, p = g.player, W = this.W;
     const cache = this.entities.find((e) => e instanceof Cache && Math.hypot(e.x - p.x, e.y - p.y) < 16);
     if (cache) { g.digCache(cache); return true; }
+    const dig = this.entities.find((e) => e instanceof DigSpot && Math.hypot(e.x - p.x, e.y - p.y) < 18);
+    if (dig) { g.digTreasure(dig.q, dig); dig.dead = true; return true; }
     const ft = p.frontTile();
     const deco = this.map.getDeco(ft.x, ft.y), tile = this.map.get(ft.x, ft.y);
     if (deco === D.SIGN) { const s = W.pois.signs.find((q) => q.x === ft.x && q.y === ft.y); g.message(s ? s.text : 'The sign is too weathered to read.', 'Signpost'); return true; }
-    if (deco === D.LORE) { const l = W.pois.lore.find((q) => q.x === ft.x && q.y === ft.y); g.message(l ? l.text : '…', 'Standing Stone'); return true; }
+    if (deco === D.LORE) { const l = W.pois.lore.find((q) => q.x === ft.x && q.y === ft.y); if (l) g.readLore(l.id); else g.message('The runes are worn smooth.', 'Standing Stone'); return true; }
     if (deco === D.SHRINE) { g.openShrine(W.pois.shrines.find((q) => q.x === ft.x && q.y === ft.y)); return true; }
     if (deco === D.WELL) { g.message('Cool water. You feel refreshed.'); g.state.player.stamina = g.derived.maxStamina; return true; }
     if (tile === T.BOULDER) {
@@ -479,6 +492,8 @@ export class InteriorArea extends Area {
     const p = this.game.player, ft = p.frontTile();
     const bed = this.layout.props.find((q) => q.type === 'bed' && ft.x >= q.x && ft.x < q.x + q.w && ft.y === q.y);
     if (bed && this.building.type === 'home') { this.game.restAtHome(); return true; }
+    const shelf = this.layout.props.find((q) => q.type === 'shelf' && ft.x >= q.x && ft.x < q.x + q.w && ft.y === q.y);
+    if (shelf) { this.game.readLore(`book${bookFor(this.game.world, this.building)}`); return true; }
     return false;
   }
 }

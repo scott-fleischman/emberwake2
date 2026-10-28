@@ -24,7 +24,7 @@ export function newGameState(seed, classId) {
     quest: { main: 'wake', tracked: 'main', flags: {}, side: {}, kills: {} },
     progress: {
       opened: [], cleared: [], caches: [], gates: [], bosses: [], solved: [], unlocked: [], keys: {},
-      visited: {}, dungeonMaps: [], fog: '', shards: 0, revealed: [],
+      visited: {}, dungeonMaps: [], fog: '', shards: 0, revealed: [], lore: [],
     },
     location: { area: 'interior', id: 'home', x: null, y: null },
     respawn: { area: 'overworld', x: null, y: null, label: 'home' },
@@ -135,6 +135,7 @@ export class SaveStore {
 }
 
 export const DIFFICULTY = {
+  story: { label: 'Story', damageTaken: 0.25, enemyHp: 0.6 },
   gentle: { label: 'Gentle', damageTaken: 0.5, enemyHp: 0.8 },
   normal: { label: 'Normal', damageTaken: 1, enemyHp: 1 },
   hard: { label: 'Hard', damageTaken: 1.5, enemyHp: 1.25 },

@@ -245,6 +245,7 @@ export class Pickup extends Entity {
     this.kind = kind; this.value = value; this.t = Math.random() * 3;
     this.life = opts.permanent ? Infinity : 14;
     this.vz = opts.pop ? -60 : 0; this.z = 0; this.id = opts.id || null;
+    this.color = opts.color || null; this.questId = opts.questId || null;
   }
   update(dt, ctx) {
     this.t += dt;
@@ -253,7 +254,7 @@ export class Pickup extends Entity {
     if (this.vz || this.z < 0) { this.vz += 240 * dt; this.z += this.vz * dt; if (this.z > 0) { this.z = 0; this.vz = 0; } }
     const p = ctx.player;
     const d = Math.hypot(p.x - this.x, p.y - this.y);
-    if (d < 26 && this.kind !== 'key') { this.x += (p.x - this.x) * Math.min(1, dt * 8); this.y += (p.y - this.y) * Math.min(1, dt * 8); }
+    if (d < 40 && this.kind !== 'key') { this.x += (p.x - this.x) * Math.min(1, dt * 8); this.y += (p.y - this.y) * Math.min(1, dt * 8); }
     if (d < 9 && !p.dead) {
       if (ctx.game.collect(this)) this.dead = true;
     }
@@ -271,6 +272,13 @@ export class Pickup extends Entity {
       case 'food': R(g, x - 3, y - 2, 6, 5, '#d0603a'); R(g, x - 2, y - 3, 4, 1, '#d0603a'); R(g, x - 2, y - 2, 2, 1, '#ffa080'); R(g, x, y - 5, 1, 2, '#5a3a20'); R(g, x + 1, y - 5, 2, 1, '#4a9a3a'); break;
       case 'bombs': g.fillStyle = '#24242c'; g.beginPath(); g.arc(x, y, 3.5, 0, TAU); g.fill(); R(g, x, y - 6, 1, 3, '#a08050'); break;
       case 'quest': R(g, x - 3, y - 2, 6, 5, '#8a6a3a'); R(g, x - 2, y - 4, 4, 2, '#a08050'); R(g, x - 1, y, 2, 1, '#f0c850'); g.fillStyle = 'rgba(255,240,180,0.35)'; g.beginPath(); g.arc(x, y, 8 + Math.sin(this.t * 5), 0, TAU); g.fill(); break;
+      case 'herb': {
+        const c = this.color || '#c8b0ff';
+        g.fillStyle = c; g.globalAlpha = 0.25 + 0.15 * Math.sin(this.t * 4); g.beginPath(); g.arc(x, y - 2, 7, 0, TAU); g.fill(); g.globalAlpha = 1;
+        R(g, x, y - 1, 1, 5, '#4a8a3a'); R(g, x - 2, y + 1, 2, 1, '#4a8a3a');
+        R(g, x - 2, y - 4, 2, 2, c); R(g, x + 1, y - 4, 2, 2, c); R(g, x - 1, y - 6, 2, 2, c); R(g, x - 1, y - 3, 2, 2, '#fff6c0');
+        break;
+      }
       case 'key': R(g, x - 1, y - 5, 3, 3, '#f0d050'); R(g, x, y - 2, 1, 6, '#f0d050'); R(g, x + 1, y + 1, 2, 1, '#f0d050'); R(g, x + 1, y + 3, 2, 1, '#f0d050'); g.fillStyle = 'rgba(255,230,120,0.3)'; g.beginPath(); g.arc(x, y, 7, 0, TAU); g.fill(); break;
     }
   }
@@ -291,7 +299,15 @@ export class NPC extends Actor {
   update(dt, ctx) {
     this.anim += dt;
     const p = ctx.player;
-    const near = Math.hypot(p.x - this.x, p.y - this.y) < 40;
+    const dist = Math.hypot(p.x - this.x, p.y - this.y);
+    if (this.bark) this.bark.t -= dt;
+    this.barkCool = (this.barkCool ?? 1 + Math.random() * 3) - dt;
+    if (this.barkCool <= 0 && dist < 90 && dist > 24 && !this.talking && ctx.game.barkFor) {
+      this.barkCool = 8 + Math.random() * 8;
+      const line = Math.random() < 0.65 ? ctx.game.barkFor(this) : null;
+      if (line) this.bark = { text: line, t: 3.2 };
+    }
+    const near = dist < 40;
     if (near || this.talking) {
       const a = Math.atan2(p.y - this.y, p.x - this.x);
       this.facing = Math.abs(Math.cos(a)) > Math.abs(Math.sin(a)) ? (Math.cos(a) < 0 ? 'left' : 'right') : (Math.sin(a) < 0 ? 'up' : 'down');
@@ -372,6 +388,84 @@ export class Cache extends Entity {
     R(g, x - 0.5, y - 4, 1, 8, '#fff8d0'); R(g, x - 4, y - 0.5, 8, 1, '#fff8d0');
     R(g, x - 1, y - 1, 2, 2, '#ffffff');
     g.globalAlpha = 1;
+  }
+}
+
+// A runaway pet from a side quest. Bolts a few times when you get close, then tires and sits.
+export class Critter extends Actor {
+  constructor(q, x, y) {
+    super(x, y, 8, 6);
+    this.q = q; this.id = q.id; this.kind = q.pet.kind;
+    this.homeX = x; this.homeY = y;
+    this.flees = 3; this.hopT = 0; this.alert = 0; this.dir = 1;
+  }
+  update(dt, ctx) {
+    this.anim += dt;
+    const g = ctx.game, p = ctx.player;
+    if (g.state.quest.side[this.q.id] !== 'active') { this.dead = true; return; }
+    if (this.alert > 0) this.alert -= dt;
+    if (this.hopT > 0) {
+      this.hopT -= dt;
+      const r = moveActor(ctx.map, this, this.vx * dt, this.vy * dt, { solid: walkerSolid(ctx.map) });
+      if (r.hitX) this.vx *= -1;
+      if (r.hitY) this.vy *= -1;
+      this.moving = true;
+      return;
+    }
+    this.moving = false;
+    const d = Math.hypot(p.x - this.x, p.y - this.y);
+    if (d < 13) {
+      ctx.area.spawn(new Particles(this.x, this.y - 6, { count: 10, color: ['#ff8090', '#ffffff'], speed: 40, life: 0.6, up: 30 }));
+      g.catchPet(this.q);
+      this.dead = true;
+      return;
+    }
+    if (this.flees > 0 && d < 40) {
+      this.flees--;
+      let a = Math.atan2(this.y - p.y, this.x - p.x) + (Math.random() - 0.5) * 0.9;
+      if (Math.hypot(this.homeX - this.x, this.homeY - this.y) > 70) a = Math.atan2(this.homeY - this.y, this.homeX - this.x) + (Math.random() - 0.5) * 1.4;
+      this.vx = Math.cos(a) * 115; this.vy = Math.sin(a) * 115;
+      this.hopT = 0.5;
+      this.alert = 0.7;
+      this.dir = this.vx < 0 ? -1 : 1;
+      g.audio.sfx('dash', { pitch: 1.7, volume: 0.5 });
+    } else if (d < 90) this.dir = p.x < this.x ? -1 : 1;
+  }
+  draw(g, cam) {
+    const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
+    drawShadow(g, x, y + 3, 5, 1.5);
+    const hop = this.moving ? -Math.abs(Math.sin(this.anim * 18)) * 3 : 0;
+    g.save(); g.translate(x, y + hop); g.scale(this.dir, 1);
+    const k = this.kind;
+    const body = k === 'cat' ? '#e0a050' : k === 'dog' ? '#9a6a3a' : '#f0ece0';
+    const dark = k === 'cat' ? '#a86a2a' : k === 'dog' ? '#6a4422' : '#c8c0b0';
+    if (k === 'hen') {
+      R(g, -4, -6, 7, 6, body); R(g, 1, -9, 4, 4, body); R(g, 5, -8, 2, 1, '#f0b030'); R(g, 2, -10, 2, 1, '#e03030');
+      R(g, 3, -8, 1, 1, '#202020'); R(g, -5, -6, 2, 3, dark); R(g, -2, 0, 1, 2, '#f0b030'); R(g, 1, 0, 1, 2, '#f0b030');
+    } else {
+      R(g, -5, -5, 10, 5, body); R(g, -5, -1, 10, 1, dark);
+      R(g, -4, 0, 2, 2, dark); R(g, 2, 0, 2, 2, dark);
+      R(g, 3, -9, 5, 5, body); R(g, 6, -7, 1, 1, '#202020');
+      if (k === 'cat') { R(g, 3, -11, 2, 2, body); R(g, 6, -11, 2, 2, body); R(g, -7, -9 + Math.round(Math.sin(this.anim * 4)), 2, 5, body); }
+      if (k === 'dog') { R(g, 2, -9, 2, 4, dark); R(g, 8, -6, 1, 1, '#202020'); R(g, -7, -6 + Math.round(Math.sin(this.anim * 12)), 2, 2, body); }
+      if (k === 'goat') { R(g, 3, -11, 1, 2, '#8a8070'); R(g, 6, -11, 1, 2, '#8a8070'); R(g, 6, -4, 2, 2, '#d8d0c0'); R(g, -6, -5, 2, 2, body); }
+    }
+    g.restore();
+    if (this.alert > 0) { R(g, x - 1, y - 20, 2, 5, '#ffd040'); R(g, x - 1, y - 14, 2, 2, '#ffd040'); }
+    else if (this.flees === 0) { const b = Math.sin(this.anim * 3) * 1.5; R(g, x - 2, y - 18 + b, 2, 2, '#ff8090'); R(g, x + 1, y - 18 + b, 2, 2, '#ff8090'); R(g, x - 2, y - 17 + b, 5, 2, '#ff8090'); R(g, x - 1, y - 15 + b, 3, 1, '#ff8090'); }
+  }
+}
+
+// The X on a treasure map, drawn on the ground.
+export class DigSpot extends Entity {
+  constructor(q, x, y) { super(x, y, 12, 12); this.q = q; this.id = `dig:${q.id}`; this.t = 0; }
+  get sortY() { return this.y - 10; }
+  update(dt, ctx) { this.t += dt; if (ctx.game.state.quest.side[this.q.id] !== 'active') this.dead = true; }
+  draw(g, cam) {
+    const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
+    g.fillStyle = 'rgba(90,60,30,0.45)'; g.beginPath(); g.ellipse(x, y + 2, 7, 4, 0, 0, TAU); g.fill();
+    for (let k = -3; k <= 3; k++) { R(g, x + k - 1, y + k * 0.6 + 1, 2, 1, '#9a2a1a'); R(g, x - k - 1, y + k * 0.6 + 1, 2, 1, '#9a2a1a'); }
+    if (Math.sin(this.t * 3) > 0.8) R(g, x + 4, y - 3, 1, 1, '#ffffff');
   }
 }
 

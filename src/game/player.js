@@ -11,6 +11,8 @@ import { normalize, facingFromVector, TAU } from '../core/math.js';
 const SPRINT_MULT = 1.55;
 const DODGE_SPEED = 255;
 const DODGE_TIME = 0.18;
+const CHARGE_TIME = 0.5;  // hold attack this long after a swing to ready a spin
+const SPIN_TIME = 0.32;
 
 export class Player extends Actor {
   constructor(game, x, y) {
@@ -31,6 +33,7 @@ export class Player extends Actor {
     this.moving = false;
     this.shielding = false;
     this.sprinting = false;
+    this.charge = 0;
     this.team = 'player';
     this.look = LOOKS[game.state.classId];
   }
@@ -93,11 +96,20 @@ export class Player extends Actor {
     let speed = d.speed * (TILE_INFO[map.tileAtPixel(this.x, this.y + 2)]?.slow ?? 1);
     if (this.sprinting) { speed *= SPRINT_MULT; res.stamina = Math.max(0, res.stamina - 24 * dt); this.staminaDelay = 0.6; }
     if (this.shielding) { speed *= 0.5; this.staminaDelay = Math.max(this.staminaDelay, 0.3); }
-    if (this.mode === 'attack') speed *= 0.35;
+    if (this.mode === 'attack' || this.mode === 'spin') speed *= 0.35;
+    else if (this.charge > 0.15) speed *= 0.7;
     if (this.moving) moveActor(map, this, ax * speed * dt, ay * speed * dt, { slide: 6 });
 
     // Melee
-    if (this.mode === 'attack') {
+    if (this.mode === 'spin') {
+      const w = WEAPONS[game.state.gear.weapon];
+      this.modeT -= dt;
+      if (!this.swingHit && this.modeT <= SPIN_TIME * 0.55) {
+        this.swingHit = true;
+        ctx.area.meleeStrike(this, { angle: this.swingAngle, reach: w.reach + 6, arc: TAU, dmg: (w.dmg + d.meleeBonus) * 2, knock: w.knock * 1.3, crit: false, shadow: false }, ctx);
+      }
+      if (this.modeT <= 0) this.mode = 'normal';
+    } else if (this.mode === 'attack') {
       const w = WEAPONS[game.state.gear.weapon];
       this.modeT -= dt;
       if (!this.swingHit && this.modeT <= w.swing * 0.6) {
@@ -115,6 +127,29 @@ export class Player extends Actor {
       this.swingHit = false;
       this.swingDir *= -1;
       game.audio.sfx('swing', { pitch: w.kind === 'stab' ? 1.3 : w.kind === 'bash' ? 0.8 : 1 });
+    }
+
+    // Charged spin: keep holding attack after a swing; let go once the blade glows.
+    if (input.held('attack') && (this.mode === 'normal' || this.mode === 'attack')) {
+      if (this.mode === 'normal') {
+        const before = this.charge;
+        this.charge += dt;
+        if (before < CHARGE_TIME && this.charge >= CHARGE_TIME) {
+          game.audio.sfx('select', { pitch: 1.4 });
+          ctx.area.spawn(new Particles(this.x, this.y - 6, { count: 8, color: ['#ffffff', '#ffe080'], speed: 40, life: 0.3 }));
+        }
+      }
+    } else {
+      if (this.charge >= CHARGE_TIME && this.mode === 'normal') {
+        this.mode = 'spin';
+        this.modeT = SPIN_TIME;
+        this.swingAngle = this.aim;
+        this.swingHit = false;
+        this.cool = 0.3;
+        game.audio.sfx('swing', { pitch: 0.7 });
+        game.audio.sfx('dash', { pitch: 1.3 });
+      }
+      this.charge = 0;
     }
 
     if (this.mode === 'normal') {
@@ -238,6 +273,27 @@ export class Player extends Actor {
   drawGear(g, x, y) {
     const gear = this.game.state.gear;
     const hy = y - 4;
+    if (this.mode === 'spin') {
+      const w = WEAPONS[gear.weapon];
+      const p = 1 - this.modeT / SPIN_TIME;
+      const a = this.swingAngle + TAU * p * this.swingDir;
+      g.save(); g.translate(x, hy);
+      g.globalAlpha = 0.35 * (1 - p * 0.5);
+      g.strokeStyle = '#fff4c0'; g.lineWidth = 5;
+      g.beginPath(); g.arc(0, 0, w.reach + 2, 0, TAU); g.stroke();
+      g.globalAlpha = 1;
+      g.rotate(a);
+      R(g, 1, -2, 3, 4, '#c8a050');
+      R(g, 4, -1, w.reach, 3, '#fff8e0'); R(g, 4, -1, w.reach, 1, '#ffffff');
+      g.restore();
+    } else if (this.charge > 0.15 && this.mode === 'normal') {
+      const ready = this.charge >= CHARGE_TIME;
+      const cx = x + Math.cos(this.aim) * 8, cy = hy + Math.sin(this.aim) * 6;
+      const pulse = ready ? 0.6 + 0.4 * Math.sin(this.anim * 20) : Math.min(1, this.charge / CHARGE_TIME) * 0.5;
+      g.fillStyle = `rgba(255,240,180,${pulse * 0.6})`;
+      g.beginPath(); g.arc(cx, cy, ready ? 5 : 3, 0, TAU); g.fill();
+      R(g, Math.round(cx) - 1, Math.round(cy) - 1, 2, 2, ready ? '#ffffff' : '#ffe0a0');
+    }
     if (this.mode === 'attack') {
       const w = WEAPONS[gear.weapon];
       const p = Math.min(1, 1 - this.modeT / w.swing);

@@ -13,9 +13,15 @@ import { conversation, shopMenu, shrineMenu, talentMenu, chestReward, cacheRewar
 import { SHIELDS, WEAPONS, USE_ITEMS, ARTIFACTS } from '../data/items.js';
 import { CLASSES } from '../data/classes.js';
 import { Camera } from '../gfx/render.js';
-import { Dialog, Menu } from '../gfx/ui.js';
+import { Dialog, Menu, text, panel, setFont } from '../gfx/ui.js';
+import { FAMILIES } from '../data/enemies.js';
 import { drawHUD, drawMinimap, drawWorldMap, drawOverworldMinimap, FOG_CELL } from '../gfx/hud.js';
 import { ItemMenu } from '../gfx/inventory.js';
+import { Cutscene } from '../gfx/cutscene.js';
+import { LoreJournal } from '../gfx/journal.js';
+import { LOOKS } from '../gfx/sprites.js';
+import { introShots, endingShots, learnLore, LORE_ENTRIES, stonesRead } from '../data/story.js';
+import { HERBS } from '../data/sidequests.js';
 import { ROOM_W, ROOM_H } from '../world/dungeons.js';
 
 class MapOverlay {
@@ -187,6 +193,7 @@ export class GameScene {
       return;
     }
     if (this.deathT > 0) { this.updateDeath(dt); return; }
+    if (this.pending && (this.pending.t -= dt) <= 0) { const fn = this.pending.fn; this.pending = null; fn(); return; }
     if (this.hitstop > 0) { this.hitstop -= dt; return; }
     if (this.doorGrace > 0) this.doorGrace -= dt;
     const input = this.input;
@@ -208,15 +215,87 @@ export class GameScene {
     g.fillStyle = '#08060a';
     g.fillRect(0, 0, 480, 270);
     this.area.draw(g, this.cam);
+    for (const ui of this.uiStack) if (ui.drawWorld) ui.drawWorld(g, this);
     if (this.fade > 0) { g.fillStyle = `rgba(0,0,0,${Math.min(1, this.fade)})`; g.fillRect(0, 0, 480, 270); }
     if (this.deathT > 0) { g.fillStyle = `rgba(20,0,0,${Math.min(0.7, (2.2 - this.deathT) * 0.5)})`; g.fillRect(0, 0, 480, 270); }
   }
 
   drawUI(u) {
-    drawHUD(u, this);
-    if (this.area.kind === 'dungeon') drawMinimap(u, this.area, this);
-    else if (this.area.kind !== 'arena') drawOverworldMinimap(u, this);
+    if (!this.uiStack.some((ui) => ui.cinematic)) {
+      drawBarks(u, this);
+      drawHUD(u, this);
+      if (this.area.kind === 'dungeon') drawMinimap(u, this.area, this);
+      else if (this.area.kind !== 'arena') drawOverworldMinimap(u, this);
+    }
     for (const ui of this.uiStack) ui.draw(u, this);
+  }
+
+  // ---------------------------------------------------------------- cutscenes
+  playCutscene(shots, opts = {}) {
+    return this.pushUI(new Cutscene(shots, { ...opts, ctx: { look: LOOKS[this.state.classId], world: this.world, shake: this.app.options.screenShake } }));
+  }
+
+  queueCutscene(fn, delay) { this.pending = { t: delay, fn }; }
+
+  replayPrologue() {
+    this.playCutscene(introShots(CLASSES[this.state.classId].name), { music: 'story', onDone: () => this.restoreMusic() });
+  }
+
+  restoreMusic() {
+    const a = this.area;
+    if (a.kind === 'dungeon') this.audio.playMusic(a.boss ? 'boss' : 'dungeon');
+    else if (a.kind === 'cave') this.audio.playMusic('cave');
+    else if (a.kind === 'interior') this.audio.playMusic('town');
+    else if (a.kind === 'overworld') { a.regionKey = null; }
+  }
+
+  // ---------------------------------------------------------------- lore
+  readLore(id, speaker) {
+    const e = LORE_ENTRIES.find((x) => x.id === id);
+    if (!e) return;
+    const isNew = learnLore(this.state, id);
+    this.message(e.text, speaker || e.title);
+    if (!isNew) return;
+    const n = this.state.progress.lore.length;
+    this.toast(`Journal: “${e.title}” (${n}/${LORE_ENTRIES.length})`);
+    this.audio.sfx('pickup', { pitch: 0.8 });
+    const scholar = this.sideQuests.find((q) => q.type === 'scholar' && sideStatus(this.state, q) === 'active');
+    if (scholar && id.startsWith('lore') && stonesRead(this.state) >= scholar.need) {
+      this.state.quest.side[scholar.id] = 'ready';
+      this.toast('You have read enough stones. Return to the scholar.');
+    }
+    this.updateObjective();
+  }
+
+  // ---------------------------------------------------------------- side quest moments
+  catchPet(q) {
+    if (this.state.quest.side[q.id] !== 'active') return;
+    this.state.quest.side[q.id] = 'ready';
+    this.audio.sfx('levelup');
+    this.toast(`You scoop up ${q.pet.name}! Carry them home.`);
+    this.updateObjective();
+  }
+
+  gatherHerb(q, id) {
+    const s = this.state;
+    if (s.quest.side[q.id] !== 'active') return;
+    if (!s.progress.opened.includes(id)) s.progress.opened.push(id);
+    const n = s.quest.kills[q.id] = (s.quest.kills[q.id] || 0) + 1;
+    this.audio.sfx('pickup', { pitch: 1.2 });
+    if (n >= q.count) { s.quest.side[q.id] = 'ready'; this.toast(`That's all the ${HERBS[q.herb].plural}! Bring them back.`); this.audio.sfx('levelup'); }
+    else this.toast(`${HERBS[q.herb].plural[0].toUpperCase()}${HERBS[q.herb].plural.slice(1)}: ${n}/${q.count}`);
+    this.updateObjective();
+  }
+
+  digTreasure(q, spot) {
+    if (this.state.quest.side[q.id] !== 'active') return;
+    this.state.quest.side[q.id] = 'ready';
+    this.state.player.coins += 20;
+    this.audio.sfx('chest');
+    this.cam.shake(1.5, 0.15);
+    this.area.spawn(new Particles(spot.x, spot.y, { count: 18, color: ['#a08050', '#ffe080', '#6a4a2a'], speed: 60, life: 0.6, up: 30 }));
+    this.message(`Your shovel strikes wood! A small iron-bound strongbox, heavier than it looks. Inside: 20 loose coins, an old compass, and a folded note. Better bring the rest back to its owner.`, 'Buried Treasure');
+    this.updateObjective();
   }
 
   pushUI(c) { this.uiStack.push(c); return c; }
@@ -292,6 +371,11 @@ export class GameScene {
       case 'mana': p.mana = Math.min(d.maxMana, p.mana + 12); this.audio.sfx('pickup', { pitch: 1.3 }); break;
       case 'food': p.food++; this.audio.sfx('pickup'); this.area.spawn(new FloatText(pk.x, pk.y - 8, '+1 ration', '#ffc080')); break;
       case 'bombs': p.bombs = Math.min(d.maxBombs, p.bombs + pk.value); this.audio.sfx('pickup'); break;
+      case 'herb': {
+        const q = this.sideQuests.find((x) => x.id === pk.questId);
+        if (q) this.gatherHerb(q, pk.id);
+        return true;
+      }
       case 'quest': {
         const q = this.sideQuests.find((x) => x.id === pk.id);
         if (q && s.quest.side[q.id] === 'active') { s.quest.side[q.id] = 'ready'; this.toast(`Found the ${q.item}! Return it to its owner.`); this.audio.sfx('levelup'); this.updateObjective(); }
@@ -313,6 +397,13 @@ export class GameScene {
     npc.talking = true;
     const pages = conversation(this, npc);
     this.audio.sfx('talk');
+    if (pages && pages.cutscene) {
+      this.playCutscene(pages.cutscene, {
+        music: 'story',
+        onDone: () => { npc.talking = false; this.restoreMusic(); this.updateObjective(); this.toast(`New objective: ${this.objective}`); },
+      });
+      return;
+    }
     this.pushUI(new Dialog(pages, {
       onClose: () => {
         npc.talking = false;
@@ -395,12 +486,16 @@ export class GameScene {
       this.audio.sfx('levelup');
       this.updateObjective();
       this.toast(`New objective: ${this.objective}`);
-      if (r.stage === 'end') this.showEnding();
+      if (r.stage === 'end') {
+        const elder = this.world.npcs.find((n) => n.role === 'elder' && n.settlementId === 'home');
+        this.playCutscene(endingShots({ elder: elder.name }), { music: 'story', onDone: () => { this.restoreMusic(); this.showEnding(); } });
+      }
     }
   }
 
   onSideQuestAccepted(q) {
-    if (q.type === 'fetch' && this.overworld) this.overworld.spawnQuestItems();
+    if (['fetch', 'pet', 'gather', 'treasure'].includes(q.type) && this.overworld) this.overworld.spawnQuestItems();
+    if (q.type === 'letters') this.toast('Received a sealed letter.');
     if (q.type === 'deliver') this.toast(`Received ${q.parcel}.`);
     if (q.type === 'rescue') reveal(this.state, `cave:${q.caveId}`);
     // A freshly accepted quest is usually the one you want to do next, so pin it.
@@ -468,9 +563,43 @@ export class GameScene {
       for (const n of this.area.npcs()) {
         const q = this.sideQuests.find((x) => x.giverId === n.data.id);
         const st = q && sideStatus(this.state, q);
-        n.marker = st === 'available' ? '!' : st === 'ready' ? '?' : this.isMainTarget(n) ? '!' : null;
+        const carrying = this.sideQuests.some((x) => ['letters', 'deliver'].includes(x.type) && x.targetNpc === n.data.id && sideStatus(this.state, x) === 'active');
+        n.marker = st === 'available' ? '!' : st === 'ready' ? '?' : this.isMainTarget(n) || carrying ? '!' : null;
       }
     }
+  }
+
+  // A short line an NPC calls out as you pass. Mostly hints at their quest or the state of the realm.
+  barkFor(n) {
+    const d = n.data, s = this.state;
+    if (d.lost) return 'Hello? Is someone there?';
+    const q = this.sideQuests.find((x) => x.giverId === d.id);
+    const st = q && sideStatus(s, q);
+    if (q && st === 'available') {
+      switch (q.type) {
+        case 'pet': return `${q.pet.name}! Where are you?`;
+        case 'letters': return 'Should I send it? I should send it. Should I?';
+        case 'riddle': return 'Riddles! Who wants riddles?';
+        case 'scholar': return 'If only someone could read the old stones for me...';
+        case 'treasure': return 'That old treasure map... my back is too stiff to dig.';
+        case 'gather': return `I need ${HERBS[q.herb].plural}...`;
+        case 'fetch': return `Where did my ${q.item} go?`;
+        case 'hunt': return `Those ${FAMILIES[q.biome].names[q.archetype]}s again...`;
+        case 'rescue': return `${q.kin[0].toUpperCase()}${q.kin.slice(1)} should be home by now...`;
+        default: return 'This parcel won\'t deliver itself.';
+      }
+    }
+    if (q && st === 'ready') return 'Is that... did you do it?';
+    if (q && st === 'done' && Math.random() < 0.5) return ['Thanks again, friend!', 'There\'s my hero!', 'Good to see you!'][Math.floor(Math.random() * 3)];
+    const role = { merchant: 'Rations! Arrows! Fair prices!', smith: '*clang* *clang* *clang*', innkeeper: 'Warm beds and hot stew!', seer: 'The smoke stirs...', scout: 'Quiet out there. Too quiet.', keeper: 'Keep the roads safe, traveler.', elder: 'The Hearth...', ranger: 'Mind the brambles.' }[d.role];
+    if (role) return role;
+    const b = s.progress.bosses;
+    const lines = ['Lovely day for it.', 'Have you eaten? You look thin.', 'Mind the wolves past the fence.', 'My knees say rain is coming.'];
+    if (!b.includes('verdant')) lines.push('Thorns grew across the north path again...', 'The Hearth looked so dim last night.');
+    else lines.push('The woods feel lighter lately!', 'I heard birds this morning. Birds!');
+    if (b.includes('ashen')) lines.push('No ash in the well today!');
+    if (b.includes('frost')) lines.push('Is it me, or is it warmer?');
+    return lines[Math.floor(Math.random() * lines.length)];
   }
 
   isMainTarget(n) {
@@ -507,10 +636,12 @@ export class GameScene {
       { label: 'Resume', onSelect: () => { menu.done = true; } },
       { label: 'Items', onSelect: () => this.pushUI(new ItemMenu(this)) },
       { label: 'Quest log', onSelect: () => this.pushUI(this.questLog()) },
+      { label: 'Lore journal', value: () => `${(s.progress.lore || []).length}/${LORE_ENTRIES.length}`, onSelect: () => this.pushUI(new LoreJournal(this)) },
       { label: 'Equipment & stats', onSelect: () => this.pushUI(this.equipmentMenu()) },
       { label: 'Talents', value: () => `${s.talents.points} pts`, onSelect: () => this.pushUI(talentMenu(this, false)) },
       { label: 'Options', onSelect: () => this.pushUI(this.app.optionsMenu()) },
       { label: 'Controls', onSelect: () => this.pushUI(controlsMenu()) },
+      { label: 'Replay prologue', onSelect: () => { menu.done = true; this.replayPrologue(); } },
       { label: 'Save game', onSelect: () => { this.saveGame(); menu.done = true; } },
       { label: 'Save & quit to title', onSelect: () => { this.saveGame(true); this.app.toTitle(); } },
     ], { width: 200, footer: `${CLASSES[s.classId].name} · seed "${s.seed}" · ${Math.floor(s.playTime / 60)} min` });
@@ -565,6 +696,25 @@ export class GameScene {
   }
 }
 
+function drawBarks(u, game) {
+  if (!game.area || game.area.kind === 'dungeon') return;
+  const cam = game.cam;
+  for (const n of game.area.npcs()) {
+    const b = n.bark;
+    if (!b || b.t <= 0 || n.talking) continue;
+    const x = n.x - cam.left, y = n.y - cam.top - 26 - (n.marker ? 8 : 0);
+    if (x < -60 || x > 540 || y < -20 || y > 290) continue;
+    setFont(u, 6);
+    const w = Math.min(150, u.measureText(b.text).width + 10);
+    u.globalAlpha = Math.min(1, b.t * 2, (3.2 - b.t) * 4 + 0.2);
+    panel(u, x - w / 2, y - 9, w, 12, { r: 3, fill: 'rgba(250,244,230,0.92)', edge: '#6a5040' });
+    u.fillStyle = 'rgba(250,244,230,0.92)';
+    u.beginPath(); u.moveTo(x - 3, y + 3); u.lineTo(x + 3, y + 3); u.lineTo(x, y + 7); u.closePath(); u.fill();
+    text(u, b.text, x, y, { size: 6, align: 'center', color: '#3a2a20', shadow: false });
+    u.globalAlpha = 1;
+  }
+}
+
 function wrapPlain(text, n) {
   const out = []; let line = '';
   for (const w of String(text).split(' ')) {
@@ -579,7 +729,7 @@ export function controlsMenu() {
     width: 300,
     lines: [
       'Move ............ WASD / Arrow keys',
-      'Attack .......... J or Z',
+      'Attack .......... J or Z        Spin attack .. hold J, release',
       'Use item ........ K or X        Item menu .... I or Y',
       'Quick-swap item . Q or Tab',
       'Shield (hold) ... L or C        Dodge ........ Space',

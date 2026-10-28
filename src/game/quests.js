@@ -2,6 +2,8 @@
 import { makeRng } from '../core/rng.js';
 import { FAMILIES } from '../data/enemies.js';
 import { BIOME_NAMES } from '../world/tiles.js';
+import { isPassable } from '../world/overworld.js';
+import { PETS, HERBS, RIDDLES, FETCH_TEXT, HUNT_TEXT, DELIVER_TEXT, RESCUE_TEXT, fill, cap } from '../data/sidequests.js';
 
 export const MAIN_STAGES = ['wake', 'scout', 'camp', 'sigil', 'vault', 'smith', 'ashpass', 'ridge', 'reliquary', 'frostpass', 'boulder', 'sanctuary', 'drowned', 'end'];
 
@@ -97,60 +99,235 @@ function doorOf(s, type) {
 const ITEMS = ['grandmother\'s locket', 'brass compass', 'bundle of letters', 'carved flute', 'lucky river stone', 'silver thimble', 'field journal', 'painted charm'];
 const KIN = ['my brother', 'my apprentice', 'our shepherd', 'my daughter', 'my oldest friend', 'the miller\'s boy', 'my cousin'];
 const PARCELS = ['a sealed letter', 'a jar of honey', 'mended boots', 'a pouch of seeds', 'a wrapped whetstone', 'dried herbs'];
+const PROCEDURAL = ['fetch', 'hunt', 'deliver', 'rescue', 'gather', 'treasure', 'pet'];
+const EARLY = ['home', 'outpost', 'swamp', 'desert', 'mountain'];
+// One of each handwritten quest per world, placed where it reads best.
+const UNIQUE = [['scholar', ['home']], ['letters', ['home', 'outpost']], ['pet', ['home', 'outpost', 'swamp', 'desert', 'mountain']], ['treasure', ['outpost', 'home', 'swamp']], ['riddle', ['swamp', 'desert', 'mountain']], ['gather', ['desert', 'mountain', 'swamp', 'outpost']]];
+export const SCHOLAR_NEED = 3;
+
+export const dirWord = (from, to) => {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const ns = dy < -Math.abs(dx) * 0.4 ? 'north' : dy > Math.abs(dx) * 0.4 ? 'south' : '';
+  const ew = dx < -Math.abs(dy) * 0.4 ? 'west' : dx > Math.abs(dy) * 0.4 ? 'east' : '';
+  return ns && ew ? `${ns}${ew}` : ns || ew || 'nearby';
+};
+
+const freeGround = (W, x, y) => { const i = y * W.w + x; return isPassable(W, x, y) && W.tiles[i] === W.ground[i] && !W.deco[i]; };
+
+// A walkable spot a short stroll off a road, minD..maxD tiles from a settlement.
+function roadsideSpot(W, s, rng, minD, maxD, taken = []) {
+  const c = s.center;
+  const roads = [];
+  for (const path of W.roads) for (const p of path) {
+    const d = Math.hypot(p.x - c.x, p.y - c.y);
+    if (d >= minD && d <= maxD && !taken.some((t) => Math.hypot(t.x - p.x, t.y - p.y) < 6)) roads.push(p);
+  }
+  if (!roads.length) return null;
+  const r = rng.pick(roads);
+  // A few steps off the road over passable ground, so the spot is always reachable.
+  const options = walkableAround(W, r, 3);
+  return options.length ? rng.pick(options) : { x: r.x, y: r.y };
+}
+
+// Free ground tiles reachable from `from` within `depth` steps, nearest first.
+function walkableAround(W, from, depth) {
+  const seen = new Set([`${from.x},${from.y}`]);
+  let frontier = [from];
+  const out = [];
+  for (let step = 0; step < depth; step++) {
+    const next = [];
+    for (const p of frontier) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = p.x + dx, y = p.y + dy, k = `${x},${y}`;
+      if (seen.has(k) || !isPassable(W, x, y)) continue;
+      seen.add(k);
+      next.push({ x, y });
+      if (freeGround(W, x, y)) out.push({ x, y });
+    }
+    frontier = next;
+  }
+  return out;
+}
+
+function rewardFor(type, rng) {
+  switch (type) {
+    case 'pet': return { coins: 30, food: 2 };
+    case 'gather': return { coins: 25, food: 3 };
+    case 'letters': return { coins: 30, heartPiece: 1 };
+    case 'treasure': return { coins: 70 };
+    case 'riddle': return { coins: 25, talent: 1 };
+    case 'scholar': return { coins: 20, talent: 1 };
+    default: return rng.weighted([[{ coins: rng.int(25, 60) }, 4], [{ coins: 20, talent: 1 }, 2], [{ coins: 15, heartPiece: 1 }, 2], [{ coins: 20, food: 3 }, 2]]);
+  }
+}
 
 export function generateSideQuests(W) {
   const rng = makeRng(W.seed).fork('sidequests');
-  const quests = [];
   const givers = W.npcs.filter((n) => n.questGiver);
-  const types = ['fetch', 'hunt', 'deliver', 'rescue'];
-  givers.forEach((giver, k) => {
+  const types = new Map();
+  for (const [type, where] of UNIQUE) {
+    const cand = givers.filter((g) => where.includes(g.settlementId) && !types.has(g.id));
+    if (cand.length) types.set(rng.pick(cand.sort((a, b) => where.indexOf(a.settlementId) - where.indexOf(b.settlementId)).slice(0, 2)).id, type);
+  }
+  let rot = rng.int(0, 3);
+  const quests = [];
+  const taken = [];
+  for (const giver of givers) {
+    let type = types.get(giver.id) || PROCEDURAL[rot++ % PROCEDURAL.length];
     const s = settlement(W, giver.settlementId);
-    const type = types[(k + rng.int(0, 3)) % 4];
-    const id = `sq:${giver.id}`;
-    const reward = rng.weighted([[{ coins: rng.int(25, 60) }, 4], [{ coins: 20, talent: 1 }, 2], [{ coins: 15, heartPiece: 1 }, 2], [{ coins: 20, food: 3 }, 2]]);
-    const q = { id, giverId: giver.id, settlementId: s.id, type, reward };
-    if (type === 'fetch') {
-      const spots = W.pois.spawns.filter((p) => p.biome === s.biome);
-      const spot = rng.pick(spots.length ? spots : W.pois.spawns);
-      q.item = rng.pick(ITEMS);
-      q.target = { x: spot.x, y: spot.y };
-      q.text = `I lost my ${q.item} out in the ${BIOME_NAMES[spot.biome].toLowerCase()} past the roads. Would you look for it? It should glint in the light.`;
-    } else if (type === 'hunt') {
-      const archetype = rng.pick(['brute', 'lunger', 'skirmisher', 'ranged']);
-      q.biome = s.biome;
-      q.archetype = archetype;
-      q.count = rng.int(3, 5);
-      q.text = `${FAMILIES[s.biome].names[archetype]}s have been harrying travelers near ${s.name}. Thin them out — ${q.count} should teach them.`;
-    } else if (type === 'deliver') {
-      const others = W.npcs.filter((n) => n.settlementId !== s.id && !n.questGiver && !['elder', 'scout'].includes(n.role) && !['volcanic', 'snow'].includes(n.settlementId));
-      const target = rng.pick(others);
-      q.parcel = rng.pick(PARCELS);
-      q.targetNpc = target.id;
-      q.text = `Could you carry ${q.parcel} to ${target.name} in ${settlement(W, target.settlementId).name}? They'll pay you on my behalf.`;
-    } else {
-      const caves = W.pois.caves.filter((c) => !['volcanic', 'snow'].includes(['forest', 'swamp', 'desert', 'mountain', 'snow', 'volcanic'][c.biome]));
-      const cave = rng.pick(caves.length ? caves : W.pois.caves);
-      q.caveId = cave.id;
-      q.kin = rng.pick(KIN);
-      q.text = `${cap(q.kin)} went exploring a cave in the ${BIOME_NAMES[cave.biome].toLowerCase()} and hasn't come back. Please, bring them home.`;
-    }
+    const q = { id: `sq:${giver.id}`, giverId: giver.id, settlementId: s.id, type };
+    if (!buildQuest(q, W, s, rng, taken)) { q.type = type = 'hunt'; buildQuest(q, W, s, rng, taken); }
+    q.reward = rewardFor(q.type, rng);
     quests.push(q);
-  });
+  }
   return quests;
 }
 
-const cap = (s) => s[0].toUpperCase() + s.slice(1);
+function buildQuest(q, W, s, rng, taken) {
+  const biomeName = (b) => BIOME_NAMES[b].toLowerCase();
+  switch (q.type) {
+    case 'fetch': {
+      const spots = W.pois.spawns.filter((p) => p.biome === s.biome);
+      const spot = rng.pick(spots.length ? spots : W.pois.spawns);
+      const v = rng.pick(FETCH_TEXT);
+      q.item = rng.pick(ITEMS);
+      q.target = { x: spot.x, y: spot.y };
+      const vars = { item: q.item, biome: biomeName(spot.biome), enemy: FAMILIES[spot.biome].names.lunger };
+      Object.assign(q, { text: fill(v.ask, vars), thanks: fill(v.thanks, vars), after: fill(v.after, vars) });
+      return true;
+    }
+    case 'hunt': {
+      const v = rng.pick(HUNT_TEXT);
+      q.biome = s.biome;
+      q.archetype = rng.pick(['brute', 'lunger', 'skirmisher', 'ranged']);
+      q.count = rng.int(2, 4);
+      const vars = { enemy: FAMILIES[s.biome].names[q.archetype], town: s.name, count: q.count };
+      Object.assign(q, { text: fill(v.ask, vars), thanks: fill(v.thanks, vars), after: fill(v.after, vars) });
+      return true;
+    }
+    case 'deliver': {
+      const others = W.npcs.filter((n) => n.settlementId !== s.id && !n.questGiver && !['elder', 'scout'].includes(n.role) && !['volcanic', 'snow'].includes(n.settlementId));
+      if (!others.length) return false;
+      const target = rng.pick(others);
+      q.parcel = rng.pick(PARCELS);
+      q.targetNpc = target.id;
+      q.text = fill(rng.pick(DELIVER_TEXT).ask, { parcel: q.parcel, target: target.name, town: settlement(W, target.settlementId).name });
+      return true;
+    }
+    case 'rescue': {
+      const caves = W.pois.caves.filter((c) => ![4, 5].includes(c.biome));
+      const cave = rng.pick(caves.length ? caves : W.pois.caves);
+      const v = rng.pick(RESCUE_TEXT);
+      q.caveId = cave.id;
+      q.kin = rng.pick(KIN);
+      const vars = { Kin: cap(q.kin), biome: biomeName(cave.biome) };
+      Object.assign(q, { text: fill(v.ask, vars), thanks: fill(v.thanks, vars), after: fill(v.after, vars) });
+      return true;
+    }
+    case 'pet': {
+      const spot = roadsideSpot(W, s, rng, 9, 18, taken);
+      if (!spot) return false;
+      taken.push(spot);
+      const kind = rng.pick(PETS);
+      q.pet = { kind: kind.kind, name: rng.pick(kind.names) };
+      q.spot = spot;
+      const where = dirWord(s.center, spot);
+      q.text = `${q.pet.name} has run off again! My ${kind.kind} chased a butterfly out past ${s.name} and won't come back. Head ${where} and you'll find them. ${q.pet.name} is quick, but tires fast. Keep after them and they'll let you scoop them up.`;
+      q.thanks = `${q.pet.name}! You little menace, come here. Oh, thank you. They'd have been out there all night.`;
+      q.after = `${q.pet.name} hasn't left my side since you brought them home. Well, except to steal sausages.`;
+      return true;
+    }
+    case 'gather': {
+      const center = roadsideSpot(W, s, rng, 8, 16, taken);
+      if (!center) return false;
+      taken.push(center);
+      const herbIdx = rng.int(0, HERBS.length - 1), herb = HERBS[herbIdx];
+      q.herb = herbIdx;
+      q.count = rng.int(4, 5);
+      q.center = center;
+      q.spots = [];
+      for (const p of rng.shuffle(walkableAround(W, center, 6))) {
+        if (q.spots.length >= q.count) break;
+        if (!q.spots.some((o) => Math.abs(o.x - p.x) + Math.abs(o.y - p.y) < 3)) q.spots.push(p);
+      }
+      if (q.spots.length < 3) return false;
+      q.count = q.spots.length;
+      q.text = `I need ${q.count} ${herb.plural} for ${herb.why}. They grow in a patch ${dirWord(s.center, center)} of here, just off the road. They glow a little, so you can't miss them.`;
+      q.thanks = `${cap(herb.plural)}, and fresh too! You have a gatherer's eye.`;
+      q.after = herb.after;
+      return true;
+    }
+    case 'letters': {
+      const far = W.npcs.filter((n) => ['swamp', 'desert', 'mountain'].includes(n.settlementId) && n.role === 'villager' && !n.questGiver);
+      const pool = far.length ? far : W.npcs.filter((n) => n.settlementId !== s.id && ['villager', 'innkeeper', 'merchant'].includes(n.role) && !['volcanic', 'snow'].includes(n.settlementId));
+      if (!pool.length) return false;
+      const target = rng.pick(pool);
+      q.targetNpc = target.id;
+      const town = settlement(W, target.settlementId).name;
+      q.text = `There's someone in ${town}. ${target.name}. We quarreled years ago over something so foolish I can't even remember what it was. I've written a letter... a dozen letters, really. This is the one. Would you carry it? I can't bear to send it myself.`;
+      q.reply = `From... from them? After all these years? Hold on. Let me read it twice. ...Wait here. No, take this. My answer. Hurry, before I lose my nerve.`;
+      q.thanks = `A reply? Let me see. They... they still plant the blue flowers I gave them, every spring. They want me to visit. I'm going to visit!`;
+      q.after = `I'm packing for ${town}. Don't you dare tell anyone I'm nervous.`;
+      return true;
+    }
+    case 'treasure': {
+      const spot = roadsideSpot(W, s, rng, 12, 24, taken);
+      if (!spot) return false;
+      taken.push(spot);
+      q.spot = spot;
+      const [rel, they] = rng.pick([['grandfather', 'he'], ['grandmother', 'she'], ['great-aunt', 'she'], ['old uncle', 'he']]);
+      q.relative = rel;
+      q.text = `My ${rel} was a treasure hunter. Mostly ${they} found mud. But ${they} left me this map, and the X is ${dirWord(s.center, spot)} of here, near the road. I'm too old for digging. Find what ${they} buried and you can keep whatever's worth keeping.`;
+      q.thanks = `Ha! My ${rel} really did bury something. Look: an old compass, and a note. "For whoever is stubborn enough." That's you. Keep the coins.`;
+      q.after = 'I hung that old compass over the hearth. It points north, at the Spire, no matter how I turn it. Strange, isn\'t it?';
+      return true;
+    }
+    case 'riddle': {
+      const order = rng.shuffle([...RIDDLES.keys()]);
+      q.riddles = order.slice(0, 3);
+      q.text = `Ah, a traveler! I am the riddle-keeper of ${s.name}. Answer three of my riddles and I'll make it worth your while. Get one wrong and... well, nothing terrible. I'll just laugh at you a little.`;
+      q.thanks = 'Three for three! A sharp mind in a sharp world. Here, you\'ve earned this.';
+      q.after = 'I\'ve been working on a new riddle. "What has four wardens and one flame?" ...I\'m still working on the answer.';
+      return true;
+    }
+    case 'scholar': {
+      q.need = SCHOLAR_NEED;
+      q.text = `I study the Kindlers, the old fire-keepers. Their standing stones are scattered across the realm, but my knees aren't what they were. Would you read ${q.need} of them for me? Your journal will keep the words.`;
+      q.thanks = '"No hand may hold them all"... So the old tales were true. Thank you. Keep reading, will you? The stones remember more than people do.';
+      q.after = 'I keep reading your notes. Someone chiseled the end off the Sealing Stone on purpose. Who would want to hide a warning?';
+      return true;
+    }
+  }
+  return false;
+}
 
 export function sideStatus(state, q) { return state.quest.side[q.id] || 'available'; }
 
 export function sideObjective(state, q, W) {
   const giver = W.npcs.find((n) => n.id === q.giverId);
   const st = sideStatus(state, q);
-  if (st === 'ready') return { text: `Return to ${giver.name} in ${settlement(W, q.settlementId).name}.`, marker: npcMarker(W, giver.id) };
+  const home = settlement(W, q.settlementId);
+  if (st === 'ready') {
+    if (q.type === 'letters') return { text: `Bring the reply back to ${giver.name} in ${home.name}.`, marker: npcMarker(W, giver.id) };
+    return { text: `Return to ${giver.name} in ${home.name}.`, marker: npcMarker(W, giver.id) };
+  }
+  const n = state.quest.kills[q.id] || 0;
   switch (q.type) {
     case 'fetch': return { text: `Find ${giver.name}'s ${q.item}.`, marker: q.target };
-    case 'hunt': return { text: `Defeat ${FAMILIES[q.biome].names[q.archetype]}s near ${settlement(W, q.settlementId).name} (${state.quest.kills[q.id] || 0}/${q.count}).`, marker: settlement(W, q.settlementId).center };
-    case 'deliver': { const t = W.npcs.find((n) => n.id === q.targetNpc); return { text: `Deliver ${q.parcel} to ${t.name} in ${settlement(W, t.settlementId).name}.`, marker: npcMarker(W, t.id) }; }
+    case 'hunt': return { text: `Defeat ${FAMILIES[q.biome].names[q.archetype]}s near ${home.name} (${n}/${q.count}).`, marker: home.center };
+    case 'deliver': case 'letters': {
+      const t = W.npcs.find((x) => x.id === q.targetNpc);
+      return { text: `${q.type === 'letters' ? `Carry ${giver.name}'s letter` : `Deliver ${q.parcel}`} to ${t.name} in ${settlement(W, t.settlementId).name}.`, marker: npcMarker(W, t.id) };
+    }
+    case 'pet': return { text: `Catch ${q.pet.name} the ${q.pet.kind}, who ran off near ${home.name}.`, marker: q.spot };
+    case 'gather': return { text: `Gather ${HERBS[q.herb].plural} for ${giver.name} (${n}/${q.count}).`, marker: q.center };
+    case 'treasure': return { text: 'Dig where the treasure map\'s X is marked (E).', marker: q.spot };
+    case 'riddle': return { text: `Answer the riddle-keeper's riddles (${n}/3).`, marker: npcMarker(W, giver.id) };
+    case 'scholar': {
+      const read = state.progress.lore || [];
+      const unread = W.pois.lore.filter((l) => !read.includes(l.id)).sort((a, b) => Math.hypot(a.x - home.center.x, a.y - home.center.y) - Math.hypot(b.x - home.center.x, b.y - home.center.y));
+      const got = read.filter((id) => id.startsWith('lore')).length;
+      return { text: `Read the Kindlers' standing stones (${Math.min(got, q.need)}/${q.need}).`, marker: unread[0] ? { x: unread[0].x, y: unread[0].y + 1 } : npcMarker(W, giver.id) };
+    }
     default: { const c = W.pois.caves.find((x) => x.id === q.caveId); return { text: `Find ${q.kin} in the cave.`, marker: c.front }; }
   }
 }
@@ -166,10 +343,17 @@ export function npcMarker(W, npcId) {
 
 export function questTitle(q, W) {
   if (!q) return 'The Waning Ember';
+  const npc = (id) => W.npcs.find((n) => n.id === id);
   switch (q.type) {
     case 'fetch': return `The lost ${q.item}`;
     case 'hunt': return `Thinning the ${FAMILIES[q.biome].names[q.archetype]}s`;
-    case 'deliver': return `A parcel for ${W.npcs.find((n) => n.id === q.targetNpc).name}`;
+    case 'deliver': return `A parcel for ${npc(q.targetNpc).name}`;
+    case 'pet': return `${q.pet.name}'s great escape`;
+    case 'gather': return `${cap(HERBS[q.herb].plural)} for ${npc(q.giverId).name}`;
+    case 'letters': return `Letters to ${npc(q.targetNpc).name}`;
+    case 'treasure': return `${cap(q.relative || 'grandfather')}'s treasure map`;
+    case 'riddle': return 'The riddle-keeper';
+    case 'scholar': return 'Stones that remember';
     default: return `Lost in the dark: ${q.kin}`;
   }
 }

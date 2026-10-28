@@ -18,10 +18,10 @@ export const SETTLEMENT_SPECS = [
 
 // Who lives where: [role, buildingType|null(outdoors), questGiver]
 const ROSTERS = {
-  home: [['elder', 'hall'], ['smith', 'smith'], ['merchant', 'shop'], ['seer', 'seer'], ['villager', null, true], ['villager', 'house', true], ['villager', null]],
-  outpost: [['scout', null], ['ranger', 'lodge', true], ['villager', 'house']],
+  home: [['elder', 'hall'], ['smith', 'smith'], ['merchant', 'shop'], ['seer', 'seer'], ['villager', null, true], ['villager', 'house', true], ['villager', null, true]],
+  outpost: [['scout', null], ['ranger', 'lodge', true], ['villager', 'house', true]],
   town: [['keeper', 'hall'], ['merchant', 'shop'], ['innkeeper', 'inn'], ['informant', null], ['villager', 'house', true], ['villager', null, true]],
-  outpostGated: [['keeper', 'hall'], ['merchant', 'shop'], ['innkeeper', 'inn'], ['villager', 'house', true], ['villager', null]],
+  outpostGated: [['keeper', 'hall'], ['merchant', 'shop'], ['innkeeper', 'inn'], ['villager', 'house', true], ['villager', null, true]],
 };
 
 const ROOFS = ['#9c4a3c', '#3f5f8a', '#6b4f8f', '#4f7a4a', '#8a6a3a', '#7a3f5f', '#3f7a78'];

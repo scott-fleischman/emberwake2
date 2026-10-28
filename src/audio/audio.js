@@ -80,6 +80,13 @@ const RAW = {
     mel: { density: 0.22, lo: 74, hi: 86, vel: 0.4, hold: 1.5 },
     voice: { bright: 0.55, decay: 1.2 }, wet: 0.45, seed: 11,
   },
+  story: {
+    bpm: 58, root: 57, scale: S.minor, progs: [[0, 5, 2, 6], [0, 3, 5, 4], [5, 3, 0, 4]],
+    bass: 'R.......', bassOct: -2, bassHold: 8, bassVel: 0.4,
+    arp: '0.2.4.2.', arpVel: 0.26, arpProb: 0.85, arpHold: 6, breathe: 0.08,
+    mel: { density: 0.16, lo: 69, hi: 81, vel: 0.36, hold: 2 },
+    drone: 0.25, voice: { bright: 0.5, decay: 1.3 }, wet: 0.6, seed: 131,
+  },
   forest: {
     bpm: 84, root: 55, progs: [[0, 3, 0, 4], [0, 5, 3, 4], [5, 3, 0, 4], [0, 2, 3, 4]],
     bass: 'R...F...', arp: '01230213', arpVel: 0.28, arpProb: 0.9, arpHold: 4, breathe: 0.12,
