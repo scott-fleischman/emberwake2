@@ -91,3 +91,17 @@ test('one Esc arms the skip, a second skips the whole scene', () => {
   g.pressed.add('Escape'); cut.update(1 / 60, g); g.pressed.clear();
   assert.equal(done, 1);
 });
+
+test('the cutscene theater plays every scene through to the end', async () => {
+  const { makeApp } = await import('../tools/headless.mjs');
+  const app = await makeApp();
+  const { TheaterScene } = await import('../src/scenes/theater.js');
+  const theater = new TheaterScene(app);
+  const g = document.createElement('canvas').getContext('2d');
+  for (let f = 0; f < 60 * 60 * 10 && !app.titled; f++) {
+    theater.update(1 / 60);
+    if (f % 30 === 0) theater.drawWorld(g);
+    app.input.endFrame();
+  }
+  assert.ok(app.titled, 'the theater should end by returning to the title');
+});
