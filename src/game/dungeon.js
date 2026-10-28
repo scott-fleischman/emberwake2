@@ -15,6 +15,7 @@ import { TAU } from '../core/math.js';
 
 const OPP = { n: 's', s: 'n', e: 'w', w: 'e' };
 const PUZZLE_ROLES = new Set(['timed', 'switches', 'ordered', 'push']);
+const IN_ROOM_PUZZLES = new Set(['switches', 'ordered', 'push']); // timed rooms already gate with their bars
 
 // ---------------------------------------------------------------- room objects
 class RoomObject extends Entity {
@@ -190,13 +191,22 @@ export class DungeonArea extends Area {
   key(room = this.room) { return `${this.id}:${room.id}`; }
   get solved() { return this.pr.solved.includes(this.key()); }
 
+  // The puzzle room a door belongs to, if either side of it holds a puzzle.
+  puzzleRoomFor(door, roles = PUZZLE_ROLES) {
+    if (!door.id || door.id === 'exit') return null;
+    const [a, b] = door.id.split('-').map(Number);
+    return [this.byId.get(a), this.byId.get(b)].find((r) => r && roles.has(r.role)) || null;
+  }
+
+  isDoorSealed(door) {
+    // Locked doors out of a plate/crystal/block room need the puzzle solved first, then a key.
+    const pz = door.type === 'sealed' ? this.puzzleRoomFor(door) : door.type === 'locked' ? this.puzzleRoomFor(door, IN_ROOM_PUZZLES) : null;
+    return !!pz && !this.pr.solved.includes(this.key(pz));
+  }
+
   isDoorOpen(room, door) {
+    if (this.isDoorSealed(door)) return false;
     if (door.type === 'locked') return this.pr.unlocked.includes(`${this.id}:${door.id}`);
-    if (door.type === 'sealed') {
-      const [a, b] = door.id.split('-').map(Number);
-      const pz = [this.byId.get(a), this.byId.get(b)].find((r) => r && PUZZLE_ROLES.has(r.role));
-      return !pz || this.pr.solved.includes(this.key(pz));
-    }
     return true;
   }
 
@@ -299,7 +309,7 @@ export class DungeonArea extends Area {
     const room = this.room;
     this.doorState = {};
     for (const [dir, door] of Object.entries(room.doors)) {
-      let state = door.type === 'exit' ? 'exit' : this.isDoorOpen(room, door) ? (door.type === 'boss' ? 'boss' : 'open') : door.type;
+      let state = door.type === 'exit' ? 'exit' : this.isDoorOpen(room, door) ? (door.type === 'boss' ? 'boss' : 'open') : this.isDoorSealed(door) ? 'sealed' : door.type;
       if (this.shut && state !== 'exit') state = 'shutter';
       if (this.shut && state === 'exit') state = 'shutter';
       this.doorState[dir] = state;

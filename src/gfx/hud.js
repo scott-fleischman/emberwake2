@@ -140,8 +140,8 @@ export function drawMinimap(u, area, game, big = false) {
     if (r.role === 'entrance') { u.fillStyle = '#80e080'; u.fillRect(x + cw / 2 - 1, y + ch - 1.5, 2, 2); }
     for (const [dir, door] of Object.entries(r.doors)) {
       if (door.to === null) continue;
-      const c = door.type === 'locked' && !game.state.progress.unlocked.includes(`${d.id}:${door.id}`) ? '#f0d050'
-        : door.type === 'sealed' && !area.isDoorOpen(r, door) ? '#b070ff' : '#d0d0e0';
+      const c = area.isDoorSealed(door) ? '#b070ff'
+        : door.type === 'locked' && !game.state.progress.unlocked.includes(`${d.id}:${door.id}`) ? '#f0d050' : '#d0d0e0';
       u.fillStyle = c;
       if (dir === 'n') u.fillRect(x + cw / 2 - 0.5, y - 0.5, 1, 1.5);
       if (dir === 's') u.fillRect(x + cw / 2 - 0.5, y + ch - 1, 1, 1.5);
