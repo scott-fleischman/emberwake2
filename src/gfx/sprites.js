@@ -379,9 +379,82 @@ function deadTreeSprite(v) {
 }
 
 // ------------------------------------------------------------------ buildings & landmarks
+// Trade signs: a board on an iron bracket beside the door (the home gets a flat plaque instead).
+export const SIGNED = new Set(['smith', 'shop', 'inn', 'seer', 'hall', 'lodge']);
+export const SIGN_ICONS = new Set([...SIGNED, 'home']);
+const HEART = ['.##...##.', '####.####', '#########', '#########', '.#######.', '..#####..', '...###...', '....#....'];
+// Icon art in the board's 13x11 face, at (ox, oy).
+function signIcon(g, type, ox, oy) {
+  const r = (x, y, w, h, c) => R(g, ox + x, oy + y, w, h, c), p = (x, y, c) => R(g, ox + x, oy + y, 1, 1, c);
+  switch (type) {
+    case 'smith': // anvil under a hammer, with sparks
+      r(3, 0, 6, 1, '#e8ecf2'); r(3, 1, 6, 1, '#9a9eaa'); r(5, 2, 2, 3, '#5a3418');
+      r(1, 5, 11, 1, '#b4b8c4'); r(3, 6, 9, 1, '#5e6270'); r(4, 7, 7, 1, '#4a4e5a'); r(5, 8, 5, 1, '#4a4e5a'); r(4, 9, 7, 1, '#4a4e5a'); r(3, 10, 9, 1, '#363a44');
+      p(11, 1, '#fff2a0'); p(10, 3, '#ffc840'); p(1, 2, '#ffc840');
+      break;
+    case 'shop': // a red potion and a stack of coins
+      r(2, 0, 2, 1, '#f0dca8'); r(2, 1, 2, 2, '#e4f2f8'); r(1, 3, 4, 1, '#e4f2f8'); r(0, 4, 6, 5, '#d83040'); r(1, 9, 4, 1, '#a02030');
+      p(1, 5, '#ffa0a8'); p(1, 6, '#ffa0a8'); r(0, 4, 6, 1, '#f05060');
+      for (let k = 0; k < 3; k++) { r(7, 5 + k * 2, 5, 1, '#f0c440'); r(7, 6 + k * 2, 5, 1, '#b8861c'); }
+      p(8, 5, '#fff6c0');
+      break;
+    case 'inn': // frothy mug
+      r(3, 0, 5, 1, '#fffaf0'); r(2, 1, 8, 2, '#fffaf0'); p(5, 2, '#e4dccc'); p(2, 3, '#fffaf0');
+      r(2, 3, 7, 7, '#e8a020'); p(2, 3, '#fffaf0'); r(3, 3, 1, 6, '#ffd468'); r(7, 3, 1, 7, '#b87010'); r(2, 10, 7, 1, '#7a4610');
+      r(9, 4, 3, 1, '#7a4610'); r(11, 5, 1, 3, '#7a4610'); r(9, 8, 3, 1, '#7a4610');
+      break;
+    case 'seer': // crystal ball on a stand
+      r(4, 0, 5, 1, '#5a3aa8'); r(3, 1, 7, 1, '#7a5ad8'); r(2, 2, 9, 3, '#8a6ae8'); r(3, 5, 7, 1, '#7a5ad8'); r(4, 6, 5, 1, '#5a3aa8');
+      r(4, 1, 2, 1, '#f4eeff'); p(3, 2, '#d8c8ff'); p(7, 3, '#c8b8ff'); p(8, 4, '#b8a0ff');
+      r(3, 7, 7, 1, '#e8b840'); r(4, 8, 5, 1, '#6a4020'); r(3, 9, 7, 1, '#6a4020'); r(2, 10, 9, 1, '#4a2a12');
+      break;
+    case 'hall': // crowned shield
+      p(3, 0, '#f8d040'); p(6, 0, '#f8d040'); p(9, 0, '#f8d040'); r(3, 1, 7, 1, '#f8d040'); r(3, 2, 7, 1, '#c89a20'); p(6, 2, '#e03030');
+      r(2, 3, 9, 4, '#b82828'); r(3, 7, 7, 1, '#b82828'); r(4, 8, 5, 1, '#a02020'); r(5, 9, 3, 1, '#a02020'); p(6, 10, '#8a1a1a');
+      r(2, 3, 1, 4, '#e05050'); r(6, 4, 1, 5, '#f8d040'); r(4, 5, 5, 1, '#f8d040');
+      break;
+    case 'lodge': // crossed arrows
+      for (let k = 0; k < 8; k++) { p(2 + k, 9 - k, '#4a2a10'); p(10 - k, 9 - k, '#4a2a10'); }
+      r(10, 0, 2, 2, '#e8ecf2'); p(9, 0, '#a8acb8'); p(11, 2, '#a8acb8');
+      r(1, 0, 2, 2, '#e8ecf2'); p(3, 0, '#a8acb8'); p(1, 2, '#a8acb8');
+      p(1, 9, '#d84030'); r(1, 10, 2, 1, '#d84030'); p(11, 9, '#d84030'); r(10, 10, 2, 1, '#d84030');
+      break;
+    case 'home': // heart
+      HEART.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] === '#') p(2 + x, 1 + y, y < 2 && x < 4 ? '#ff7a88' : y > 4 ? '#b02838' : '#e03848'); });
+      p(3, 2, '#ffd0d8');
+      break;
+  }
+}
+
+// The 15x13 board with its icon.
+export function signBoard(type) {
+  return cached(`signboard:${type}`, 15, 13, (g) => {
+    R(g, 0, 0, 15, 13, '#4a2e16');
+    R(g, 1, 1, 13, 11, '#b07c44'); R(g, 1, 1, 13, 1, '#c8965c'); R(g, 1, 11, 13, 1, '#946234');
+    P(g, 1, 1, '#e0b070'); P(g, 13, 11, '#7a4e28');
+    signIcon(g, type, 1, 1);
+  });
+}
+
+// Bracket pivot (centre of the arm's underside, where the chains hang), in building-sprite pixels.
+export function signAnchor(b) {
+  return { x: (b.door.x - b.x) * TILE + 23, y: (b.h - 2) * TILE + 13 };
+}
+
+// The hanging board sways on its chains, each building on its own beat. It moves whole pixels and is
+// never rotated, so the icon stays crisp; the chains lean to follow it.
+export function drawShopSign(g, b, px, top, time) {
+  if (!SIGNED.has(b.type)) return;
+  const a = signAnchor(b), ph = tileHash(b.x, b.y, 7) * 6.283;
+  const sway = Math.round(Math.sin(time * 1.7 + ph) * 1.25 + Math.sin(time * 0.61 + ph * 2) * 0.3);
+  const x = px + a.x, y = top + a.y;
+  for (const hx of [x - 5, x + 5]) for (let k = 0; k < 3; k++) R(g, hx + Math.round((sway * k) / 2.5), y + k, 1, 1, k % 2 ? '#4a4648' : '#8a8690');
+  g.drawImage(signBoard(b.type), x - 7 + sway, y + 3);
+}
+
 export function buildingSprite(b) {
   const W = b.w * TILE, H = b.h * TILE + 10;
-  return cached(`bld:${b.id}`, W, H, (g) => {
+  return cached(`bld:${b.id}:${b.type}:${b.x},${b.y}:${b.roof}`, W, H, (g) => {
     const wallRows = 2, roofH = (b.h - wallRows) * TILE + 10;
     ellipse(g, W / 2, H - 2, W / 2, 4, 'rgba(0,0,0,0.25)');
     // walls
@@ -400,14 +473,22 @@ export function buildingSprite(b) {
     // door + windows
     const doorX = (b.door.x - b.x) * TILE + 3;
     R(g, doorX, H - 3 - 14, 10, 14, '#5a3a20'); R(g, doorX + 1, H - 3 - 13, 8, 13, '#7a5030'); P(g, doorX + 7, H - 10, '#f0c050');
+    const signed = SIGN_ICONS.has(b.type);
     for (let k = 0; k < b.w; k++) {
       const wx = k * TILE + 4;
-      if (Math.abs(wx - doorX) < 12) continue;
+      if (Math.abs(wx - doorX) < 12 || (signed && wx > doorX && wx < doorX + 30)) continue;
       R(g, wx, roofH + 5, 8, 7, '#3a2a1a'); R(g, wx + 1, roofH + 6, 6, 5, '#f0d890'); R(g, wx + 4, roofH + 6, 1, 5, '#3a2a1a');
     }
-    // trade sign
-    const icon = { smith: '#c0c0c8', shop: '#e0c040', inn: '#e08040', seer: '#b080ff', hall: '#c03030', lodge: '#40a040' }[b.type];
-    if (icon) { R(g, doorX + 12, roofH + 2, 8, 7, '#6e4e2a'); R(g, doorX + 14, roofH + 4, 4, 3, icon); }
+    // the sign's iron bracket (the board itself swings, drawn live); the home gets a nailed plaque
+    if (SIGNED.has(b.type)) {
+      const a = signAnchor(b), bx = a.x - 9, ay = a.y - 1, iron = '#2e2a2c'; // wall plate, arm, brace, finial
+      R(g, bx, ay - 2, 2, 7, iron); P(g, bx, ay - 1, '#6a6670'); P(g, bx, ay + 3, '#6a6670');
+      R(g, bx, ay, 18, 1, iron); R(g, bx + 2, ay - 1, 15, 1, '#4e4a4e'); P(g, bx + 17, ay - 1, iron); P(g, bx + 17, ay - 2, '#6a6670');
+      P(g, bx + 2, ay + 3, iron); P(g, bx + 3, ay + 2, iron); P(g, bx + 4, ay + 1, iron);
+    } else if (b.type === 'home') {
+      g.drawImage(signBoard('home'), doorX + 13, roofH + 4);
+      P(g, doorX + 14, roofH + 5, '#d8d0c0'); P(g, doorX + 26, roofH + 5, '#d8d0c0');
+    }
   });
 }
 
@@ -457,13 +538,13 @@ export const LOOKS = {
   mage: { skin: '#f0c8a0', hair: '#e0e0e8', tunic: '#6a3a9a', pants: '#4a2a6a', accent: '#f0c850', hat: 'wizard', robe: true, hatColor: '#4e2a7a' },
   ranger: { skin: '#e8b890', hair: '#8a5a2a', tunic: '#3a7a3a', pants: '#5a4a32', accent: '#a07a48', hat: 'hood', hatColor: '#2e5e2e' },
   rogue: { skin: '#e8c0a0', hair: '#2a2028', tunic: '#3c3c48', pants: '#2a2a32', accent: '#c03030', hat: 'hood', hatColor: '#26262e', scarf: true },
-  elder: { skin: '#e8c0a0', hair: '#f0f0f0', tunic: '#8a7a5a', pants: '#5a4e3a', accent: '#c0a060', hat: 'none', robe: true, beard: '#f0f0f0' },
-  smith: { skin: '#d8a078', hair: '#3a2a1a', tunic: '#5a4a3a', pants: '#3a3028', accent: '#8a8a8a', hat: 'none', beard: '#3a2a1a', apron: true },
+  elder: { skin: '#e8c0a0', hair: '#f0f0f0', tunic: '#8a7a5a', pants: '#5a4e3a', accent: '#c0a060', hat: 'none', robe: true, beard: '#f0f0f0', tool: 'staff' },
+  smith: { skin: '#d8a078', hair: '#3a2a1a', tunic: '#5a4a3a', pants: '#3a3028', accent: '#8a8a8a', hat: 'none', beard: '#3a2a1a', apron: true, tool: 'hammer' },
   merchant: { skin: '#f0c8a0', hair: '#7a4a2a', tunic: '#c08a30', pants: '#5a3a22', accent: '#e8d070', hat: 'cap', hatColor: '#8a3a2a' },
-  seer: { skin: '#e0b8a0', hair: '#3a2a4a', tunic: '#5a3a7a', pants: '#3a2a4a', accent: '#c0a0ff', hat: 'hood', hatColor: '#3e2a5a', robe: true },
+  seer: { skin: '#e0b8a0', hair: '#3a2a4a', tunic: '#5a3a7a', pants: '#3a2a4a', accent: '#c0a0ff', hat: 'hood', hatColor: '#3e2a5a', robe: true, tool: 'orb' },
   scout: { skin: '#e8b890', hair: '#a06a3a', tunic: '#4a6a3a', pants: '#4a3a2a', accent: '#8a6a3a', hat: 'hood', hatColor: '#3a5a2e' },
-  keeper: { skin: '#e0b090', hair: '#5a4a3a', tunic: '#8a2a2a', pants: '#3a3030', accent: '#c0c4cc', hat: 'helm', hatColor: '#9aa0a8' },
-  innkeeper: { skin: '#f0c8a0', hair: '#c08040', tunic: '#7a5a3a', pants: '#4a3a2a', accent: '#f0f0e8', hat: 'none', apron: true },
+  keeper: { skin: '#e0b090', hair: '#5a4a3a', tunic: '#8a2a2a', pants: '#3a3030', accent: '#c0c4cc', hat: 'helm', hatColor: '#9aa0a8', tool: 'spear' },
+  innkeeper: { skin: '#f0c8a0', hair: '#c08040', tunic: '#7a5a3a', pants: '#4a3a2a', accent: '#f0f0e8', hat: 'none', apron: true, tool: 'cloth' },
 };
 const VILLAGER_TUNICS = ['#a04a4a', '#4a7aa0', '#7a9a4a', '#a0804a', '#7a5a9a', '#4a9a8a', '#b07050', '#6a6a8a'];
 const HAIRS = ['#3a2a1a', '#7a4a2a', '#c09050', '#1a1a1a', '#a03a1a', '#d0d0c0', '#5a3a2a', '#e0c080'];
@@ -474,11 +555,42 @@ export function npcLook(role, lookIndex) {
   return { skin: lookIndex % 3 === 0 ? '#c89070' : '#f0c8a0', hair: HAIRS[(lookIndex * 3) % 8], tunic: t, pants: shade(t, -0.45), accent: '#e0d0a0', hat: lookIndex % 4 === 1 ? 'cap' : 'none', hatColor: shade(t, -0.3), robe: lookIndex % 5 === 2 };
 }
 
+// Arm poses (hand offset from the shoulder: x times the outward sign, y below the shoulder row).
+// d down, r raised, w waving out, o reaching out, c curled in, x striking low, h shading the brow,
+// l gripping high (on a staff), m/n wiping across the belly.
+const HAND = { d: [0, 4], r: [1, -5], w: [3, -4], o: [3, 1], c: [1, 0], x: [1, 4], h: [0, -5], l: [1, -1], m: [-2, 3], n: [-5, 3] };
+function arm(g, look, ax, o, a, s) {
+  const c = look.tunic, k = look.skin, fore = shade(c, -0.25);
+  switch (a) {
+    case 'r': R(g, ax, s - 1, 1, 2, c); R(g, ax + o, s - 3, 1, 2, c); R(g, ax + o, s - 5, 1, 2, k); break;
+    case 'w': P(g, ax, s, c); P(g, ax + o, s - 1, c); P(g, ax + 2 * o, s - 2, c); R(g, ax + 3 * o, s - 4, 1, 2, k); break;
+    case 'o': R(g, ax, s, 1, 2, c); P(g, ax + o, s + 1, c); P(g, ax + 2 * o, s + 1, c); P(g, ax + 3 * o, s + 1, k); break;
+    case 'c': R(g, ax, s, 1, 2, c); P(g, ax + o, s + 1, c); P(g, ax + o, s, k); break;
+    case 'x': R(g, ax, s, 1, 2, c); R(g, ax + o, s + 2, 1, 2, c); P(g, ax + o, s + 4, k); break;
+    case 'h': R(g, ax, s - 4, 1, 5, c); R(g, o > 0 ? 8 : 3, s - 5, 5, 1, k); break;
+    case 'l': R(g, ax, s - 1, 1, 2, c); P(g, ax + o, s - 1, k); break;
+    case 'm': case 'n': { const L = a === 'm' ? 2 : 5; R(g, ax, s, 1, 3, c); R(g, o > 0 ? ax - L + 1 : ax + 1, s + 3, L - 1, 1, fore); P(g, ax - L * o, s + 3, k); break; }
+    default: R(g, ax, s, 1, 4, c); P(g, ax, s + 4, k);
+  }
+}
+
+// Idle life at time t: a slow 1px breath dip and a short blink now and then, desynced by seed (0..1).
+export function idleLife(t, seed = 0) {
+  const per = 2.4 + seed * 1.4, by = (t / per + seed * 7) % 1 < 0.5 ? 0 : 1;
+  const pb = 3 + ((seed * 13) % 1) * 2.2, n = Math.floor(t / pb), at = tileHash(n, Math.floor(seed * 9973), 41) * (pb - 0.3), bt = t - n * pb;
+  return `${by}${bt > at && bt < at + 0.12 ? 1 : 0}`;
+}
+
 // 16x20 humanoid, feet at the bottom row. facing: down|up|left|right. frame 0..3 (walk)
-export function humanSprite(look, facing, frame, key) {
-  return cached(`hum:${key}:${facing}:${frame}`, 16, 20, (g) => {
+// pose (optional): breath dip 0|1, blink 0|1, tool-side arm, free arm (see HAND). The tool side is the
+// screen-right arm, or the screen-left one when facing left.
+export function humanSprite(look, facing, frame, key, pose = '') {
+  if (pose === '00dd') pose = '';
+  return cached(`hum:${key}:${facing}:${frame}${pose ? ':' + pose : ''}`, 16, 20, (g) => {
     const step = frame % 2 === 1 ? (frame === 1 ? 1 : -1) : 0;
     const side = facing === 'left' || facing === 'right';
+    const by = pose[0] === '1' ? 1 : 0, shut = pose[1] === '1';
+    const toolX = facing === 'left' ? 3 : 12, armOf = (ax) => (ax === toolX ? pose[2] : pose[3]) || 'd';
     // legs
     if (!look.robe) {
       R(g, 5, 15, 2, 4 - Math.max(0, step), look.pants);
@@ -489,41 +601,76 @@ export function humanSprite(look, facing, frame, key) {
       R(g, 5 + step, 19, 2, 1, '#2a1e14'); R(g, 9 - step, 19, 2, 1, '#2a1e14');
     }
     // body
-    R(g, 4, 9, 8, 7, look.tunic);
-    R(g, 4, 9, 8, 1, shade(look.tunic, 0.2));
+    R(g, 4, 9 + by, 8, 7 - by, look.tunic);
+    R(g, 4, 9 + by, 8, 1, shade(look.tunic, 0.2));
     if (look.apron) R(g, 5, 11, 6, 5, look.accent);
     R(g, 4, 14, 8, 1, shade(look.tunic, -0.35));
     if (!look.apron) P(g, 8, 14, look.accent);
     // arms
     const armSwing = side ? 0 : step;
-    R(g, 3, 10 + armSwing, 1, 4, look.tunic); R(g, 12, 10 - armSwing, 1, 4, look.tunic);
-    P(g, 3, 14 + armSwing, look.skin); P(g, 12, 14 - armSwing, look.skin);
-    // head
-    R(g, 5, 3, 6, 6, look.skin);
-    if (facing === 'up') R(g, 5, 3, 6, 6, look.hair);
-    else {
-      R(g, 5, 3, 6, 2, look.hair);
-      if (facing === 'down') { R(g, 5, 5, 1, 2, look.hair); R(g, 10, 5, 1, 2, look.hair); P(g, 6, 6, '#20160e'); P(g, 9, 6, '#20160e'); }
-      else if (facing === 'left') { R(g, 9, 4, 2, 4, look.hair); P(g, 6, 6, '#20160e'); }
-      else { R(g, 5, 4, 2, 4, look.hair); P(g, 9, 6, '#20160e'); }
+    for (const [ax, o, sw] of [[3, -1, armSwing], [12, 1, -armSwing]]) {
+      const a = armOf(ax);
+      if (a !== 'h') arm(g, look, ax, o, a, 10 + by + (a === 'd' ? sw : 0));
     }
-    if (look.beard && facing !== 'up') R(g, 6, 7, 4, 3, look.beard);
-    if (look.scarf) R(g, 5, 8, 6, 2, look.accent);
+    // head
+    const eye = shut ? shade(look.skin, -0.18) : '#20160e';
+    R(g, 5, 3 + by, 6, 6, look.skin);
+    if (facing === 'up') R(g, 5, 3 + by, 6, 6, look.hair);
+    else {
+      R(g, 5, 3 + by, 6, 2, look.hair);
+      if (facing === 'down') { R(g, 5, 5 + by, 1, 2, look.hair); R(g, 10, 5 + by, 1, 2, look.hair); P(g, 6, 6 + by, eye); P(g, 9, 6 + by, eye); }
+      else if (facing === 'left') { R(g, 9, 4 + by, 2, 4, look.hair); P(g, 6, 6 + by, eye); }
+      else { R(g, 5, 4 + by, 2, 4, look.hair); P(g, 9, 6 + by, eye); }
+    }
+    if (look.beard && facing !== 'up') R(g, 6, 7 + by, 4, 3, look.beard);
+    if (look.scarf) R(g, 5, 8 + by, 6, 2, look.accent);
     // headwear
     const hc = look.hatColor || look.hair;
     if (look.hat === 'wizard') {
-      R(g, 4, 3, 8, 2, hc);
-      g.fillStyle = hc; g.beginPath(); g.moveTo(5, 3); g.lineTo(11, 3); g.lineTo(facing === 'left' ? 6 : 10, -1); g.closePath(); g.fill();
-      P(g, 8, 2, look.accent);
+      R(g, 4, 3 + by, 8, 2, hc);
+      g.fillStyle = hc; g.beginPath(); g.moveTo(5, 3 + by); g.lineTo(11, 3 + by); g.lineTo(facing === 'left' ? 6 : 10, -1 + by); g.closePath(); g.fill();
+      P(g, 8, 2 + by, look.accent);
     } else if (look.hat === 'hood') {
-      R(g, 4, 2, 8, 3, hc); R(g, 4, 4, 1, 5, hc); R(g, 11, 4, 1, 5, hc);
-      if (facing === 'up') R(g, 4, 2, 8, 8, hc);
+      R(g, 4, 2 + by, 8, 3, hc); R(g, 4, 4 + by, 1, 5, hc); R(g, 11, 4 + by, 1, 5, hc);
+      if (facing === 'up') R(g, 4, 2 + by, 8, 8, hc);
     } else if (look.hat === 'cap') {
-      R(g, 5, 2, 6, 2, hc); if (facing !== 'up') R(g, facing === 'left' ? 3 : facing === 'right' ? 9 : 5, 4, facing === 'down' ? 6 : 4, 1, hc);
+      R(g, 5, 2 + by, 6, 2, hc); if (facing !== 'up') R(g, facing === 'left' ? 3 : facing === 'right' ? 9 : 5, 4 + by, facing === 'down' ? 6 : 4, 1, hc);
     } else if (look.hat === 'helm') {
-      R(g, 4, 2, 8, 3, hc); R(g, 4, 2, 8, 1, shade(hc, 0.3)); if (facing === 'down') R(g, 7, 4, 2, 3, hc);
+      R(g, 4, 2 + by, 8, 3, hc); R(g, 4, 2 + by, 8, 1, shade(hc, 0.3)); if (facing === 'down') R(g, 7, 4 + by, 2, 3, hc);
     }
+    // a hand shading the eyes goes over the face
+    for (const [ax, o] of [[3, -1], [12, 1]]) if (armOf(ax) === 'h') arm(g, look, ax, o, 'h', 10 + by);
   });
+}
+
+// Tools in an NPC's hand, drawn live around the cached body (sx, sy = sprite top-left). Long tools
+// (staff, spear) go behind the body so the hand grips them; small ones go in front.
+const WOOD = '#7a5030', IRON = '#5e6270';
+export function drawHeld(g, sx, sy, look, facing, pose, layer, t = 0) {
+  const tool = look.tool;
+  if (!tool || (layer === 'back') !== (tool === 'staff' || tool === 'spear')) return;
+  const by = pose[0] === '1' ? 1 : 0, a = pose[2] || 'd';
+  const ax = facing === 'left' ? 3 : 12, o = facing === 'left' ? -1 : 1, X = sx + ax + o;
+  const [hx0, hy0] = HAND[a] || HAND.d, hx = sx + ax + hx0 * o, hy = sy + 10 + by + hy0;
+  if (tool === 'staff') {
+    const tx = a === 'l' ? X - o : X; // leaning: the top tips in toward the body
+    R(g, X, sy + 9, 1, 11, '#6e4e2c'); R(g, tx, sy + 2, 1, 7, '#6e4e2c');
+    R(g, tx - (o < 0 ? 1 : 0), sy, 2, 2, '#a8844e'); P(g, tx, sy, '#d0b078');
+  } else if (tool === 'spear') {
+    const top = sy - (a === 'c' ? 2 : 0);
+    R(g, X, top + 3, 1, 17, '#6a4a2a');
+    P(g, X, top - 1, '#f4f8fc'); R(g, X - 1, top, 3, 2, '#c8ccd4'); P(g, X, top + 2, '#8a8e96'); P(g, X + o, top + 3, '#c03030');
+  } else if (tool === 'hammer') {
+    if (a === 'r' || a === 'o') { R(g, hx, hy - 3, 1, 3, WOOD); R(g, hx - 1, hy - 5, 3, 2, IRON); R(g, hx - 1, hy - 5, 3, 1, '#a4a8b4'); }
+    else if (a === 'x') { R(g, o > 0 ? hx + 1 : hx - 2, hy, 2, 1, WOOD); R(g, o > 0 ? hx + 3 : hx - 4, hy - 1, 2, 3, IRON); P(g, o > 0 ? hx + 3 : hx - 3, hy - 1, '#a4a8b4'); }
+    else { R(g, hx, hy + 1, 1, 3, WOOD); R(g, hx - 1, hy + 4, 3, 2, IRON); }
+  } else if (tool === 'cloth') {
+    if (a === 'm' || a === 'n') { R(g, hx - 1, hy - 1, 3, 2, '#b8d4e8'); P(g, hx, hy + 1, '#8aaac4'); }
+  } else if (tool === 'orb' && a === 'o') {
+    g.globalAlpha = 0.28 + 0.14 * Math.sin(t * 5);
+    circle(g, hx + 0.5, hy - 1.5, 4.5, '#b090ff'); g.globalAlpha = 1;
+    circle(g, hx + 0.5, hy - 1.5, 2, '#c8b0ff'); P(g, hx - 1, hy - 3, '#ffffff');
+  }
 }
 
 // ------------------------------------------------------------------ enemies

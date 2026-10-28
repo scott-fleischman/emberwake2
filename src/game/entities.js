@@ -1,9 +1,10 @@
 // Shared entity types: actors, projectiles, bombs, pickups, effects, NPCs, chests.
 import { TILE, T, TILE_INFO, D, DECO_SOLID } from '../world/tiles.js';
 import { moveActor } from './physics.js';
-import { humanSprite, npcLook, R } from '../gfx/sprites.js';
+import { humanSprite, npcLook, drawHeld, idleLife, R } from '../gfx/sprites.js';
 import { drawShadow } from '../gfx/render.js';
 import { TAU } from '../core/math.js';
+import { hashSeed, tileHash } from '../core/rng.js';
 
 export class Entity {
   constructor(x, y, w = 8, h = 8) {
@@ -285,6 +286,12 @@ export class Pickup extends Entity {
 }
 
 // ------------------------------------------------------------------ NPCs & props
+// Idle actions by role: [seconds per cycle, kinds]; each cycle may play one kind for its length.
+const ROLE_IDLE = { smith: [4.5, ['hammer']], merchant: [7, ['beckon', 'beckon', 'wave']], elder: [8, ['lean']], scout: [7.5, ['scan']], ranger: [7.5, ['scan']], keeper: [6, ['guard']], innkeeper: [6, ['wipe']], seer: [7.5, ['orb']], villager: [7, ['shift', 'look']] };
+const IDLE_LEN = { hammer: 2.4, beckon: 1.8, wave: 1.5, lean: 3.2, scan: 3.2, guard: 1.6, wipe: 2.6, orb: 3.6, shift: 2.6, look: 2.4 };
+const WAVERS = new Set(['villager', 'informant', 'merchant']);
+const TALK_ARMS = 'ocdodrcd';
+
 export class NPC extends Actor {
   constructor(data, x, y, opts = {}) {
     super(x, y, 10, 8);
@@ -295,6 +302,7 @@ export class NPC extends Actor {
     this.wt = Math.random() * 3; this.tx = x; this.ty = y;
     this.talking = false;
     this.solidForPlayer = true;
+    this.seed = hashSeed(data.id ?? data.name ?? 'npc'); this.life = (this.seed % 997) / 997;
   }
   update(dt, ctx) {
     this.anim += dt;
@@ -307,7 +315,10 @@ export class NPC extends Actor {
       const line = Math.random() < 0.65 ? ctx.game.barkFor(this) : null;
       if (line) this.bark = { text: line, t: 3.2 };
     }
-    const near = dist < 40;
+    const near = dist < 40, now = ctx.game.time ?? this.anim;
+    // Townsfolk sometimes wave as you walk up.
+    if (dist < 56 && !this.wasClose && !this.talking && WAVERS.has(this.data.role) && now - (this.waveAt ?? -99) > 10 && tileHash(this.seed & 1023, Math.floor(now), 12) < 0.7) this.waveAt = now;
+    this.wasClose = dist < 56; this.near = near;
     if (near || this.talking) {
       const a = Math.atan2(p.y - this.y, p.x - this.x);
       this.facing = Math.abs(Math.cos(a)) > Math.abs(Math.sin(a)) ? (Math.cos(a) < 0 ? 'left' : 'right') : (Math.sin(a) < 0 ? 'up' : 'down');
@@ -330,11 +341,59 @@ export class NPC extends Actor {
       this.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
     }
   }
-  draw(g, cam) {
+  // What the body is doing at scene time t: breathing and blinking always, plus talk gestures, a wave,
+  // or the role's idle action now and then. Purely visual; on the scene clock so it runs during dialogue.
+  idlePose(t) {
+    const s = this.seed & 1023, life = idleLife(t, this.life);
+    let by = life[0], arm = 'd', free = 'd', face = this.facing, dx = 0, fx = null;
+    if (this.talking) {
+      // gesture with the front hand, unless it holds a staff, spear or hammer
+      by = Math.floor(t * 4 + this.life * 4) % 2 ? '1' : '0';
+      const gest = TALK_ARMS[Math.floor(t * 3 + this.life * 8) % TALK_ARMS.length];
+      if (['staff', 'spear', 'hammer'].includes(this.look.tool)) free = gest; else arm = gest;
+    } else if (this.waveAt !== undefined && t >= this.waveAt && t - this.waveAt < IDLE_LEN.wave) {
+      arm = Math.floor((t - this.waveAt) * 6) % 2 ? 'w' : 'r';
+    } else if (!this.near) {
+      const [every, kinds] = ROLE_IDLE[this.data.role] || ROLE_IDLE.villager;
+      const n = Math.floor(t / every), kind = kinds[Math.floor(tileHash(s, n, 8) * kinds.length)], len = IDLE_LEN[kind];
+      const u = t - n * every - tileHash(s, n, 6) * (every - len), side = tileHash(s, n, 9) < 0.5;
+      if (u >= 0 && u < len && tileHash(s, n, 7) < 0.85) {
+        switch (kind) {
+          case 'hammer': { const c = (u % 0.6) / 0.6; arm = c < 0.45 ? 'r' : c < 0.58 ? 'o' : 'x'; by = c >= 0.58 && c < 0.8 ? '1' : '0'; if (this.anvil) { face = this.anvil < 0 ? 'left' : 'right'; if (c >= 0.58 && c < 0.72) fx = 'spark'; } break; }
+          case 'beckon': arm = Math.floor(u * 3.5) % 2 ? 'c' : 'o'; break;
+          case 'wave': arm = Math.floor(u * 6) % 2 ? 'w' : 'r'; break;
+          case 'lean': arm = 'l'; by = '1'; break;
+          case 'scan': { const q = Math.floor(u / 0.8) % 4; arm = 'h'; face = q === 0 ? 'left' : q === 2 ? 'right' : 'down'; break; }
+          case 'guard': { const c = u % 0.8; arm = c < 0.4 ? 'c' : 'd'; if (c >= 0.4 && c < 0.52) fx = 'dust'; break; }
+          case 'wipe': arm = Math.floor(u * 4) % 2 ? 'n' : 'm'; break;
+          case 'orb': arm = 'o'; dx = Math.round(Math.sin(u * 2.4)); break;
+          case 'shift': dx = side ? -1 : 1; break;
+          case 'look': face = (u < len / 2) === side ? 'left' : 'right'; break;
+        }
+      }
+    }
+    return { pose: `${by}${life[1]}${arm}${free}`, face, dx, fx };
+  }
+  draw(g, cam, ctx) {
     const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
     drawShadow(g, x, y + 4, 5, 2);
+    const t = ctx?.game?.time ?? this.anim, sx = x - 8, sy = y + 5 - 20;
+    if (this.anvil === undefined) {
+      const a = ctx?.area?.layout?.props?.find((q) => q.type === 'anvil'), ax = a ? (a.x + a.w / 2) * TILE - this.x : 0;
+      this.anvil = a && Math.abs(ax) < 56 && Math.abs((a.y + 0.5) * TILE - this.y) < 40 ? Math.sign(ax) || 1 : 0;
+    }
     const frame = this.moving ? Math.floor(this.anim * 6) % 4 : 0;
-    g.drawImage(humanSprite(this.look, this.facing, frame, `npc${this.data.role}${this.data.look}`), x - 8, y + 5 - 20);
+    const p = this.moving ? { pose: '', face: this.facing, dx: 0, fx: null } : this.idlePose(t);
+    drawHeld(g, sx, sy, this.look, p.face, p.pose, 'back', t);
+    g.drawImage(humanSprite(this.look, p.face, frame, `npc${this.data.role}${this.data.look}`, p.pose), sx + p.dx, sy);
+    drawHeld(g, sx + p.dx, sy, this.look, p.face, p.pose, 'front', t);
+    if (p.fx) {
+      const o = p.face === 'left' ? -1 : 1, X = sx + (o < 0 ? 3 : 12) + o;
+      if (p.fx === 'spark') {
+        const hy = sy + 14 + (p.pose[0] === '1' ? 1 : 0), f = Math.floor(t * 30) % 2;
+        R(g, X + 5 * o, hy + 1, 1, 1, '#fff2a0'); R(g, X + (4 + f) * o, hy - 2, 1, 1, '#ffc840'); R(g, X + (6 - f) * o, hy - 1 + f, 1, 1, '#ff9a30');
+      } else { R(g, X - 2, sy + 19, 1, 1, '#d8cdb8'); R(g, X + 2, sy + 19, 1, 1, '#d8cdb8'); R(g, X - 1, sy + 18, 1, 1, '#c8bca8'); }
+    }
     if (this.marker) {
       const bob = Math.sin(this.anim * 4) * 1.5;
       g.fillStyle = this.marker === '!' ? '#ffd040' : '#a0e0ff';

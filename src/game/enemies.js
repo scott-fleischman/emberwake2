@@ -275,7 +275,9 @@ export class Enemy extends Actor {
     const bob = this.flying ? Math.sin(this.anim * 6) * 2 - 6 : 0;
     drawShadow(g, x, y + this.h / 2, this.w / 2 + 1, 2, this.flying ? 0.2 : 0.3);
     if (this.state === 'spawn') { g.globalAlpha = 1 - this.timer / 0.35; }
-    const frame = Math.floor(this.anim * 6) % 2;
+    // Calm ground foes breathe slowly, each on its own beat; once alert they move at full tempo.
+    const calm = !this.aggro && !this.moving && !this.flying && this.state === 'idle';
+    const frame = calm ? Math.floor((this.anim + (this.orbitA || 0)) * 2.2) % 2 : Math.floor(this.anim * 6) % 2;
     const spr = enemySprite(this.archetype, this.st.pal, this.pose, frame, this.key);
     const telegraph = (this.state === 'windup' || this.state === 'crouch' || this.state === 'aim') && Math.floor(this.anim * 14) % 2 === 0;
     const img = this.flash > 0 || this.state === 'dying' || telegraph ? flashOf(spr, `${this.key}${this.pose}${frame}${this.archetype}`) : spr;

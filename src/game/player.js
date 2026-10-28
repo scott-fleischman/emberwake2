@@ -4,7 +4,7 @@ import { moveActor } from './physics.js';
 import { canUseItem, lockOnTarget } from './combat.js';
 import { WEAPONS, USE_ITEMS, SHIELDS } from '../data/items.js';
 import { TILE, TILE_INFO, T } from '../world/tiles.js';
-import { humanSprite, LOOKS, R } from '../gfx/sprites.js';
+import { humanSprite, idleLife, LOOKS, R } from '../gfx/sprites.js';
 import { drawShadow } from '../gfx/render.js';
 import { normalize, facingFromVector, TAU } from '../core/math.js';
 
@@ -259,9 +259,10 @@ export class Player extends Actor {
     if (this.iframes > 0 && this.mode !== 'dodge' && Math.floor(this.iframes * 20) % 2 === 0) return;
     drawShadow(g, x, y + 4, 5, 2);
     const frame = this.moving ? Math.floor(this.anim * (this.sprinting ? 12 : 8)) % 4 : 0;
+    const idle = !this.moving && this.mode === 'normal' && !this.shielding && this.shootT <= 0 && this.charge <= 0.15;
     const behind = this.facing === 'up';
     if (behind) this.drawGear(g, x, y);
-    g.drawImage(humanSprite(this.look, this.facing, frame, `p${this.game.state.classId}`), x - 8, y + 5 - 20);
+    g.drawImage(humanSprite(this.look, this.facing, frame, `p${this.game.state.classId}`, idle ? idleLife(this.game.time ?? this.anim, 0.37) + 'dd' : ''), x - 8, y + 5 - 20);
     if (!behind) this.drawGear(g, x, y);
     if (this.mode === 'dodge') {
       g.globalAlpha = 0.3;

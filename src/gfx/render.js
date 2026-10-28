@@ -2,7 +2,7 @@
 import { T, D, TILE } from '../world/tiles.js';
 import { tileHash } from '../core/rng.js';
 import { clamp } from '../core/math.js';
-import { drawOverworldTile, decoSprite, buildingSprite, landmarkSprite, makeCanvas, R, shade } from './sprites.js';
+import { drawOverworldTile, decoSprite, buildingSprite, drawShopSign, landmarkSprite, makeCanvas, R, shade } from './sprites.js';
 
 export const VIEW_W = 480;
 export const VIEW_H = 270;
@@ -120,7 +120,7 @@ export class OverworldRenderer {
       const spr = p.kind === 'building' ? buildingSprite(p) : landmarkSprite(p);
       const top = (p.y + p.h) * TILE - spr.height - Tp;
       const fade = fadeIf(px, top, spr.width, spr.height, (p.y + p.h) * TILE - 1);
-      list.push({ y: (p.y + p.h) * TILE - 1, draw: (g) => { if (fade) g.globalAlpha = 0.55; g.drawImage(spr, px, top); g.globalAlpha = 1; } });
+      list.push({ y: (p.y + p.h) * TILE - 1, draw: (g) => { if (fade) g.globalAlpha = 0.55; g.drawImage(spr, px, top); if (p.kind === 'building') drawShopSign(g, p, px, top, time); g.globalAlpha = 1; } });
     }
   }
 }

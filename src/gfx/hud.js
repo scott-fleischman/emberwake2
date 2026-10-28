@@ -3,9 +3,22 @@ import { UI, BIOME_PAL } from './palette.js';
 import { text, panel, setFont, SERIF } from './ui.js';
 import { USE_ITEMS } from '../data/items.js';
 import { T, D } from '../world/tiles.js';
-import { makeCanvas } from './sprites.js';
+import { makeCanvas, signBoard, SIGN_ICONS } from './sprites.js';
 
 export const FOG_CELL = 4;
+
+// Each trade building's sign, drawn small over its door so the map tells the smithy from the inn.
+// Returns the top edge of each settlement's highest icon, so its name can sit above them.
+function drawShopIcons(u, W, seen, at, k) {
+  const tops = {};
+  for (const b of W.props) {
+    if (b.kind !== 'building' || !SIGN_ICONS.has(b.type) || !seen(b.door.x, b.door.y)) continue;
+    const [x, y] = at(b.door.x + 0.5, b.door.y - 0.6), top = Math.round((y - 6.5 * k) * 4) / 4;
+    u.drawImage(signBoard(b.type), Math.round((x - 7.5 * k) * 4) / 4, top, 15 * k, 13 * k);
+    tops[b.settlementId] = Math.min(tops[b.settlementId] ?? Infinity, top);
+  }
+  return tops;
+}
 
 function heart(u, x, y, fill) {
   const path = () => {
@@ -214,10 +227,11 @@ export function drawWorldMap(u, game) {
     else u.fillRect(px - size, py - size, size * 2, size * 2);
     u.strokeStyle = 'rgba(0,0,0,0.7)'; u.lineWidth = 0.6; u.stroke();
   };
+  const signTops = drawShopIcons(u, W, seen, (x, y) => [ox + x * scale, oy + y * scale], 0.45);
   for (const s of W.settlements) {
     if (!seen(s.center.x, s.center.y)) continue;
     mark(s.center.x, s.center.y, '#f4ead8', 'square', 2.4);
-    text(u, s.name, ox + s.center.x * scale, oy + s.center.y * scale - 5, { size: 5, align: 'center' });
+    text(u, s.name, ox + s.center.x * scale, Math.min(oy + s.center.y * scale - 5, (signTops[s.id] ?? Infinity) - 1.5), { size: 5, align: 'center' });
   }
   for (const sh of W.pois.shrines) if (seen(sh.x, sh.y)) mark(sh.x, sh.y, '#ffb050', 'dot', 1.4);
   for (const c of W.pois.caves) if (seen(c.x, c.y) || revealed.has(`cave:${c.id}`)) mark(c.x, c.y, '#5a4a3a', 'dot', 1.8);
@@ -335,6 +349,7 @@ export function drawOverworldMinimap(u, game) {
     const sx = cx + (sh.x + 0.5 - pos.x) * zoom, sy = cy + (sh.y + 0.5 - pos.y) * zoom;
     u.fillStyle = '#ffb050'; u.fillRect(sx - 0.8, sy - 0.8, 1.6, 1.6);
   }
+  drawShopIcons(u, W, (x, y) => game.fog[Math.floor(y / FOG_CELL) * fw + Math.floor(x / FOG_CELL)] && Math.hypot(x - pos.x, y - pos.y) * zoom < r + 4, (x, y) => [cx + (x - pos.x) * zoom, cy + (y - pos.y) * zoom], 0.36);
   u.restore();
   // Frame and compass tick.
   u.strokeStyle = 'rgba(0,0,0,0.7)'; u.lineWidth = 2.2; u.beginPath(); u.arc(cx, cy, r + 0.6, 0, Math.PI * 2); u.stroke();
