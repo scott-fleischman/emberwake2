@@ -2,6 +2,7 @@
 import { LORE_ENTRIES } from '../data/story.js';
 import { text, wrap, panel, SERIF } from './ui.js';
 import { UI } from './palette.js';
+import { hot } from '../core/touch.js';
 
 const HINTS = {
   'Standing stone': 'Standing stones wait beside the old roads, carved with blue runes. Read one with E.',
@@ -40,6 +41,7 @@ export class LoreJournal {
       if (e.kind !== kind) { kind = e.kind; text(u, kind === 'Book' ? 'Books' : kind === 'Standing stone' ? 'Standing stones' : 'Warden memories', x + 10, ly, { size: 5.5, color: UI.dim, bold: true }); ly += 8; }
       const has = found.includes(e.id), sel = k === this.sel;
       if (sel) { u.fillStyle = 'rgba(240,200,80,0.16)'; u.fillRect(x + 6, ly - 7, 158, 9); }
+      hot(x + 6, ly - 7, 158, 9, () => { this.sel = k; });
       text(u, `${sel ? '▸ ' : '  '}${has ? e.title : '· · ·'}`, x + 10, ly, { size: 6.5, color: sel ? UI.gold : has ? UI.text : UI.dim });
       ly += 9;
     });

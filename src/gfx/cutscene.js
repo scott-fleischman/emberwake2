@@ -5,6 +5,7 @@ import { ART, drawSpirit, tendrils, eyes } from './cinema.js';
 import { drawDarkness } from './render.js';
 import { text, wrap, SERIF } from './ui.js';
 import { UI } from './palette.js';
+import { hot, TOUCH } from '../core/touch.js';
 
 const CPS = 42;           // typewriter characters per second
 const FADE = 0.35;        // seconds to fade between panels
@@ -26,6 +27,7 @@ export class Cutscene {
     this.letterbox = !!opts.letterbox;
     this.autoplay = !!opts.autoplay; // movie mode: dialogue advances on its own
     this.liveFx = !!opts.liveFx;     // keep particles moving in the frozen world
+    this.noSkip = !!opts.noSkip;     // the host has its own scene controls
     this.hint = opts.hint || 'Enter: next · Esc: skip';
     this.bars = 0;
     this.leaving = 0;     // >0 while fading out of the current shot
@@ -150,6 +152,11 @@ export class Cutscene {
   // UI layer: bars, title cards and text.
   draw(u, game) {
     const s = this.shot;
+    hot(0, 0, 480, 270, 'Enter'); // tap to read on
+    if (TOUCH.active && !this.noSkip) {
+      text(u, this.skipArm > 0 ? 'Tap again to skip' : 'Skip ▸▸', 472, 14, { size: 7, align: 'right', bold: true, color: UI.gold });
+      hot(400, 0, 80, 24, 'Escape'); // first tap arms, second skips
+    }
     if (this.letterbox) {
       const bh = 34 * this.bars;
       u.fillStyle = '#000'; u.fillRect(0, 0, 480, bh); u.fillRect(0, 270 - bh, 480, bh);
@@ -187,6 +194,7 @@ export class Cutscene {
       });
       if (this.typed && s.wait && !this.autoplay && Math.floor(this.total * 3) % 2 === 0) text(u, '▾', 452, 262, { size: 8, color: UI.gold });
     }
+    if (TOUCH.active && !this.noSkip) return;
     if (this.skipArm > 0) text(u, 'Press Esc again to skip', 472, 12, { size: 6.5, align: 'right', color: UI.gold });
     else if (this.total < 4) { u.globalAlpha = 0.6; text(u, this.hint, 472, 12, { size: 5.5, align: 'right', color: UI.dim }); u.globalAlpha = 1; }
   }

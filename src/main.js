@@ -12,6 +12,7 @@ import { ViewerScene } from './scenes/viewer.js';
 import { IntroScene } from './scenes/intro.js';
 import { TheaterScene } from './scenes/theater.js';
 import { AutoplayScene } from './scenes/autoplay.js';
+import { TouchControls, HOT } from './core/touch.js';
 
 function safeStorage() {
   try { const s = window.localStorage; s.getItem('probe'); return s; } catch { return undefined; }
@@ -29,12 +30,16 @@ class App {
     this.audio = new AudioEngine();
     this.input.onKey(() => this.audio.init());
     window.addEventListener('pointerdown', () => this.audio.init());
+    this.touch = new TouchControls(this);
+    this.touch.attach(this.display);
     this.store = new SaveStore(safeStorage());
     this.options = this.store.loadOptions();
     this.applyOptions();
     this.facade = { input: this.input, audio: this.audio, get time() { return performance.now() / 1000; } };
     this.error = null;
     window.addEventListener('resize', () => this.resize());
+    window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 120));
+    window.visualViewport?.addEventListener('resize', () => this.resize());
     this.resize();
     this.scene = new TitleScene(this);
     this.last = performance.now();
@@ -56,6 +61,11 @@ class App {
     this.dpr = dpr;
     this.ox = Math.floor((w - VIEW_W * scale) / 2);
     this.oy = Math.floor((h - VIEW_H * scale) / 2);
+    // Phone held upright: the view sits at the top, leaving the bottom for thumbs.
+    if (this.touch) {
+      this.touch.readSafeArea();
+      if (h > w && (this.touch.active || this.scene?.touchButtons)) this.oy = Math.floor(this.touch.safe.t + 8);
+    }
   }
 
   frame(t) {
@@ -70,6 +80,7 @@ class App {
       this.error = e;
       this.renderError();
     }
+    this.touch.endFrame(dt);
     this.input.endFrame();
     requestAnimationFrame((tt) => this.frame(tt));
   }
@@ -87,7 +98,9 @@ class App {
     // UI layer: same 480x270 units, rendered at display resolution so text stays crisp.
     d.setTransform(s, 0, 0, s, ox, oy);
     d.imageSmoothingEnabled = false;
+    HOT.length = 0;
     this.scene.drawUI(d);
+    this.touch.draw(d);
   }
 
   renderError() {
@@ -97,6 +110,8 @@ class App {
     text(d, 'Something went wrong. Your last save is safe.', 240, 115, { size: 9, align: 'center' });
     text(d, String(this.error && this.error.message).slice(0, 90), 240, 132, { size: 6, align: 'center', color: '#f0b0a0' });
     text(d, 'Press Esc to return to the title screen.', 240, 150, { size: 7, align: 'center', color: '#f0c850' });
+    HOT.length = 0; HOT.push({ x: 0, y: 0, w: 480, h: 270, act: 'Escape' });
+    text(d, '(or tap anywhere)', 240, 160, { size: 6, align: 'center', color: '#c0a080' });
     if (this.input.keyPressed('Escape')) { this.error = null; this.toTitle(); }
   }
 

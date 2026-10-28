@@ -3,6 +3,7 @@ import { USE_ITEMS, WEAPONS, SHIELDS, ARTIFACTS } from '../data/items.js';
 import { UI } from './palette.js';
 import { panel, text, wrap, SERIF } from './ui.js';
 import { itemIcon } from './hud.js';
+import { hot } from '../core/touch.js';
 
 // Grid order. Unowned items still get a slot so players can see what is left to find.
 export const ITEM_SLOTS = ['bow', 'knives', 'firebolt', 'bombs'];
@@ -126,6 +127,7 @@ export class ItemMenu {
       const owned = s.gear.items.includes(id);
       const sel = this.row === 0 && k === this.col;
       const equipped = owned && s.gear.items[s.gear.selected] === id;
+      if (owned) hot(x, y, slot, slot, () => { this.row = 0; this.col = k; equipItem(s, id); game.audio.sfx('menu'); });
       u.fillStyle = owned ? 'rgba(50,36,30,0.95)' : 'rgba(30,26,36,0.9)';
       u.fillRect(x, y, slot, slot);
       u.strokeStyle = sel ? UI.gold : '#5a4a3a'; u.lineWidth = sel ? 1.4 : 0.7;
@@ -164,6 +166,7 @@ export class ItemMenu {
     s.gear.owned.forEach((id, k) => {
       const x = gx + k * 30, y = wy;
       const sel = this.row === 1 && k === this.wcol, on = s.gear.weapon === id;
+      hot(x, y, 26, 26, () => { this.row = 1; this.wcol = k; s.gear.weapon = id; game.audio.sfx('menu'); });
       u.fillStyle = 'rgba(50,36,30,0.95)'; u.fillRect(x, y, 26, 26);
       u.strokeStyle = sel ? UI.gold : on ? '#a08050' : '#5a4a3a'; u.lineWidth = sel ? 1.4 : 0.7; u.strokeRect(x + 0.5, y + 0.5, 25, 25);
       weaponIcon(u, id, x + 13, y + 13, 1.3);

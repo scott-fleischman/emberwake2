@@ -301,7 +301,7 @@ export class OverworldArea extends Area {
     for (const def of this.groupDefs()) {
       const d = Math.hypot(def.x - ptx, def.y - pty);
       let grp = this.groups.get(def.id);
-      if ((def.kind === 'camp' || def.kind === 'guard') && pr.cleared.includes(def.id)) continue;
+      if ((def.kind === 'camp' || def.kind === 'guard' || def.kind === 'relic') && pr.cleared.includes(def.id)) continue;
       if (def.kind === 'guard' && !pr.seals.includes(def.ward)) continue; // nothing gets past the seal, not even them
       if (def.kind === 'relic' && !grp && (stageRelics(stage) !== def.relicKind || pr.relics.includes(def.relic.id))) continue;
       if (!grp && d < 22 && d > 12) {
@@ -363,9 +363,10 @@ export class OverworldArea extends Area {
 
   groupCleared(def) {
     const g = this.game, pr = g.state.progress;
-    if (def.kind === 'wild' || def.kind === 'patrol' || def.kind === 'relic') { def.down = true; def.downAt = performance.now(); return; }
+    if (def.kind === 'wild' || def.kind === 'patrol') { def.down = true; def.downAt = performance.now(); return; }
     if (pr.cleared.includes(def.id)) return;
     pr.cleared.push(def.id);
+    if (def.kind === 'relic') { g.toast({ leaves: 'The shrine\'s guardians scatter.', vents: 'The vent\'s guardians are beaten.', beacons: 'The beacon\'s guardians are beaten.' }[def.relicKind]); return; }
     if (def.kind === 'camp') {
       g.toast('Camp cleared! A supply chest is left behind.');
       g.audio.sfx('puzzle');

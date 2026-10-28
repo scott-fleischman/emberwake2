@@ -18,6 +18,7 @@ import { FAMILIES } from '../data/enemies.js';
 import { drawHUD, drawMinimap, drawWorldMap, drawOverworldMinimap, FOG_CELL } from '../gfx/hud.js';
 import { ItemMenu } from '../gfx/inventory.js';
 import { Cutscene } from '../gfx/cutscene.js';
+import { hot } from '../core/touch.js';
 import { lookoutShots, sealShots } from '../data/wards.js';
 import { openSeal } from '../world/wards.js';
 import { LoreJournal } from '../gfx/journal.js';
@@ -34,6 +35,7 @@ class MapOverlay {
     if (game.input.pressed('cycle')) game.cycleTrackedQuest();
   }
   draw(u, game) {
+    hot(0, 0, 480, 270, 'KeyM');
     if (this.kind === 'dungeon') drawMinimap(u, game.area, game, true); else drawWorldMap(u, game);
   }
 }
@@ -213,6 +215,9 @@ export class GameScene {
     if (this.area.kind === 'overworld') this.revealFog();
     if (this.objT === undefined || (this.objT -= dt) <= 0) { this.objT = 1; this.updateObjective(); }
   }
+
+  // What the touch layer should offer: the stick and buttons in play, a back button over menus.
+  touchMode() { return this.uiStack.length || this.deathT > 0 || this.player.mode === 'dead' ? 'ui' : 'play'; }
 
   drawWorld(g) {
     g.fillStyle = '#08060a';

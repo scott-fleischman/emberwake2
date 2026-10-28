@@ -1,5 +1,6 @@
 // UI layer helpers and components. Drawn on the crisp display canvas in 480x270 "game pixel" units.
 import { UI } from './palette.js';
+import { hot } from '../core/touch.js';
 
 export const FONT = '"Trebuchet MS", "Segoe UI", Verdana, sans-serif';
 export const SERIF = 'Georgia, "Palatino Linotype", "Times New Roman", serif';
@@ -91,6 +92,7 @@ export class Dialog {
     const page = this.page;
     if (!page) return;
     const x = 24, y = 188, w = 432, h = 74;
+    hot(0, 0, 480, 270, 'Enter'); // tap anywhere to read on
     panel(u, x, y, w, h);
     if (page.speaker) {
       setFont(u, 7, true);
@@ -108,6 +110,7 @@ export class Dialog {
         opts.forEach((o, k) => {
           const sel = k === this.sel;
           if (sel) { u.fillStyle = 'rgba(240,200,80,0.18)'; u.fillRect(ox - 4, y + 7 + k * 11, 132, 11); }
+          hot(ox - 4, y + 7 + k * 11, 132, 11, () => { this.sel = k; return 'Enter'; });
           text(u, (sel ? '▸ ' : '  ') + o.label, ox, y + 16 + k * 11, { size: 7, color: o.disabled ? UI.dim : sel ? UI.gold : UI.text });
         });
       } else if (Math.floor(game.time * 3) % 2 === 0) text(u, '▾', x + w - 12, y + h - 6, { size: 8, color: UI.gold });
@@ -157,6 +160,7 @@ export class Menu {
     const h = 34 + this.items.length * lineH + extra;
     const w = this.width, x = (480 - w) / 2, y = Math.max(8, (270 - h) / 2);
     u.fillStyle = 'rgba(0,0,0,0.35)'; u.fillRect(0, 0, 480, 270);
+    if (!this.items.length) hot(0, 0, 480, 270, 'Enter');
     panel(u, x, y, w, h);
     text(u, this.title, x + w / 2, y + 15, { size: 9, bold: true, align: 'center', color: UI.gold, family: SERIF });
     let cy = y + 28;
@@ -168,6 +172,13 @@ export class Menu {
       const sel = k === this.sel;
       const dis = it.disabled && it.disabled();
       if (sel) { u.fillStyle = 'rgba(240,200,80,0.16)'; u.fillRect(x + 6, cy - 8, w - 12, lineH); }
+      // A tap selects and confirms; on a ◂▸ setting, its left and right thirds step the value.
+      const third = (w - 12) / 3;
+      if (it.onLeft || it.onRight) {
+        hot(x + 6, cy - 8, third, lineH, () => { this.sel = k; return it.onLeft ? 'ArrowLeft' : 'Enter'; });
+        hot(x + 6 + third * 2, cy - 8, third, lineH, () => { this.sel = k; return it.onRight ? 'ArrowRight' : 'Enter'; });
+        hot(x + 6 + third, cy - 8, third, lineH, () => { this.sel = k; return 'Enter'; });
+      } else hot(x + 6, cy - 8, w - 12, lineH, () => { this.sel = k; return 'Enter'; });
       text(u, (sel ? '▸ ' : '   ') + it.label, x + 10, cy, { size: 7, color: dis ? UI.dim : sel ? UI.gold : UI.text });
       const v = typeof it.value === 'function' ? it.value() : it.value;
       if (v !== undefined) text(u, v, x + w - 12, cy, { size: 7, align: 'right', color: dis ? UI.dim : UI.text });

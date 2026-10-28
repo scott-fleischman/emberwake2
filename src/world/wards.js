@@ -135,3 +135,9 @@ export function openSeal(W, map, key) {
   for (const s of seal.tiles) if (map.get(s.x, s.y) === T.SEAL) { map.set(s.x, s.y, s.t); map.setDeco(s.x, s.y, s.d); }
   return seal.tiles;
 }
+
+// Put a seal back (the Theater replays its breaking).
+export function closeSeal(W, map, key) {
+  const seal = W.pois.seals[key];
+  if (seal) for (const s of seal.tiles) { map.set(s.x, s.y, T.SEAL); map.setDeco(s.x, s.y, D.NONE); }
+}

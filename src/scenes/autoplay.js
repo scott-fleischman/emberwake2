@@ -8,8 +8,11 @@ import { CLASSES } from '../data/classes.js';
 import { text, panel, SERIF } from '../gfx/ui.js';
 import { UI } from '../gfx/palette.js';
 
-const SPEEDS = [1, 2, 4, 8, 16, 32];
+const SPEEDS = [0.5, 1, 2, 4, 8, 16, 32];
 const STEP = 1 / 60;
+const SKIP_BUDGET_MS = 22; // simulation time per frame while skipping ahead
+const DUNGEON_NAME = { verdant: 'the Verdant Vault', ashen: 'the Ashen Reliquary', frost: 'the Frostbound Sanctuary' };
+const NEXT_DUNGEON = { verdant: ['wake', 'scout', 'lookout', 'camp', 'sigil', 'leaves', 'thornwall', 'vault'], ashen: ['smith', 'ashpass', 'ridge', 'cinderwatch', 'vents', 'slagheart', 'reliquary'], frost: ['frostpass', 'boulder', 'rimewatch', 'windcrest', 'beacons', 'frostfang', 'sanctuary'] };
 
 export const fmtTime = (t, cs = true) => {
   const m = Math.floor(t / 60), s = Math.floor(t % 60), c = Math.floor((t * 100) % 100);
@@ -26,32 +29,87 @@ export class AutoplayScene {
     game.saveGame = () => true;
     // Quiet the sound effects when fast-forwarding.
     const audio = app.audio;
-    game.audio = { sfx: (...a) => { if (this.speed <= 2) audio.sfx(...a); }, playMusic: (k) => audio.playMusic(k), stopMusic: () => audio.stopMusic(), get cur() { return audio.cur; } };
+    game.audio = { sfx: (...a) => { if (this.speed <= 2 && !this.skip) audio.sfx(...a); }, playMusic: (k) => audio.playMusic(k), stopMusic: () => audio.stopMusic(), get cur() { return audio.cur; } };
     this.game = game;
     this.bot = new Bot(game, mode);
     this.speed = 2;
     this.paused = false;
     this.acc = 0;
+    this.skip = null; // {label, until()} while fast-forwarding
+    this.touchBack = 'Escape';
+    this.touchBarAlign = 'right';
+  }
+
+  // Where "skip" goes next: into the coming dungeon, then to its warden, then the win.
+  skipTarget() {
+    const g = this.game, st = g.state.quest.main;
+    if (g.area.kind === 'dungeon' && !g.area.boss && !g.state.progress.bosses.includes(g.area.id)) {
+      const id = g.area.id;
+      return { label: 'the warden', until: () => !!g.area.boss || g.area.kind !== 'dungeon' || g.state.progress.bosses.includes(id) };
+    }
+    const next = Object.keys(NEXT_DUNGEON).find((id) => NEXT_DUNGEON[id].includes(st) || (g.area.kind === 'dungeon' && g.area.id === id && !g.state.progress.bosses.includes(id)));
+    if (!next) return { label: 'the end', until: () => false };
+    const was = g.area;
+    return { label: DUNGEON_NAME[next], until: () => g.area !== was && g.area.kind === 'dungeon' && g.area.id === next };
+  }
+
+  startSkip(toEnd) {
+    if (this.bot.done) return;
+    this.skip = toEnd ? { label: 'the end', until: () => false } : this.skipTarget();
+    this.paused = false;
+  }
+
+  tick() {
+    this.bot.step(STEP);
+    this.game.update(STEP);
+    this.game.input.endFrame();
   }
 
   update(dt) {
     const input = this.app.input;
+    if (this.skip && input.keyPressed('Escape')) { this.skip = null; return; }
     if (input.keyPressed('Escape')) { this.app.toTitle(); return; }
     if (input.keyPressed('BracketRight') || input.keyPressed('Equal') || input.keyPressed('ArrowRight')) this.speed = SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(this.speed) + 1)];
     if (input.keyPressed('BracketLeft') || input.keyPressed('Minus') || input.keyPressed('ArrowLeft')) this.speed = SPEEDS[Math.max(0, SPEEDS.indexOf(this.speed) - 1)];
     if (input.keyPressed('Space') || input.keyPressed('KeyP')) this.paused = !this.paused;
+    if (input.keyPressed('KeyN')) this.startSkip(false);
+    if (input.keyPressed('End')) this.startSkip(true);
     if (this.bot.done) {
+      this.skip = null;
       if (input.keyPressed('Enter')) this.app.startAutoplay(this.opts);
+      return;
+    }
+    if (this.skip) {
+      if (input.keyPressed('KeyX')) { this.skip = null; return; }
+      const t0 = performance.now();
+      while (performance.now() - t0 < SKIP_BUDGET_MS && !this.bot.done) {
+        this.tick();
+        if (this.skip.until()) { this.skip = null; this.acc = 0; break; }
+      }
       return;
     }
     if (this.paused) return;
     this.acc = Math.min(this.acc + dt * this.speed, STEP * 64);
     while (this.acc >= STEP && !this.bot.done) {
       this.acc -= STEP;
-      this.bot.step(STEP);
-      this.game.update(STEP);
-      this.game.input.endFrame();
+      this.tick();
     }
+  }
+
+  touchMode() { return 'watch'; }
+
+  touchButtons() {
+    if (this.bot.done) return [{ label: 'New run ▶', act: 'Enter' }, { label: 'Title', act: 'Escape' }];
+    if (this.skip) return [{ label: `Skipping to ${this.skip.label}…`, act: null, on: true }, { label: 'Stop', act: 'KeyX' }];
+    const t = this.skipTarget();
+    return [
+      { label: '−', act: 'Minus', disabled: this.speed === SPEEDS[0] },
+      { label: `${this.speed}×`, act: () => { this.speed = 2; } },
+      { label: '+', act: 'Equal', disabled: this.speed === SPEEDS[SPEEDS.length - 1] },
+      { label: this.paused ? '▶' : '❚❚', act: 'KeyP', on: this.paused },
+      { label: `Skip ▸ ${t.label.replace(/^the /, '')}`, act: 'KeyN' },
+      { label: 'To the end ▸▸', act: 'End' },
+    ];
   }
 
   drawWorld(g) { this.game.drawWorld(g); }
@@ -79,7 +137,12 @@ export class AutoplayScene {
         text(u, value, 470, 106 + k * 9, { size: 5.5, align: 'right', color: UI.gold });
       });
     }
-    text(u, '←→ speed · Space pause · Esc quit', 472, 266, { size: 5, align: 'right', color: UI.dim });
+    text(u, '←→ speed · Space pause · N skip ahead · End finish · Esc quit', 472, 266, { size: 5, align: 'right', color: UI.dim });
+    if (this.skip) {
+      u.fillStyle = 'rgba(0,0,0,0.35)'; u.fillRect(0, 108, 480, 34);
+      text(u, `Fast-forwarding to ${this.skip.label}…`, 240, 124, { size: 10, align: 'center', family: SERIF, color: '#f4dcb0' });
+      text(u, `${b.status} · ${fmtTime(b.time, false)}`, 240, 135, { size: 6, align: 'center', color: UI.dim });
+    }
     if (b.done) {
       u.fillStyle = 'rgba(0,0,0,0.55)'; u.fillRect(0, 0, 480, 270);
       panel(u, 120, 50, 240, 150);

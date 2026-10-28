@@ -7,6 +7,7 @@ import { text, panel, SERIF, Menu } from '../gfx/ui.js';
 import { UI } from '../gfx/palette.js';
 import { DIFFICULTY } from '../game/state.js';
 import { controlsMenu } from './game.js';
+import { hot, TOUCH } from '../core/touch.js';
 
 const randomSeed = () => {
   const words = ['ember', 'hollow', 'thorn', 'ash', 'rime', 'wake', 'spire', 'fen', 'dune', 'crag', 'hearth', 'cinder'];
@@ -125,6 +126,8 @@ export class TitleScene {
     }
   }
 
+  touchMode() { return this.mode === 'menu' && !this.ui.length ? 'menu' : 'ui'; }
+
   begin(confirmed) {
     if (!confirmed && this.app.store.has()) { this.confirmOverwrite = true; return; }
     this.app.audio.sfx('levelup');
@@ -141,8 +144,9 @@ export class TitleScene {
       this.items.forEach((it, k) => {
         const sel = k === this.sel;
         text(u, (sel ? '▸  ' : '') + it.label + (sel ? '  ◂' : ''), 240, 128 + k * 13, { size: 8, align: 'center', color: sel ? UI.gold : UI.text, bold: sel });
+        hot(130, 119 + k * 13, 220, 13, () => { this.sel = k; return 'Enter'; });
       });
-      text(u, '↑↓ choose · Enter select · procedural world, four classes, three wardens', 240, 258, { size: 5.5, align: 'center', color: UI.dim });
+      text(u, TOUCH.active ? 'Tap to choose · best played sideways' : '↑↓ choose · Enter select · procedural world, four classes, three wardens', 240, 258, { size: 5.5, align: 'center', color: UI.dim });
     } else this.drawSelect(u);
     for (const ui of this.ui) ui.draw(u, this.app.facade);
   }
@@ -154,6 +158,7 @@ export class TitleScene {
       const c = CLASSES[id];
       const x = x0 + k * (w + gap), y = 38;
       const sel = k === this.cls;
+      hot(x, y, w, 152, () => { this.cls = k; this.row = 0; this.app.audio.sfx('menu'); });
       panel(u, x, y, w, 152, { edge: sel ? UI.gold : '#6a5a48', lw: sel ? 1.5 : 0.8, fill: sel ? 'rgba(40,28,24,0.92)' : 'rgba(20,16,24,0.8)' });
       const spr = humanSprite(LOOKS[id], 'down', sel ? Math.floor(this.t * 6) % 4 : 0, `p${id}`);
       u.imageSmoothingEnabled = false;
@@ -176,7 +181,10 @@ export class TitleScene {
     text(u, 'World seed:', 170, ry, { size: 7, color: this.row === 1 ? UI.gold : UI.text, align: 'right' });
     panel(u, 176, ry - 9, 130, 13, { r: 2, edge: this.row === 1 ? UI.gold : '#6a5a48' });
     text(u, this.seed + (this.row === 1 && Math.floor(this.t * 2) % 2 ? '▏' : ''), 181, ry, { size: 7 });
-    text(u, this.row === 1 ? 'type to edit · Enter = random' : 'same seed = same world', 312, ry, { size: 5.5, color: UI.dim });
+    text(u, TOUCH.active ? 'tap for a new world' : this.row === 1 ? 'type to edit · Enter = random' : 'same seed = same world', 312, ry, { size: 5.5, color: UI.dim });
+    hot(110, ry - 10, 260, 14, () => { this.row = 1; this.seed = randomSeed(); this.app.audio.sfx('menu'); });
+    hot(100, 207, 280, 13, () => { this.row = 2; return 'ArrowRight'; });
+    hot(150, 226, 180, 15, () => { this.row = 3; return 'Enter'; });
     const diff = DIFFICULTY[this.app.options.difficulty] || DIFFICULTY.normal;
     text(u, 'Difficulty:', 170, 216, { size: 7, color: this.row === 2 ? UI.gold : UI.text, align: 'right' });
     text(u, `◂ ${diff.label} ▸`, 181, 216, { size: 7, bold: this.row === 2, color: this.row === 2 ? UI.gold : UI.text });
@@ -187,6 +195,7 @@ export class TitleScene {
       panel(u, 130, 110, 220, 44);
       text(u, 'Starting anew will overwrite your saved journey.', 240, 126, { size: 6.5, align: 'center' });
       text(u, 'Y / Enter: overwrite      N: go back', 240, 142, { size: 6.5, align: 'center', color: UI.gold });
+      hot(130, 130, 110, 24, 'KeyY'); hot(240, 130, 110, 24, 'KeyN');
     }
   }
 }

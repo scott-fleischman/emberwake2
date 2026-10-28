@@ -2,11 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Emberwake">
+  <meta name="theme-color" content="#000000">
   <title>Emberwake</title>
   <style>
-    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-    canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; overscroll-behavior: none; }
+    body { position: fixed; inset: 0; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+    canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; }
     #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #e8c890; font: 16px Georgia, serif; letter-spacing: 0.1em; }
   </style>
 </head>
