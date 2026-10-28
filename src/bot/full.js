@@ -91,6 +91,11 @@ export const fullMethods = {
       out.push({ label: 'Digging up a hidden cache', site: c.kind === 'glint' ? { x: c.x, y: c.y } : { x: c.x, y: c.y + 2 }, run: () => this.digCache(c) });
     }
     for (const c of W.pois.camps) if (!pr.cleared.includes(c.id)) out.push({ label: 'Clearing a camp', site: { x: c.x, y: c.y }, run: () => this.clearCamp(c) });
+    // A fall or a hasty exit can leave a chest behind in a cleared dungeon: go back for it.
+    for (const id of ['verdant', 'ashen', 'frost']) {
+      if (!pr.bosses.includes(id)) continue;
+      if (this.dungeonChestIds().some((cid) => cid.startsWith(`d:${id}:`) && !pr.opened.includes(cid))) out.push({ label: 'Revisiting a dungeon for its last chest', site: W.pois.dungeons[id].front, run: () => this.runDungeon(id, true) });
+    }
     const st = s.quest.main;
     if (st !== 'end' && st !== 'drowned') out.push({ label: 'Main quest', site: this.mainSite(), run: () => this.mainStep(true), main: true });
     return out;
@@ -109,7 +114,9 @@ export const fullMethods = {
         if (g.area.kind === 'dungeon') { yield* this.leaveDungeon(); continue; }
         if (g.area.kind !== 'overworld') { yield* this.walkTo(g.area.layout.exit, { feet: 3 }); yield; continue; }
       }
-      const job = this.pickJob();
+      let job = this.pickJob();
+      // Before calling it done, give every job we gave up on one more round.
+      if (!job && !this.secondChance && this.tried && this.tried.size) { this.secondChance = true; this.tried.clear(); this.note('Second pass over skipped jobs'); job = this.pickJob(); }
       if (!job) {
         if (s.quest.main === 'drowned') { this.status = 'Returning to the elder'; yield* this.mainStep(true); continue; }
         this.status = 'Nothing left in reach'; yield* this.wait(1); continue;
@@ -144,6 +151,7 @@ export const fullMethods = {
 
   *mainStep(full) {
     const g = this.g, W = g.world, st = g.state.quest.main;
+    if (['vault', 'reliquary', 'sanctuary'].includes(st) && g.area.kind !== 'dungeon' && this.needsSupplies()) yield* this.resupply();
     switch (st) {
       case 'wake': case 'drowned': yield* this.talkTo(this.npc('home', 'elder').id); break;
       case 'scout': case 'sigil': yield* this.talkTo(this.npc('outpost', 'scout').id); break;

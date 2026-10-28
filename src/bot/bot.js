@@ -87,6 +87,7 @@ export class Bot {
     if (this.restart) { this.restart = false; this.task = null; this.note('Restarting route after a fall'); }
     if (this.combat()) return;
     this.tidyUp();
+    if (this.grabPickups()) return;
     if (!this.task) this.task = this.mode === 'full' ? this.fullRoute() : this.anyRoute();
     const r = this.task.next();
     if (r.done) { this.task = null; if (g.state.quest.main === 'end') this.done = true; }
@@ -133,6 +134,7 @@ export class Bot {
       if (this.uiT > 0.45) { this.tap(K.confirm); this.uiT = 0; }
       return;
     }
+    if (top instanceof Menu && top.title === 'General Goods' && this.shopping) { this.shop(top); return; }
     if (top instanceof Menu && top.title === 'The Ember Rekindled') {
       if (this.mode === 'full' || this.g.state.quest.main === 'end') { this.done = true; this.status = 'Run complete!'; }
       return;
@@ -144,9 +146,72 @@ export class Bot {
     const labels = page.options.map((o) => o.label);
     const riddle = /^Riddle \d of 3: (.*)$/.exec(page.text);
     if (riddle) { const r = RIDDLES.find((q) => q[0] === riddle[1]); return Math.max(0, labels.indexOf(r && r[1])); }
+    if (this.shopping && labels.includes('Browse wares')) return labels.indexOf('Browse wares');
     const accept = labels.findIndex((l) => l === 'I\'ll do it.' || l === 'I love riddles.');
     if (accept >= 0) return this.mode === 'full' ? accept : Math.max(0, labels.indexOf('Not right now.'));
     return labels.length - 1;
+  }
+
+  // ---------------------------------------------------------------- supplies
+  // Walk over useful drops once a fight is done: ammo, food, and hearts when hurt.
+  grabPickups() {
+    const g = this.g, p = g.player, s = g.state, d = g.derived;
+    if (g.area.kind === 'dungeon' && g.area.portalActive) return false;
+    const want = (k) => k.kind === 'heart' ? s.player.hp < d.maxHp : k.kind === 'arrows' ? s.gear.items.includes('bow') && s.player.arrows < d.maxArrows
+      : k.kind === 'knives' ? s.gear.items.includes('knives') && s.player.knives < d.maxKnives : k.kind === 'food' || k.kind === 'coin' || (k.kind === 'mana' && s.player.mana < d.maxMana);
+    const pk = g.area.entities.filter((e) => e.kind && e.value !== undefined && e.life !== undefined && e.life < Infinity && !e.dead && want(e) && Math.hypot(e.x - p.x, e.y - p.y) < 90)
+      .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
+    if (!pk) return false;
+    this.status = 'Picking up supplies';
+    const step = this.chaseStep(pk) || [Math.sign(Math.round(pk.x - p.x)), Math.sign(Math.round(pk.y - p.y))];
+    this.move(step[0], step[1]);
+    return true;
+  }
+
+  // What the merchant should sell us right now: [shop label, still needed?, price].
+  shoppingList() {
+    const s = this.g.state, p = s.player, d = this.g.derived;
+    return [
+      ['Arrows ×10', () => s.gear.items.includes('bow') && p.arrows < d.maxArrows - 9, 15],
+      ['Throwing knives ×5', () => s.gear.items.includes('knives') && p.knives < d.maxKnives - 4, 15],
+      ['Ration', () => p.food < 3, 10],
+    ].filter(([, need, price]) => need() && p.coins >= price);
+  }
+
+  needsSupplies() {
+    const s = this.g.state, p = s.player;
+    const low = (s.gear.items.includes('bow') && p.arrows < 15) || (s.gear.items.includes('knives') && p.knives < 8) || p.food < 2;
+    return low && this.shoppingList().length > 0;
+  }
+
+  // Stop at the nearest merchant we can reach and stock up.
+  *resupply() {
+    const g = this.g, W = g.world, map = g.overworldMap;
+    const here = g.overworldPos();
+    if (!map || !here) return;
+    const reach = reachMap(map, here);
+    const merchants = W.npcs.filter((n) => n.role === 'merchant' && n.buildingId).map((n) => {
+      const b = W.props.find((q) => q.id === n.buildingId);
+      const r = b ? reach[(b.door.y + 1) * map.w + b.door.x] : -1;
+      return { n, r };
+    }).filter((m) => m.r >= 0).sort((a, b) => a.r - b.r);
+    if (!merchants.length) return;
+    this.status = 'Restocking supplies';
+    this.note(this.status);
+    this.shopping = true;
+    yield* this.talkTo(merchants[0].n.id);
+    this.shopping = false;
+  }
+
+  shop(menu) {
+    const list = this.shoppingList();
+    if (!list.length) { if (this.uiT > 0.2) { this.tap(K.back); this.uiT = 0; } return; }
+    const idx = menu.items.findIndex((it) => it.label === list[0][0]);
+    if (idx < 0 || (menu.items[idx].disabled && menu.items[idx].disabled())) { this.shopping = false; this.tap(K.back); return; }
+    if (this.uiT < 0.15) return;
+    this.uiT = 0;
+    if (menu.sel !== idx) this.tap(idx > menu.sel ? K.down : K.up);
+    else this.tap(K.confirm);
   }
 
   // ---------------------------------------------------------------- combat
@@ -171,7 +236,11 @@ export class Bot {
 
   // Track progress against the current target; shrug off fights that go nowhere.
   engage(e) {
-    if (this.engaged !== e) { this.engaged = e; this.engageHp = e.hp; this.engageT = 0; return; }
+    if (this.engaged !== e) { this.engaged = e; this.engageHp = e.hp; this.engageT = 0; this.engageTotal = 0; return; }
+    this.engageTotal += this.dt;
+    const a = this.g.area, locked = a.kind === 'dungeon' && (a.shut || a.shutPending);
+    // A chip of damage now and then shouldn't keep us brawling forever with something we can't finish.
+    if (!e.boss && !locked && this.engageTotal > 40) { this.ignore.set(e, this.time + 40); this.engaged = null; this.note(`Leaving a ${e.archetype} be`); return; }
     if (e.hp < this.engageHp) { this.engageHp = e.hp; this.engageT = 0; return; }
     this.engageT += this.dt;
     if (!e.boss && this.engageT > 8) { this.ignore.set(e, this.time + 40); this.engaged = null; this.note(`Giving up on a ${e.archetype}`); }
@@ -262,7 +331,7 @@ export class Bot {
       if (res.stamina >= d.dodgeCost && p.mode === 'normal' && this.time - this.lastDodge > 0.45) { this.tap(K.dodge); this.lastDodge = this.time; }
     }
     if (open && dist <= reach && p.cool <= 0 && p.mode === 'normal' && !shield) this.tap(K.attack);
-    else if (dist > reach + 2 && dist < 160 && !shield && p.mode === 'normal' && this.rangedReady()) this.tap(K.item);
+    else if (dist > reach + 2 && dist < 160 && !shield && p.mode === 'normal' && this.rangedReady(focus)) this.tap(K.item);
   }
 
   // One step along an A* path toward an enemy, for when walls or hazards stand between us.
@@ -282,13 +351,19 @@ export class Bot {
     return [Math.abs(dx) > 1.5 ? Math.sign(dx) : 0, Math.abs(dy) > 1.5 ? Math.sign(dy) : 0];
   }
 
-  rangedReady() {
+  // Mana refills on its own; arrows and knives don't, so save a reserve for wardens and for
+  // things the blade can't reach.
+  rangedReady(target) {
     const g = this.g, items = g.state.gear.items;
     const id = items[g.state.gear.selected % Math.max(1, items.length)];
     const it = USE_ITEMS[id];
     if (!it || id === 'bombs') return false;
     if (it.mana) return g.state.player.mana >= g.derived.fireboltCost + 4;
-    return g.state.player[it.ammo] > 2;
+    const ammo = g.state.player[it.ammo];
+    if (ammo <= 0) return false;
+    if (target && target.boss) return target.vulnerable || ammo > 8;
+    const unreachable = target && (target.flying || (this.engaged === target && this.engageT > 3));
+    return unreachable || ammo > 18;
   }
 
   // The return seal ends the dungeon the moment you touch it; only step on it on purpose.
@@ -484,11 +559,17 @@ export class Bot {
 
   // Walk next to an entity, face it and press interact until a dialog opens.
   *approachAndPress(getEnt, range) {
+    let wrong = null;
     for (let tries = 0; tries < 8; tries++) {
       const e = getEnt();
       if (!e) return false;
       const g = this.g, p = g.player, map = g.area.map;
-      if (Math.hypot(e.x - p.x, e.y - p.y) > range) {
+      if (wrong) {
+        // Someone else keeps answering: go round to the far side so our person stands between us.
+        const ux = e.x - wrong.x, uy = e.y - wrong.y, l = Math.hypot(ux, uy) || 1;
+        const spot = standableNear(map, tileOf(e.x + (ux / l) * 18, e.y + (uy / l) * 18), tileOf(p.x, p.y), 2);
+        if (spot) yield* this.walkTo(spot, { exact: true, timeout: 8 });
+      } else if (Math.hypot(e.x - p.x, e.y - p.y) > range) {
         const et = tileOf(e.x, e.y), cur = tileOf(p.x, p.y);
         const reach = reachMap(map, cur);
         let best = null, bd = Infinity;
@@ -517,6 +598,7 @@ export class Bot {
       // and make sure it was the right person who answered.
       for (let t = 0; t < 0.3 && (this.uiCount || 0) === seen; t += this.dt) yield;
       if ((this.uiCount || 0) > seen && (!this.lastTalked || this.lastTalked === e2.data?.id || !e2.data)) return true;
+      if ((this.uiCount || 0) > seen && this.lastTalked) wrong = g.area.npcs().find((n) => n.data.id === this.lastTalked) || null;
     }
     return false;
   }
