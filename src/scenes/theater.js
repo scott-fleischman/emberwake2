@@ -57,7 +57,7 @@ export class TheaterScene extends GameScene {
 
   // Jump to scene i, dropping whatever is playing without letting it chain on.
   go(i) {
-    for (const ui of this.uiStack) { ui.onDone = null; ui.done = true; }
+    for (const ui of this.uiStack) { ui.onDone = null; ui.done = true; ui.release?.(this); }
     this.uiStack = [];
     this.pending = null;
     if (i < 0) i = 0;
@@ -92,6 +92,7 @@ export class TheaterScene extends GameScene {
     b.dead = true;
     a.boss = null;
     a.enemyList = a.enemyList.filter((e) => e !== b);
+    a.entities = a.entities.filter((e) => e !== b);
     return { x: b.x, y: b.y };
   }
 

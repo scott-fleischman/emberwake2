@@ -3,6 +3,7 @@
 // {look, world} for panels that show the hero or the real map of this seed.
 import { R, humanSprite, LOOKS } from './sprites.js';
 import { worldImage } from './hud.js';
+import { paintThornmaw, paintCinder, fxCinder, paintRime, rimeUnder, rimeOver, portraitPose, drawLights } from './bossart.js';
 
 const W = 480, H = 270;
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -215,6 +216,28 @@ function realmMap(g, t, ctx, heal = -1) {
     R(g, hx - 1, hy - 1, 3, 3, '#fff0b0');
   }
   vignette(g, 0.6);
+}
+
+// Speed lines bursting out from a point, pulsing with a roar.
+function burstLines(g, cx, cy, t, rgb, a) {
+  g.save(); g.globalCompositeOperation = 'lighter';
+  const pulse = 1 + 0.6 * Math.abs(Math.sin(t * 9));
+  for (let k = 0; k < 40; k++) {
+    const ang = (k / 40) * Math.PI * 2 + hash(k, 3) * 0.12 + t * 0.04, w = 0.012 + hash(k, 4) * 0.028, r0 = 40 + hash(k, 5) * 40;
+    g.fillStyle = `rgba(${rgb},${a * pulse * (0.4 + hash(k, 6))})`;
+    g.beginPath(); g.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0); g.lineTo(cx + Math.cos(ang - w) * 640, cy + Math.sin(ang - w) * 640); g.lineTo(cx + Math.cos(ang + w) * 640, cy + Math.sin(ang + w) * 640); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+
+// A warden painted big: (x,y) is where its feet would be, S the zoom, flip to face left.
+function bigBoss(g, paint, pose, x, y, S, flip = false, fx = null) {
+  const L = [];
+  g.save(); g.translate(x, y); g.scale(flip ? -S : S, S);
+  paint(g, pose, L);
+  if (fx) { g.scale(flip ? -1 : 1, 1); fx(g); }
+  g.restore();
+  drawLights(g, L, 0, 0, 0.55);
 }
 
 export const ART = {
@@ -443,6 +466,67 @@ export const ART = {
     eyes(g, 240, 118, clamp01(t / 0.5) * blink, 3.2);
     embers(g, t, 50, 60, 420, 280, '140,90,200', 12);
     vignette(g, 0.6);
+  },
+
+  // ---------------------------------------------------------------- warden close-ups (mid-roar)
+  portrait_thornmaw(g, t) {
+    const grd = g.createRadialGradient(200, 130, 10, 200, 130, 330);
+    grd.addColorStop(0, '#34401a'); grd.addColorStop(0.45, '#141a0a'); grd.addColorStop(1, '#030502');
+    g.fillStyle = grd; g.fillRect(0, 0, W, H);
+    burstLines(g, 190, 140, t, '190,255,110', 0.05);
+    for (let k = 0; k < 9; k++) {
+      const x = hash(k, 1) * W, len = 40 + hash(k, 2) * 70, sw = Math.sin(t * 1.5 + k) * 4;
+      g.strokeStyle = '#0a0c06'; g.lineWidth = 3 + hash(k, 3) * 4; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + sw, len * 0.5, x + sw * 2 + 6, len); g.stroke();
+    }
+    embers(g, t, 34, 0, W, 280, '170,230,100', 22);
+    glow(g, 236, 150, 130, '255,70,50', 0.22 + 0.1 * Math.abs(Math.sin(t * 9)));
+    const S = 3.6 + easeOut(t / 2) * 0.35;
+    bigBoss(g, paintThornmaw, portraitPose('thornmaw', t), 300, 244, S, true);
+    for (let i = 0; i < 14; i++) {
+      const p = ((t * 1.3 + hash(i, 4)) % 1), a = Math.PI * (0.7 + hash(i, 5) * 0.6), d = p * 300;
+      g.globalAlpha = 1 - p; R(g, 200 + Math.cos(a) * d, 140 + Math.sin(a) * d * 0.6, 2 + p * 4, 2 + p * 3, i % 3 ? '#4a6a2a' : '#c03a4a');
+    }
+    g.globalAlpha = 1;
+    vignette(g, 0.75);
+  },
+
+  portrait_cinder(g, t) {
+    sky(g, ['#120404', '#2e0a06', '#1a0504']);
+    glow(g, 240, 320, 300, '255,90,30', 0.55);
+    burstLines(g, 240, 100, t, '255,150,60', 0.05);
+    for (let k = 0; k < 7; k++) {
+      const x = 20 + k * 72 + hash(k, 1) * 30;
+      g.strokeStyle = `rgba(255,${110 + k * 10},40,${0.5 + 0.3 * Math.sin(t * 4 + k)})`; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(x, H); g.lineTo(x + 10, H - 20 - hash(k, 2) * 20); g.lineTo(x - 4, H - 40 - hash(k, 3) * 30); g.stroke();
+    }
+    embers(g, t, 90, 0, W, 290, '255,160,70', 36);
+    const S = 2.6 + easeOut(t / 2) * 0.2, pose = portraitPose('cinder', t);
+    glow(g, 240, 100, 120, '255,120,40', 0.25 + 0.1 * Math.abs(Math.sin(t * 9)));
+    bigBoss(g, paintCinder, pose, 240, 104 + 66 * S, S, false, (gg) => fxCinder(gg, pose, 0, 0, 1));
+    embers(g, t * 1.3, 30, 0, W, 300, '255,220,140', 60);
+    vignette(g, 0.7, '30,4,0');
+  },
+
+  portrait_rime(g, t) {
+    sky(g, ['#02050c', '#08162a', '#123050']);
+    for (let k = 0; k < 3; k++) {
+      g.fillStyle = `rgba(${k % 2 ? '120,240,220' : '120,180,255'},0.07)`;
+      g.beginPath(); g.moveTo(0, 40 + k * 22);
+      for (let x = 0; x <= W; x += 12) g.lineTo(x, 40 + k * 22 + Math.sin(x * 0.012 + t * 0.8 + k * 2) * 16);
+      for (let x = W; x >= 0; x -= 12) g.lineTo(x, 70 + k * 22 + Math.sin(x * 0.014 + t * 0.6 + k) * 14);
+      g.closePath(); g.fill();
+    }
+    burstLines(g, 240, 96, t, '160,220,255', 0.05);
+    const pose = portraitPose('rime', t), S = 2.7 + easeOut(t / 2) * 0.2;
+    glow(g, 240, 110, 120, '120,200,255', 0.22 + 0.1 * Math.abs(Math.sin(t * 9)));
+    bigBoss(g, (gg, b, L) => { rimeUnder(gg, b, 0, 0); paintRime(gg, b, L); }, pose, 240, 124 + 66 * S, S, false, (gg) => rimeOver(gg, pose, 0, 0));
+    for (let i = 0; i < 90; i++) {
+      const sp = 300 + hash(i, 1) * 260, y = hash(i, 2) * H, x = ((hash(i, 3) * 640 + t * sp) % 640) - 80, len = 8 + hash(i, 4) * 22;
+      g.strokeStyle = `rgba(235,248,255,${0.25 + hash(i, 5) * 0.5})`; g.lineWidth = hash(i, 6) < 0.2 ? 2 : 1;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x - len, y - len * 0.3); g.stroke();
+    }
+    vignette(g, 0.7, '0,8,24');
   },
 };
 

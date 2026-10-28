@@ -1,7 +1,8 @@
 // Cutscene player. Works as a UI-stack overlay inside GameScene (in-engine, letterboxed shots
 // over a frozen world) or wrapped by IntroScene (full-screen painted panels).
 // Shot fields: see src/data/story.js.
-import { ART, drawSpirit, tendrils, eyes } from './cinema.js';
+import { ART, drawSpirit, tendrils, eyes, glow } from './cinema.js';
+import { quakeDebris, drawEntrance, drawOmen } from './bossart.js';
 import { drawDarkness } from './render.js';
 import { text, wrap, SERIF } from './ui.js';
 import { UI } from './palette.js';
@@ -10,6 +11,11 @@ import { hot, TOUCH } from '../core/touch.js';
 const CPS = 42;           // typewriter characters per second
 const FADE = 0.35;        // seconds to fade between panels
 const INPUT_GRACE = 0.25; // ignore the key press that opened the scene
+const ENTRANCE = 2;       // seconds a warden's entrance takes
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const easeOut = (v) => 1 - (1 - clamp01(v)) ** 3;
+// Shot sfx: a name, or a list of names / [name, opts] pairs.
+const playSfx = (game, list) => { for (const e of [].concat(list)) { if (Array.isArray(e)) game.audio.sfx(e[0], e[1]); else if (e) game.audio.sfx(e); } };
 
 export class Cutscene {
   constructor(shots, opts = {}) {
@@ -49,8 +55,9 @@ export class Cutscene {
     const s = this.shot;
     this.t = 0;
     this.chars = 0;
+    this.cue = 0;
     if (!s) return;
-    if (s.sfx) game.audio.sfx(s.sfx);
+    if (s.sfx) playSfx(game, s.sfx);
     if (s.music) game.audio.playMusic(s.music);
     if (s.run) s.run(game);
     if (s.shake && !s.art && game.cam && this.ctx.shake !== false) game.cam.shake(s.shake, 0.8);
@@ -71,7 +78,39 @@ export class Cutscene {
   finish(game) {
     if (this.done) return;
     this.done = true;
+    this.release(game);
     if (this.onDone) this.onDone(game);
+  }
+
+  // Hand the boss and camera back to the game untouched by the scene.
+  release(game) {
+    const b = game.area?.boss;
+    if (b) { b.cine = null; b.roarT = 0; }
+    if (game.cam) game.cam.ox = game.cam.oy = 0;
+  }
+
+  // How hard the in-engine shot quakes right now (entrances peak at the burst).
+  quakeAmt(s) {
+    if (!s.quake) return 0;
+    if (!s.entrance) return s.quake;
+    const p = this.t / ENTRANCE, peak = { thornmaw: 0.35, cinder: 0.5, rime: 0.8 }[s.entrance] ?? 0.5;
+    return s.quake * (0.35 + 0.65 * Math.max(0, 1 - Math.abs(p - peak) / 0.25));
+  }
+
+  // In-engine shots steer the frozen boss: hide it, play its entrance, keep it roaring.
+  direct(dt, game, s) {
+    const b = game.area?.boss;
+    if (b && this.letterbox) {
+      b.anim = (b.anim || 0) + dt;
+      b.cine = s.hideBoss ? { hidden: true } : s.entrance ? { kind: s.entrance, p: clamp01(this.t / ENTRANCE) } : null;
+      if ((s.roar && !s.art) || (s.entrance && this.t > ENTRANCE * 0.8)) b.roarT = 0.9 - ((this.t * 1.4) % 0.9);
+      else if (b.roarT > 0) b.roarT = Math.max(0, b.roarT - dt);
+    }
+    const cam = game.cam;
+    if (!cam) return;
+    const q = s.art || this.ctx.shake === false ? 0 : this.quakeAmt(s), k = this.total;
+    cam.ox = q ? Math.round(Math.sin(k * 71.3) * Math.cos(k * 23.9) * q) : 0;
+    cam.oy = q ? Math.round(Math.sin(k * 57.7 + 1.3) * q * 0.8) : 0;
   }
 
   update(dt, game) {
@@ -98,6 +137,8 @@ export class Cutscene {
     this.t += dt;
     // In-engine shots can steer the camera: a slow pan toward `look` (world pixels).
     if (s.look && game.cam && game.area?.map) game.cam.follow(s.look.x, s.look.y, game.area.map.pixelW, game.area.map.pixelH, dt * 0.22);
+    while (s.cues && this.cue < s.cues.length && this.t >= s.cues[this.cue][0]) { const [, n, o] = s.cues[this.cue++]; game.audio.sfx(n, o); }
+    this.direct(dt, game, s);
     if (s.spirit) this.spiritA = Math.min(1, this.spiritA + dt * (s.fadeSpirit ? 0 : 1.2));
     if (s.fadeSpirit) this.spiritA = Math.max(0, this.spiritA - dt * 0.8);
     if (s.text && this.chars < s.text.length) {
@@ -124,6 +165,7 @@ export class Cutscene {
       if (sh) g.translate(Math.round((Math.random() - 0.5) * sh * 2), Math.round((Math.random() - 0.5) * sh * 2));
       ART[s.art](g, this.t, s, this.ctx);
       g.restore();
+      if (s.roar) this.roarVignette(g, s.roar);
       const prev = this.shots[this.i - 1];
       const fadeIn = !this.letterbox && (!prev || prev.art !== s.art) ? Math.max(0, 1 - this.t / FADE) : 0;
       const fadeOut = this.leaving > 0 ? 1 - this.leaving / FADE : 0;
@@ -131,8 +173,24 @@ export class Cutscene {
       if (a > 0) { g.fillStyle = `rgba(0,0,0,${a})`; g.fillRect(0, 0, 480, 270); }
       return;
     }
-    const cam = game.cam;
-    if (s.spotlight && game.area?.boss) drawDarkness(g, cam, [{ x: game.area.boss.x, y: game.area.boss.y - 6, r: 64 }], 0.72 * this.bars);
+    const cam = game.cam, b = game.area?.boss;
+    if (s.spotlight && b) drawDarkness(g, cam, [{ x: b.x, y: b.y - 28, r: s.hideBoss ? 70 + Math.sin(this.t * 9) * 4 : 104 }], 0.72 * this.bars);
+    if (s.omen && b && cam) drawOmen(g, s.omen, Math.round(b.x - cam.left), Math.round(b.y - cam.top), this.t);
+    if (s.entrance && b && cam) drawEntrance(g, s.entrance, Math.round(b.x - cam.left), Math.round(b.y - cam.top), clamp01(this.t / ENTRANCE), this.t);
+    if (s.quake && this.letterbox) quakeDebris(g, this.total, this.quakeAmt(s) / 2);
+    if (s.roar) this.roarVignette(g, s.roar, 0.6);
+    if (s.burst && s.focus && cam) {
+      const x = s.focus.x - cam.left, y = s.focus.y - cam.top - 24, k = clamp01(1 - this.t / 1.2);
+      g.save(); g.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2 + this.t * 0.4, w = 0.05 + (i % 3) * 0.03, len = 80 + 300 * easeOut(this.t / 0.8);
+        g.fillStyle = `rgba(255,240,200,${0.35 * k})`;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a - w) * len, y + Math.sin(a - w) * len); g.lineTo(x + Math.cos(a + w) * len, y + Math.sin(a + w) * len); g.closePath(); g.fill();
+      }
+      g.restore();
+      glow(g, x, y, 40 + 140 * k, '255,245,220', 0.8 * k);
+      g.fillStyle = `rgba(255,252,240,${k * k})`; g.fillRect(0, 0, 480, 270);
+    }
     if (s.glow && game.player && cam) {
       const r = 18 + Math.min(1, this.t) * 26 + Math.sin(this.total * 6) * 3;
       g.fillStyle = `rgba(${s.glow},0.22)`; g.beginPath(); g.arc(game.player.x - cam.left, game.player.y - cam.top - 10, r, 0, Math.PI * 2); g.fill();
@@ -149,6 +207,44 @@ export class Cutscene {
     }
   }
 
+  // A pulsing colored vignette for a roar. rgb: "r,g,b".
+  roarVignette(g, rgb, k = 1) {
+    const a = k * (0.3 + 0.3 * Math.abs(Math.sin(this.t * 9))) * (0.6 + 0.4 * Math.max(0, 1 - this.t / 2));
+    const grd = g.createRadialGradient(240, 135, 70, 240, 135, 300);
+    grd.addColorStop(0, `rgba(${rgb},0)`); grd.addColorStop(1, `rgba(${rgb},${a})`);
+    g.fillStyle = grd; g.fillRect(0, 0, 480, 270);
+  }
+
+  // The warden's name slams down in the lower third: a streak, a white flash, the subtitle sliding in.
+  drawSlam(u, s) {
+    const t = this.t, col = s.color || UI.gold, k = clamp01(t / 0.14), hit = Math.max(0, 1 - (t - 0.14) / 0.45), ty = 204;
+    const band = easeOut(t / 0.2);
+    const grd = u.createLinearGradient(0, ty - 30, 0, ty + 20);
+    grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(0.3, `rgba(0,0,0,${0.6 * band})`); grd.addColorStop(0.75, `rgba(0,0,0,${0.6 * band})`); grd.addColorStop(1, 'rgba(0,0,0,0)');
+    u.fillStyle = grd; u.fillRect(0, ty - 30, 480, 50);
+    const sp = clamp01((t - 0.08) / 0.24), sx = -60 + sp * 600, fade = Math.max(0, 1 - Math.max(0, t - 0.4) / 1.2);
+    if (t > 0.08 && fade > 0) {
+      const sg = u.createLinearGradient(sx - 320, 0, sx, 0);
+      sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(1, `rgba(255,255,255,${0.9 * fade})`);
+      u.fillStyle = sg; u.fillRect(sx - 320, ty + 4, 320, 1.2);
+      u.fillStyle = col; u.globalAlpha = 0.5 * fade; u.fillRect(sx - 320, ty + 3, 320, 3); u.globalAlpha = 1;
+    }
+    if (t > 0.14 && hit > 0) { u.fillStyle = `rgba(255,255,255,${0.85 * hit * hit})`; u.fillRect(0, 0, 480, 270); }
+    const jx = hit > 0.4 ? (Math.random() - 0.5) * 3 * hit : 0, jy = hit > 0.4 ? (Math.random() - 0.5) * 3 * hit : 0;
+    u.save(); u.translate(240 + jx, ty + jy); const sc = 1 + (1 - easeOut(k)) * 1.8; u.scale(sc, sc); u.globalAlpha = k;
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [1.2, 1.2]]) text(u, s.title, dx, dy, { size: 24, bold: true, align: 'center', family: SERIF, color: '#000', shadow: false });
+    text(u, s.title, 0, 0, { size: 24, bold: true, align: 'center', family: SERIF, color: col, shadow: false });
+    u.restore();
+    const q = easeOut((t - 0.38) / 0.35);
+    if (q > 0 && s.sub) {
+      u.globalAlpha = q;
+      const x = 240 + (1 - q) * 120;
+      text(u, s.sub.toUpperCase(), x, ty + 15, { size: 7, align: 'center', color: '#f0e4cc' });
+      u.fillStyle = col; u.fillRect(x - 118, ty + 12, 44 * q, 1); u.fillRect(x + 74 + (1 - q) * 44, ty + 12, 44 * q, 1);
+      u.globalAlpha = 1;
+    }
+  }
+
   // UI layer: bars, title cards and text.
   draw(u, game) {
     const s = this.shot;
@@ -162,8 +258,10 @@ export class Cutscene {
       u.fillStyle = '#000'; u.fillRect(0, 0, 480, bh); u.fillRect(0, 270 - bh, 480, bh);
     }
     if (!s) return;
+    if (s.flash && this.t < s.flash) { u.fillStyle = `rgba(255,255,255,${0.95 * (1 - this.t / s.flash)})`; u.fillRect(0, 0, 480, 270); }
     const shown = s.text ? s.text.slice(0, Math.floor(this.chars)) : '';
-    if (s.title) {
+    if (s.title && s.slam) this.drawSlam(u, s);
+    else if (s.title) {
       const a = Math.min(1, this.t / 0.8);
       u.globalAlpha = a;
       const big = !this.letterbox;
