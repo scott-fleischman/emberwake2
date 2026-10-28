@@ -1,0 +1,11 @@
+{
+  "name": "emberwake",
+  "version": "0.1.0",
+  "description": "Emberwake — a procedural top-down 2.5D fantasy action-adventure browser prototype",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "test": "node --test tests/*.test.js"
+  }
+}
