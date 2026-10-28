@@ -146,13 +146,57 @@ export function sideStatus(state, q) { return state.quest.side[q.id] || 'availab
 export function sideObjective(state, q, W) {
   const giver = W.npcs.find((n) => n.id === q.giverId);
   const st = sideStatus(state, q);
-  if (st === 'ready') return { text: `Return to ${giver.name} in ${settlement(W, q.settlementId).name}.`, marker: null };
+  if (st === 'ready') return { text: `Return to ${giver.name} in ${settlement(W, q.settlementId).name}.`, marker: npcMarker(W, giver.id) };
   switch (q.type) {
     case 'fetch': return { text: `Find ${giver.name}'s ${q.item}.`, marker: q.target };
-    case 'hunt': return { text: `Defeat ${FAMILIES[q.biome].names[q.archetype]}s (${state.quest.kills[q.id] || 0}/${q.count}).`, marker: null };
-    case 'deliver': { const t = W.npcs.find((n) => n.id === q.targetNpc); return { text: `Deliver ${q.parcel} to ${t.name} in ${settlement(W, t.settlementId).name}.`, marker: settlement(W, t.settlementId).center }; }
+    case 'hunt': return { text: `Defeat ${FAMILIES[q.biome].names[q.archetype]}s near ${settlement(W, q.settlementId).name} (${state.quest.kills[q.id] || 0}/${q.count}).`, marker: settlement(W, q.settlementId).center };
+    case 'deliver': { const t = W.npcs.find((n) => n.id === q.targetNpc); return { text: `Deliver ${q.parcel} to ${t.name} in ${settlement(W, t.settlementId).name}.`, marker: npcMarker(W, t.id) }; }
     default: { const c = W.pois.caves.find((x) => x.id === q.caveId); return { text: `Find ${q.kin} in the cave.`, marker: c.front }; }
   }
+}
+
+// Where to find a person on the overworld: where they stand, or the door of their building.
+export function npcMarker(W, npcId) {
+  const n = W.npcs.find((x) => x.id === npcId);
+  if (!n) return null;
+  if (n.x !== null) return { x: n.x, y: n.y };
+  const b = W.props.find((p) => p.id === n.buildingId);
+  return b ? { x: b.door.x, y: b.door.y + 1 } : settlement(W, n.settlementId).center;
+}
+
+export function questTitle(q, W) {
+  if (!q) return 'The Waning Ember';
+  switch (q.type) {
+    case 'fetch': return `The lost ${q.item}`;
+    case 'hunt': return `Thinning the ${FAMILIES[q.biome].names[q.archetype]}s`;
+    case 'deliver': return `A parcel for ${W.npcs.find((n) => n.id === q.targetNpc).name}`;
+    default: return `Lost in the dark: ${q.kin}`;
+  }
+}
+
+// ---------------------------------------------------------------- tracking
+const MAIN_DUNGEON = { vault: 'verdant', reliquary: 'ashen', sanctuary: 'frost' };
+
+// Quests the player can track: the main quest plus every accepted, unfinished side quest.
+export function trackableQuests(state, sideQuests) {
+  return ['main', ...sideQuests.filter((q) => ['active', 'ready'].includes(sideStatus(state, q))).map((q) => q.id)];
+}
+
+// The tracked quest's objective; falls back to the main quest when the tracked one is gone.
+export function trackedObjective(state, W, sideQuests) {
+  const id = state.quest.tracked || 'main';
+  if (id !== 'main') {
+    const q = sideQuests.find((x) => x.id === id);
+    if (q && trackableQuests(state, sideQuests).includes(id)) return { id, title: questTitle(q, W), ...sideObjective(state, q, W), dungeon: null };
+  }
+  return { id: 'main', title: questTitle(null, W), ...mainObjective(state, W), dungeon: MAIN_DUNGEON[state.quest.main] || null };
+}
+
+export function cycleTracked(state, sideQuests) {
+  const ids = trackableQuests(state, sideQuests);
+  const i = ids.indexOf(state.quest.tracked || 'main');
+  state.quest.tracked = ids[(i + 1) % ids.length];
+  return state.quest.tracked;
 }
 
 // Kill counter for hunt quests. Returns quests that just became ready.

@@ -83,7 +83,7 @@ export function drawHUD(u, game) {
     if (items.length > 1) text(u, 'Q', 449, 18, { size: 4.5, color: UI.dim });
   }
   // Objective
-  if (game.objective) text(u, game.objective, 288, 9, { size: 5.5, align: 'center', color: '#e8dcc0' });
+  if (game.objective) text(u, `◆ ${game.objective}`, 288, 9, { size: 5.5, align: 'center', color: '#ffe48a' });
   if (game.subObjective) text(u, game.subObjective, 288, 17, { size: 5, align: 'center', color: UI.dim });
 
   // Boss bar
@@ -137,6 +137,7 @@ export function drawMinimap(u, area, game, big = false) {
     u.fillStyle = cur ? (Math.floor(game.time * 3) % 2 ? '#f0c850' : '#c89a30') : visited.has(r.id) ? '#8a8aa0' : 'rgba(120,120,140,0.35)';
     u.fillRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
     if (r.role === 'boss' && (hasMap || known.has(r.id))) { u.fillStyle = bossDone ? '#60c060' : '#e04040'; u.fillRect(x + cw / 2 - 1, y + ch / 2 - 1, 2, 2); }
+    if (r.role === 'boss' && !bossDone && game.objectiveDungeon === d.id && !(hasMap || known.has(r.id))) { u.strokeStyle = 'rgba(120,120,140,0.5)'; u.lineWidth = 0.5; u.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1); }
     if (r.role === 'entrance') { u.fillStyle = '#80e080'; u.fillRect(x + cw / 2 - 1, y + ch - 1.5, 2, 2); }
     for (const [dir, door] of Object.entries(r.doors)) {
       if (door.to === null) continue;
@@ -148,6 +149,11 @@ export function drawMinimap(u, area, game, big = false) {
       if (dir === 'w') u.fillRect(x - 0.5, y + ch / 2 - 0.5, 1.5, 1);
       if (dir === 'e') u.fillRect(x + cw - 1, y + ch / 2 - 0.5, 1.5, 1);
     }
+  }
+  // Quest pin: the warden's room pulses when your tracked quest leads here.
+  if (game.objectiveDungeon === d.id && !bossDone) {
+    const br = d.rooms.find((r) => r.role === 'boss');
+    questPulse(u, ox + (br.gx + 0.5) * cw, oy + (br.gy + 0.5) * ch, game.time, big ? 1.6 : 0.8);
   }
   if (big) {
     const ly = oy + rows * ch + 14;
@@ -196,13 +202,8 @@ export function drawWorldMap(u, game) {
   panel(u, ox - 6, oy - 14, mw + 12, mh + 20);
   text(u, 'Map of the Realm', ox + mw / 2, oy - 4, { size: 8, align: 'center', family: SERIF, bold: true, color: UI.gold });
   u.imageSmoothingEnabled = false;
-  u.drawImage(worldImage(W), ox, oy, mw, mh);
-  // Fog of war
-  const fw = Math.ceil(W.w / FOG_CELL), fh = Math.ceil(W.h / FOG_CELL);
-  u.fillStyle = '#1a1620';
-  for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
-    if (!game.fog[y * fw + x]) u.fillRect(ox + x * FOG_CELL * scale - 0.2, oy + y * FOG_CELL * scale - 0.2, FOG_CELL * scale + 0.4, FOG_CELL * scale + 0.4);
-  }
+  u.drawImage(foggedWorld(game), ox, oy, mw, mh);
+  const fw = Math.ceil(W.w / FOG_CELL);
   const seen = (x, y) => game.fog[Math.floor(y / FOG_CELL) * fw + Math.floor(x / FOG_CELL)];
   const revealed = new Set(game.state.progress.revealed || []);
   const mark = (x, y, color, shape = 'dot', size = 2.2) => {
@@ -226,23 +227,25 @@ export function drawWorldMap(u, game) {
   if (seen(W.pois.spire.front.x, W.pois.spire.front.y)) mark(W.pois.spire.front.x, W.pois.spire.front.y, '#b090ff', 'diamond', 2.4);
   for (const g of W.pois.gates) if (seen(g.x, g.y) || revealed.has(`gate:${g.region}`)) mark(g.x, g.y, game.state.progress.gates.includes(g.region) ? '#a0a0a0' : '#ffa040', 'square', 1.6);
   for (const cp of W.pois.camps) if (seen(cp.x, cp.y) && !game.state.progress.cleared.includes(cp.id)) mark(cp.x, cp.y, '#e06040', 'dot', 1.4);
-  // Quest marker & player
-  const blink = Math.floor(game.time * 3) % 2;
-  if (game.objectiveMarker && blink) {
-    const m = game.objectiveMarker;
-    u.strokeStyle = '#ffe060'; u.lineWidth = 1.2;
-    u.beginPath(); u.arc(ox + (m.x + 0.5) * scale, oy + (m.y + 0.5) * scale, 5, 0, Math.PI * 2); u.stroke();
+  // Quest markers: faint for other quests, a pulsing pin for the tracked one.
+  for (const m of game.otherMarkers || []) {
+    u.fillStyle = 'rgba(255,220,90,0.45)';
+    u.beginPath(); u.arc(ox + (m.x + 0.5) * scale, oy + (m.y + 0.5) * scale, 1.6, 0, Math.PI * 2); u.fill();
   }
+  if (game.objectiveMarker) questPulse(u, ox + (game.objectiveMarker.x + 0.5) * scale, oy + (game.objectiveMarker.y + 0.5) * scale, game.time, 1.6);
+  const blink = Math.floor(game.time * 3) % 2;
   const pp = game.overworldPos();
   if (pp) mark(pp.x, pp.y, blink ? '#ffffff' : '#4ae0ff', 'dot', 2.6);
   // Legend
   const lx = ox + mw + 14;
   panel(u, lx - 7, oy - 14, 480 - lx, mh + 20);
-  text(u, 'Objective', lx, oy + 6, { size: 7, bold: true, color: UI.gold });
-  const lines = wrapLines(u, game.objective || '', 480 - lx - 10);
-  lines.forEach((l, k) => text(u, l, lx, oy + 16 + k * 8, { size: 6 }));
-  let ly = oy + 24 + lines.length * 8;
-  for (const [c, label, shape] of [['#f4ead8', 'Settlement', 'square'], ['#ffb050', 'Shrine (save)', 'dot'], ['#c04040', 'Dungeon', 'diamond'], ['#5a4a3a', 'Cave', 'dot'], ['#e06040', 'Enemy camp', 'dot'], ['#ffa040', 'Sealed pass', 'square'], ['#ffe060', 'Quest marker', 'ring']]) {
+  text(u, 'Tracking', lx, oy + 6, { size: 7, bold: true, color: UI.gold });
+  const lines = [game.objectiveTitle ? `◆ ${game.objectiveTitle}` : '', ...wrapLines(u, game.objective || '', 480 - lx - 10)].filter(Boolean);
+  lines.forEach((l, k) => text(u, l, lx, oy + 16 + k * 8, { size: 6, color: k === 0 ? '#ffe48a' : UI.text }));
+  let ly = oy + 18 + lines.length * 8;
+  if ((game.otherMarkers || []).length) { text(u, 'Q: track next quest', lx, ly, { size: 5.5, color: UI.dim }); ly += 8; }
+  ly += 6;
+  for (const [c, label, shape] of [['#f4ead8', 'Settlement', 'square'], ['#ffb050', 'Shrine (save)', 'dot'], ['#c04040', 'Dungeon', 'diamond'], ['#5a4a3a', 'Cave', 'dot'], ['#e06040', 'Enemy camp', 'dot'], ['#ffa040', 'Sealed pass', 'square'], ['#ffd23a', 'Tracked quest', 'ring']]) {
     if (shape === 'ring') { u.strokeStyle = c; u.beginPath(); u.arc(lx + 2, ly - 2, 2.5, 0, Math.PI * 2); u.stroke(); }
     else { u.fillStyle = c; u.fillRect(lx, ly - 4, 4, 4); }
     text(u, label, lx + 8, ly, { size: 6 });
@@ -262,4 +265,99 @@ function wrapLines(u, s, w) {
   }
   if (line) out.push(line);
   return out;
+}
+
+// ---------------------------------------------------------------- quest pin & fogged map
+export function questPulse(u, x, y, time, size = 1) {
+  const k = (time % 1.3) / 1.3;
+  u.strokeStyle = `rgba(255,214,58,${0.9 * (1 - k)})`;
+  u.lineWidth = 1 * size;
+  u.beginPath(); u.arc(x, y, (2 + k * 7) * size, 0, Math.PI * 2); u.stroke();
+  u.fillStyle = 'rgba(40,24,0,0.8)';
+  u.beginPath(); u.arc(x, y, 2.6 * size, 0, Math.PI * 2); u.fill();
+  u.fillStyle = '#ffd23a';
+  u.beginPath(); u.arc(x, y, (1.8 + 0.3 * Math.sin(time * 6)) * size, 0, Math.PI * 2); u.fill();
+}
+
+// The world image with undiscovered cells blacked out; repaints only cells revealed since last time.
+let fogged = null;
+export function foggedWorld(game) {
+  const W = game.world;
+  const fw = Math.ceil(W.w / FOG_CELL), fh = Math.ceil(W.h / FOG_CELL);
+  if (!fogged || fogged.game !== game) {
+    const c = makeCanvas(W.w, W.h), g = c.getContext('2d');
+    g.drawImage(worldImage(W), 0, 0);
+    g.fillStyle = '#1a1620';
+    for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) if (!game.fog[y * fw + x]) g.fillRect(x * FOG_CELL, y * FOG_CELL, FOG_CELL, FOG_CELL);
+    fogged = { game, canvas: c, g };
+    game.fogNew.length = 0;
+  }
+  if (game.fogNew.length) {
+    const img = worldImage(W);
+    for (const i of game.fogNew.splice(0)) {
+      const x = (i % fw) * FOG_CELL, y = Math.floor(i / fw) * FOG_CELL;
+      fogged.g.drawImage(img, x, y, FOG_CELL, FOG_CELL, x, y, FOG_CELL, FOG_CELL);
+    }
+  }
+  return fogged.canvas;
+}
+
+// Circular overworld minimap. The tracked quest pulses where it is, or pins to the rim
+// pointing toward it when it lies beyond the minimap's reach.
+const MM = { x: 448, y: 56, r: 26, zoom: 1.15 };
+export function drawOverworldMinimap(u, game) {
+  const W = game.world;
+  const outside = game.area.kind === 'overworld';
+  const pos = outside ? { x: game.player.x / 16, y: game.player.y / 16 } : game.overworldPos() && { x: game.overworldPos().x + 0.5, y: game.overworldPos().y + 0.5 };
+  if (!pos) return;
+  const { x: cx, y: cy, r, zoom } = MM;
+  u.save();
+  u.beginPath(); u.arc(cx, cy, r, 0, Math.PI * 2);
+  u.fillStyle = '#1a1620'; u.fill();
+  u.clip();
+  u.imageSmoothingEnabled = false;
+  u.drawImage(foggedWorld(game), cx - pos.x * zoom, cy - pos.y * zoom, W.w * zoom, W.h * zoom);
+  if (!outside) { u.fillStyle = 'rgba(10,8,14,0.45)'; u.fillRect(cx - r, cy - r, r * 2, r * 2); }
+  // Shrines you've seen, as small warm dots.
+  const fw = Math.ceil(W.w / FOG_CELL);
+  for (const sh of W.pois.shrines) {
+    if (!game.fog[Math.floor(sh.y / FOG_CELL) * fw + Math.floor(sh.x / FOG_CELL)]) continue;
+    const sx = cx + (sh.x + 0.5 - pos.x) * zoom, sy = cy + (sh.y + 0.5 - pos.y) * zoom;
+    u.fillStyle = '#ffb050'; u.fillRect(sx - 0.8, sy - 0.8, 1.6, 1.6);
+  }
+  u.restore();
+  // Frame and compass tick.
+  u.strokeStyle = 'rgba(0,0,0,0.7)'; u.lineWidth = 2.2; u.beginPath(); u.arc(cx, cy, r + 0.6, 0, Math.PI * 2); u.stroke();
+  u.strokeStyle = UI.panelEdge; u.lineWidth = 0.9; u.beginPath(); u.arc(cx, cy, r, 0, Math.PI * 2); u.stroke();
+  text(u, 'N', cx, cy - r + 5, { size: 4.5, align: 'center', bold: true, color: '#f4ead8' });
+  // You.
+  u.save();
+  u.translate(cx, cy);
+  if (outside) {
+    u.rotate(game.player.aim + Math.PI / 2);
+    u.fillStyle = '#ffffff'; u.strokeStyle = 'rgba(0,0,0,0.8)'; u.lineWidth = 0.6;
+    u.beginPath(); u.moveTo(0, -3.2); u.lineTo(2.3, 2.4); u.lineTo(0, 1.2); u.lineTo(-2.3, 2.4); u.closePath(); u.fill(); u.stroke();
+  } else {
+    u.fillStyle = '#c8c0d8'; u.fillRect(-1.5, -1.5, 3, 3);
+  }
+  u.restore();
+  if (!outside) text(u, 'outside', cx, cy + r + 6, { size: 4.5, align: 'center', color: UI.dim });
+  // Tracked quest.
+  const m = game.objectiveMarker;
+  if (!m) return;
+  const dx = (m.x + 0.5 - pos.x) * zoom, dy = (m.y + 0.5 - pos.y) * zoom, d = Math.hypot(dx, dy);
+  if (d <= r - 4) { questPulse(u, cx + dx, cy + dy, game.time, 0.9); return; }
+  // Off the edge: pin to the rim and point the way.
+  const ang = Math.atan2(dy, dx);
+  const ex = cx + Math.cos(ang) * (r - 0.5), ey = cy + Math.sin(ang) * (r - 0.5);
+  const k = (game.time % 1.3) / 1.3;
+  u.fillStyle = `rgba(255,214,58,${0.35 * (1 - k)})`;
+  u.beginPath(); u.arc(ex, ey, 3 + k * 4, 0, Math.PI * 2); u.fill();
+  u.save();
+  u.translate(ex, ey); u.rotate(ang);
+  u.fillStyle = '#ffd23a'; u.strokeStyle = 'rgba(40,24,0,0.9)'; u.lineWidth = 0.7;
+  u.beginPath(); u.moveTo(4, 0); u.lineTo(-2.5, -3); u.lineTo(-1.2, 0); u.lineTo(-2.5, 3); u.closePath(); u.fill(); u.stroke();
+  u.restore();
+  const tiles = Math.round(d / zoom);
+  text(u, `${tiles}`, cx, cy + r + (outside ? 6 : 12), { size: 4.8, align: 'center', color: '#ffe48a' });
 }

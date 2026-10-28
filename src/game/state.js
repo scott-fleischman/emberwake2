@@ -21,7 +21,7 @@ export function newGameState(seed, classId) {
     artifacts: [],
     tools: { bombs: false, gloves: false },
     talents: { points: 0, bought: 0, ranks: { [c.opening]: 1 } },
-    quest: { main: 'wake', flags: {}, side: {}, kills: {} },
+    quest: { main: 'wake', tracked: 'main', flags: {}, side: {}, kills: {} },
     progress: {
       opened: [], cleared: [], caches: [], gates: [], bosses: [], solved: [], unlocked: [], keys: {},
       visited: {}, dungeonMaps: [], fog: '', shards: 0, revealed: [],

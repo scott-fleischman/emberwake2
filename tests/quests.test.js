@@ -67,3 +67,47 @@ test('two heart pieces make a heart', () => {
   assert.equal(s.upgrades.hearts, 1);
   assert.equal(s.upgrades.heartPieces, 0);
 });
+
+test('tracking defaults to the main quest and follows the selected side quest', async () => {
+  const { trackedObjective, cycleTracked, trackableQuests } = await import('../src/game/quests.js');
+  const s = newGameState('quests', 'ranger');
+  const sq = generateSideQuests(W);
+  assert.equal(trackedObjective(s, W, sq).id, 'main');
+  assert.deepEqual(trackableQuests(s, sq), ['main']);
+  const fetch = sq.find((q) => q.type === 'fetch');
+  s.quest.side[fetch.id] = 'active';
+  assert.equal(cycleTracked(s, sq), fetch.id);
+  const o = trackedObjective(s, W, sq);
+  assert.equal(o.id, fetch.id);
+  assert.deepEqual(o.marker, fetch.target);
+  assert.equal(cycleTracked(s, sq), 'main');
+});
+
+test('every trackable side quest stage has a map marker; finished ones fall back to main', async () => {
+  const { trackedObjective, npcMarker } = await import('../src/game/quests.js');
+  const sq = generateSideQuests(W);
+  for (const q of sq) {
+    for (const st of ['active', 'ready']) {
+      const s = newGameState('quests', 'mage');
+      s.quest.side[q.id] = st;
+      s.quest.tracked = q.id;
+      const o = trackedObjective(s, W, sq);
+      assert.equal(o.id, q.id);
+      assert.ok(o.marker && Number.isFinite(o.marker.x) && Number.isFinite(o.marker.y), `${q.type} ${st}`);
+      if (st === 'ready') assert.deepEqual(o.marker, npcMarker(W, q.giverId));
+    }
+    const done = newGameState('quests', 'mage');
+    done.quest.side[q.id] = 'done';
+    done.quest.tracked = q.id;
+    assert.equal(trackedObjective(done, W, sq).id, 'main');
+  }
+});
+
+test('dungeon stages of the main quest name their dungeon', async () => {
+  const { trackedObjective } = await import('../src/game/quests.js');
+  const s = newGameState('quests', 'rogue');
+  s.quest.main = 'reliquary';
+  assert.equal(trackedObjective(s, W, []).dungeon, 'ashen');
+  s.quest.main = 'smith';
+  assert.equal(trackedObjective(s, W, []).dungeon, null);
+});

@@ -2,7 +2,7 @@
 import { generateOverworld } from '../world/overworld.js';
 import { TILE } from '../world/tiles.js';
 import { derivedStats, decodeBits, encodeBits, applyDeathPenalty, DIFFICULTY } from '../game/state.js';
-import { generateSideQuests, advanceMain, mainObjective, sideObjective, sideStatus, recordKill, reveal } from '../game/quests.js';
+import { generateSideQuests, advanceMain, mainObjective, sideObjective, sideStatus, recordKill, reveal, trackedObjective, trackableQuests, cycleTracked, questTitle } from '../game/quests.js';
 import { Player } from '../game/player.js';
 import { OverworldArea, InteriorArea, CaveArea } from '../game/areas.js';
 import { DungeonArea } from '../game/dungeon.js';
@@ -14,7 +14,7 @@ import { SHIELDS, WEAPONS, USE_ITEMS, ARTIFACTS } from '../data/items.js';
 import { CLASSES } from '../data/classes.js';
 import { Camera } from '../gfx/render.js';
 import { Dialog, Menu } from '../gfx/ui.js';
-import { drawHUD, drawMinimap, drawWorldMap, FOG_CELL } from '../gfx/hud.js';
+import { drawHUD, drawMinimap, drawWorldMap, drawOverworldMinimap, FOG_CELL } from '../gfx/hud.js';
 import { ROOM_W, ROOM_H } from '../world/dungeons.js';
 
 class MapOverlay {
@@ -22,6 +22,7 @@ class MapOverlay {
   update(dt, game) {
     if (this.skip) { this.skip = false; return; }
     if (game.input.pressed('map') || game.input.pressed('cancel') || game.input.pressed('pause')) { this.done = true; game.audio.sfx('menu'); }
+    if (game.input.pressed('cycle')) game.cycleTrackedQuest();
   }
   draw(u, game) {
     if (this.kind === 'dungeon') drawMinimap(u, game.area, game, true); else drawWorldMap(u, game);
@@ -49,6 +50,7 @@ export class GameScene {
     this.fogW = Math.ceil(this.world.w / FOG_CELL);
     this.fogH = Math.ceil(this.world.h / FOG_CELL);
     this.fog = decodeBits(state.progress.fog, this.fogW * this.fogH);
+    this.fogNew = []; // cells revealed since the minimap last repainted
     this.player = new Player(this, 0, 0);
     this.lastOverworld = null;
     this.restoreLocation(state.location);
@@ -211,6 +213,7 @@ export class GameScene {
   drawUI(u) {
     drawHUD(u, this);
     if (this.area.kind === 'dungeon') drawMinimap(u, this.area, this);
+    else if (this.area.kind !== 'arena') drawOverworldMinimap(u, this);
     for (const ui of this.uiStack) ui.draw(u, this);
   }
 
@@ -398,7 +401,22 @@ export class GameScene {
     if (q.type === 'fetch' && this.overworld) this.overworld.spawnQuestItems();
     if (q.type === 'deliver') this.toast(`Received ${q.parcel}.`);
     if (q.type === 'rescue') reveal(this.state, `cave:${q.caveId}`);
+    // A freshly accepted quest is usually the one you want to do next, so pin it.
+    this.state.quest.tracked = q.id;
     this.updateObjective();
+    this.toast(`Tracking “${questTitle(q, this.world)}” — switch in the Quest Log or map (Q).`);
+  }
+
+  trackQuest(id) {
+    this.state.quest.tracked = id;
+    this.updateObjective();
+    this.audio.sfx('select');
+  }
+
+  cycleTrackedQuest() {
+    cycleTracked(this.state, this.sideQuests);
+    this.updateObjective();
+    this.audio.sfx('menu');
   }
 
   showEnding() {
@@ -430,18 +448,21 @@ export class GameScene {
   }
 
   updateObjective() {
-    const o = mainObjective(this.state, this.world);
+    const o = trackedObjective(this.state, this.world, this.sideQuests);
+    this.state.quest.tracked = o.id;
     this.objective = o.text;
+    this.objectiveTitle = o.title;
     this.objectiveMarker = o.marker;
-    const active = this.sideQuests.filter((q) => ['active', 'ready'].includes(sideStatus(this.state, q)));
-    this.subObjective = active.length ? `${active.length} side quest${active.length > 1 ? 's' : ''} active — Esc › Quest Log` : '';
-    if (this.area?.kind === 'overworld') {
-      for (const n of this.area.npcs()) {
-        const q = this.sideQuests.find((x) => x.giverId === n.data.id);
-        const st = q && sideStatus(this.state, q);
-        n.marker = st === 'available' ? '!' : st === 'ready' ? '?' : this.isMainTarget(n) ? '!' : null;
-      }
-    } else if (this.area) {
+    this.objectiveDungeon = o.dungeon;
+    // Faint markers for the quests you're not tracking.
+    this.otherMarkers = trackableQuests(this.state, this.sideQuests).filter((id) => id !== o.id).map((id) => {
+      const q = this.sideQuests.find((x) => x.id === id);
+      const so = q ? sideObjective(this.state, q, this.world) : mainObjective(this.state, this.world);
+      return so.marker;
+    }).filter(Boolean);
+    const others = this.otherMarkers.length;
+    this.subObjective = others ? `${others} other quest${others > 1 ? 's' : ''} — Esc › Quest Log to switch` : '';
+    if (this.area) {
       for (const n of this.area.npcs()) {
         const q = this.sideQuests.find((x) => x.giverId === n.data.id);
         const st = q && sideStatus(this.state, q);
@@ -471,7 +492,8 @@ export class GameScene {
     const r = 4;
     for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r - 1; x <= cx + r + 1; x++) {
       if (x < 0 || y < 0 || x >= this.fogW || y >= this.fogH) continue;
-      if ((x - cx) ** 2 * 0.7 + (y - cy) ** 2 <= r * r + 1) this.fog[y * this.fogW + x] = 1;
+      const i = y * this.fogW + x;
+      if (!this.fog[i] && (x - cx) ** 2 * 0.7 + (y - cy) ** 2 <= r * r + 1) { this.fog[i] = 1; this.fogNew.push(i); }
     }
   }
 
@@ -493,14 +515,25 @@ export class GameScene {
   }
 
   questLog() {
-    const lines = [{ text: 'Main quest', color: '#f0c850' }, ...wrapPlain(this.objective, 60)];
-    const active = this.sideQuests.filter((q) => ['active', 'ready'].includes(sideStatus(this.state, q)));
-    lines.push('', { text: 'Side quests', color: '#f0c850' });
-    if (!active.length) lines.push('None active. Look for villagers marked with “!”.');
-    for (const q of active) lines.push(...wrapPlain('• ' + sideObjective(this.state, q, this.world).text, 60));
-    const done = this.sideQuests.filter((q) => sideStatus(this.state, q) === 'done').length;
-    lines.push('', `Completed side quests: ${done} / ${this.sideQuests.length}   ·   Ember shards: ${this.state.progress.shards} / 4`);
-    return new Menu('Quest Log', [], { width: 320, lines });
+    const W = this.world, s = this.state;
+    const done = this.sideQuests.filter((q) => sideStatus(s, q) === 'done').length;
+    const entries = trackableQuests(s, this.sideQuests).map((id) => {
+      const q = this.sideQuests.find((x) => x.id === id) || null;
+      const objective = () => (q ? sideObjective(s, q, W) : mainObjective(s, W));
+      return {
+        get label() { return `${s.quest.tracked === id ? '◆' : '◇'} ${questTitle(q, W)}${q ? '' : '  (main)'}`; },
+        value: () => (s.quest.tracked === id ? 'Tracking' : q && sideStatus(s, q) === 'ready' ? 'Complete' : ''),
+        detail: () => objective().text,
+        onSelect: () => { this.trackQuest(id); this.toast(`Tracking “${questTitle(q, W)}”.`); },
+      };
+    });
+    return new Menu('Quest Log', entries, {
+      width: 340,
+      lines: [
+        { text: 'Choose a quest to track. Its spot pulses yellow on your map and minimap.', color: '#b8a888' },
+        `Side quests completed: ${done} / ${this.sideQuests.length}   ·   Ember shards: ${s.progress.shards} / 4`,
+      ],
+    });
   }
 
   equipmentMenu() {
