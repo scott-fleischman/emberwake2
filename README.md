@@ -2,6 +2,10 @@
 
 A browser prototype of the top-down 2.5D fantasy action-adventure described in [game-space.md](game-space.md). Every world is generated from a seed. It has four starting classes, three regional dungeons with bosses, caves, towns full of named NPCs, and a main quest you can follow from your home village to the third warden.
 
+## Play it
+
+Every push to `main` that passes the tests deploys to GitHub Pages (`.github/workflows/pages.yml`): https://scott-fleischman.github.io/emberwake2/. Pull requests run the tests without deploying.
+
 ## Run it
 
 ```bash
