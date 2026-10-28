@@ -79,7 +79,11 @@ export const VOICE = {
 
 // ---------------------------------------------------------------- cutscenes
 // Shot fields: art (panel art id), text, speaker, color, title/sub (big card), hold (seconds
-// after typing finishes before auto-advance), wait (needs a key press), sfx, shake.
+// after typing finishes before auto-advance), wait (needs a key press), sfx (a name or a list of
+// names / [name, opts]), cues ([[seconds, name, opts]] fired mid-shot), shake (panel shake).
+// Warden scenes add: spotlight, hideBoss, omen/entrance (boss kind: what stirs, then its in-engine
+// entrance), quake (screen shake + falling grit), roar ("r,g,b" vignette pulse; the boss roars),
+// flash (seconds of white-out), slam (the title slams down), burst (outro light burst at focus).
 
 export function introShots(className) {
   return [
@@ -114,6 +118,9 @@ export const WARDENS = {
   thornmaw: {
     title: 'Thornmaw', sub: 'Warden of the Grove', color: '#9ae070',
     narration: 'Once it tended the forest. Now the forest tends its hunger.',
+    omen: 'The floor heaves. Roots writhe beneath the stones...',
+    rise: 'The warden of the Grove tears itself free of the earth!',
+    rgb: '255,70,60',
     voice: 'GROW... GROW... THE COLD VOICE SAYS GROW OVER EVERYTHING...',
     hint: 'Let it charge into the walls, then strike while it is stunned.',
     spirit: { kind: 'stag', name: 'The Grove Spirit', color: '#a8f08a' },
@@ -128,6 +135,9 @@ export const WARDENS = {
   cinder: {
     title: 'The Cinder Warden', sub: 'Keeper of the Ash', color: '#ffa060',
     narration: 'It guarded every fire in the wastes, until guarding became burning.',
+    omen: 'The ash on the floor stirs... and begins to glow.',
+    rise: 'Fire gathers into a shape, and the shape opens its eyes.',
+    rgb: '255,150,40',
     voice: 'COUNT THE FLAMES. ONE GOES OUT, ALL GO OUT. YOU ARE A FLAME. HOLD STILL.',
     hint: 'When it stops to vent its heat, it is soft. Strike then.',
     spirit: { kind: 'phoenix', name: 'The Ash Spirit', color: '#ffb070' },
@@ -142,6 +152,9 @@ export const WARDENS = {
   rime: {
     title: 'Rime Sovereign', sub: 'Warden of the High Snows', color: '#b8ecff',
     narration: 'It froze the world to keep it safe, and forgot what safe meant.',
+    omen: 'Frost races across the stones. Your breath turns to ice.',
+    rise: 'Out of the blizzard, something regal descends.',
+    rgb: '120,200,255',
     voice: 'STILL. STAY STILL. NOTHING MOVES IN MY SANCTUARY. NOTHING WILL EVER BE HURT AGAIN.',
     hint: 'Dodge its dash and let it skid into the walls.',
     spirit: { kind: 'owl', name: 'The Rime Spirit', color: '#d0f4ff' },
@@ -155,13 +168,19 @@ export const WARDENS = {
   },
 };
 
+// A quake with the arena empty, the warden's entrance, a roaring close-up, its name slamming
+// down, then its voice and a tip. About twelve seconds; Esc twice skips.
+const IMPACT = { thornmaw: 0.62, cinder: 0.98, rime: 1.58 }; // when each entrance lands (s)
 export function bossIntroShots(kind) {
   const w = WARDENS[kind];
   if (!w) return [];
   return [
-    { title: w.title, sub: w.sub, text: w.narration, color: w.color, hold: 2.2, sfx: 'boss', spotlight: true },
-    { speaker: w.title, text: w.voice, color: '#ff8070', shakeText: true, hold: 1.6, spotlight: true },
-    { text: `Tip: ${w.hint}`, color: '#b8a888', hold: 1.6, small: true },
+    { text: w.omen, color: '#c8b898', small: true, hideBoss: true, omen: kind, spotlight: true, quake: 1.5, hold: 0.4, sfx: [['gate', { pitch: 0.4 }], ['boss', { pitch: 0.5, volume: 0.6 }]] },
+    { text: w.rise, color: w.color, entrance: kind, spotlight: true, quake: 4, hold: Math.max(0.6, 2.1 - w.rise.length / 42), cues: [[IMPACT[kind], 'explode', { pitch: 0.45 }], [IMPACT[kind] + 0.05, 'boss', { pitch: 0.8, volume: 0.7 }]] },
+    { art: `portrait_${kind}`, text: w.narration, roar: w.rgb, shake: 5, flash: 0.3, hold: 0.5, sfx: [['boss', { pitch: 1.2 }], ['explode', { pitch: 0.6, volume: 0.5 }]] },
+    { title: w.title, sub: w.sub, color: w.color, slam: true, spotlight: true, roar: w.rgb, quake: 1.5, hold: 1.8, sfx: [['explode', { pitch: 0.8 }], ['hit', { pitch: 0.4 }]] },
+    { speaker: w.title, text: w.voice, color: '#ff8070', shakeText: true, spotlight: true, roar: w.rgb, quake: 1, hold: 1 },
+    { text: `Tip: ${w.hint}`, color: '#b8a888', hold: 1.3, small: true },
   ];
 }
 
@@ -171,7 +190,7 @@ export function bossOutroShots(kind, focus) {
   const S = { speaker: w.spirit.name, color: w.spirit.color, spirit: w.spirit.kind, focus, wait: true };
   const v = VOICE[w.taunt.voice];
   return [
-    { text: 'As the warden falls, the cold burns out of it...', spirit: w.spirit.kind, focus, hold: 1.8, sfx: 'shrine' },
+    { text: 'As the warden falls, the cold burns out of it...', spirit: w.spirit.kind, focus, burst: true, hold: 1.8, sfx: [['explode', { pitch: 0.5, volume: 0.6 }], 'shrine'] },
     ...w.lines.map((text) => ({ ...S, text })),
     { text: 'The spirit melts into a warm, golden light.', spirit: w.spirit.kind, focus, fadeSpirit: true, hold: 1.6 },
     ...w.taunt.lines.map((text) => ({ speaker: v.name, color: v.color, text, gloam: true, wait: true, shakeText: true })),

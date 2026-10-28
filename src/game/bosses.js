@@ -1,9 +1,9 @@
 // Regional bosses. Each has phases with distinct pressure and an explicit punish window.
-import { Actor, Particles, Poof, Projectile } from './entities.js';
+import { Actor, Entity, Particles, Poof, Projectile } from './entities.js';
 import { Enemy } from './enemies.js';
 import { moveActor } from './physics.js';
 import { drawShadow } from '../gfx/render.js';
-import { R } from '../gfx/sprites.js';
+import { BOSS_RGB, stamp, roarRings, deathRays, entranceOffset, paintThornmaw, thornUnder, thornOver, paintCinder, fxCinder, emberSwirl, paintRime, rimeUnder, rimeOver } from '../gfx/bossart.js';
 import { TILE, T } from '../world/tiles.js';
 import { TAU } from '../core/math.js';
 
@@ -12,6 +12,25 @@ export const BOSS_INFO = {
   cinder: { name: 'The Cinder Warden', hp: 72, music: 'boss' },
   rime: { name: 'Rime Sovereign', hp: 84, music: 'boss' },
 };
+const DIE = 2; // seconds a warden takes to die
+
+// A non-blocking white flash and shockwave for phase changes and deaths, drawn above everything.
+class Burst extends Entity {
+  constructor(boss, big = false) { super(boss.x, boss.y - 28, 1, 1); this.rgb = BOSS_RGB[boss.kind]; this.big = big; this.t = 0; }
+  get sortY() { return 2e9; }
+  update(dt) { this.t += dt; if (this.t > (this.big ? 1.4 : 1)) this.dead = true; }
+  draw(g, cam) {
+    const x = this.x - cam.left, y = this.y - cam.top, t = this.t, f = Math.max(0, 1 - t / (this.big ? 0.45 : 0.28));
+    if (f > 0) { g.fillStyle = `rgba(255,255,255,${0.85 * f})`; g.fillRect(0, 0, 480, 270); }
+    for (let k = 0; k < (this.big ? 3 : 2); k++) {
+      const q = Math.min(1, (t - k * 0.12) / (this.big ? 1 : 0.7));
+      if (q <= 0 || q >= 1) continue;
+      const r = 16 + q * (this.big ? 320 : 240);
+      g.strokeStyle = `rgba(${k ? '255,255,255' : this.rgb},${(1 - q) * 0.9})`; g.lineWidth = 2 + (1 - q) * 5;
+      g.beginPath(); g.ellipse(x, y, r, r * 0.6, 0, 0, TAU); g.stroke();
+    }
+  }
+}
 
 class Boss extends Actor {
   constructor(kind, x, y, hpMult = 1) {
@@ -29,14 +48,29 @@ class Boss extends Actor {
     this.phase = 1;
     this.vulnerable = false;
     this.summoned = 0;
+    this.face = -1; this.roarT = 0; this.phaseT = 9; this.mvx = 0; // visual only
   }
   get hpFrac() { return this.hp / this.maxHp; }
+  // Visual bookkeeping only: animation clock, facing, speed, roar and phase-change timers.
+  tickTimers(dt) {
+    super.tickTimers(dt);
+    this.anim += dt;
+    this.phaseT += dt;
+    if (this.roarT > 0) this.roarT -= dt;
+    const mx = this.x - (this.lx ?? this.x);
+    this.lx = this.x;
+    if (dt > 0) this.mvx = mx / dt;
+    if (Math.abs(mx) > 0.02) this.face = mx > 0 ? 1 : -1;
+  }
   updatePhase(ctx, thresholds) {
     const next = 1 + thresholds.filter((f) => this.hpFrac <= f).length;
     if (next > this.phase) {
       this.phase = next;
+      this.roarT = 0.9; this.phaseT = 0;
+      ctx.area.spawn(new Burst(this));
       ctx.game.audio.sfx('boss');
-      ctx.game.cam.shake(3, 0.4);
+      ctx.game.audio.sfx('explode', { pitch: 0.5, volume: 0.7 });
+      ctx.game.cam.shake(6, 0.7);
       ctx.game.toast(`${this.name.split(',')[0]} grows furious!`);
       return true;
     }
@@ -48,11 +82,11 @@ class Boss extends Actor {
     this.hp -= dmg;
     this.flash = 0.12;
     ctx.game.audio.sfx('hit', { pitch: 0.7 });
-    if (this.vulnerable) ctx.area.spawn(new Particles(this.x, this.y - 8, { count: 6, color: '#fff0a0', speed: 50, life: 0.3 }));
+    if (this.vulnerable) ctx.area.spawn(new Particles(this.x, this.y - 24, { count: 6, color: '#fff0a0', speed: 50, life: 0.3 }));
     if (this.hp <= 0) {
       this.hp = 0;
       this.state = 'dying';
-      this.timer = 1.4;
+      this.timer = DIE;
       ctx.game.audio.sfx('death', { pitch: 0.6 });
       ctx.game.cam.shake(4, 1.2);
     }
@@ -60,10 +94,11 @@ class Boss extends Actor {
   }
   dyingUpdate(dt, ctx) {
     this.timer -= dt;
-    if (Math.random() < dt * 14) ctx.area.spawn(new Particles(this.x + (Math.random() - 0.5) * 30, this.y - Math.random() * 24, { count: 6, color: ['#ffffff', '#ffe0a0'], speed: 60, life: 0.4 }));
+    if (Math.random() < dt * 14) ctx.area.spawn(new Particles(this.x + (Math.random() - 0.5) * 56, this.y - Math.random() * 50, { count: 6, color: ['#ffffff', '#ffe0a0'], speed: 60, life: 0.4 }));
     if (this.timer <= 0) {
       this.dead = true;
-      ctx.area.spawn(new Poof(this.x, this.y - 10, '#ffffff', true));
+      ctx.area.spawn(new Poof(this.x, this.y - 24, '#ffffff', true));
+      ctx.area.spawn(new Burst(this, true));
       ctx.area.onBossDefeated(this, ctx);
     }
   }
@@ -80,6 +115,23 @@ class Boss extends Actor {
     return Math.abs(p.x - this.x) < (p.w + this.w) / 2 + pad && Math.abs(p.y - this.y) < (p.h + this.h) / 2 + pad ? ctx.game.damagePlayer(dmg, this) : false;
   }
   drawBar() {}
+  // Shared draw: entrance placement, shadow, dying shudder, outlined body, lights, roar rings.
+  // o: {face, alpha, tele, ghosts, shadow: [dy, rx, ry], under(g,x,y,a), over(g,x,y,a)}
+  drawBoss(g, cam, paint, o = {}) {
+    const e = entranceOffset(this.cine);
+    if (!e) return;
+    const dying = this.state === 'dying', dp = dying ? Math.max(0, Math.min(1, 1 - this.timer / DIE)) : 0;
+    const x = Math.round(this.x - cam.left) + (dying ? Math.round(Math.sin(this.anim * 80) * (1 + dp * 3)) : 0);
+    const y = Math.round(this.y - cam.top), dy = e.dy || 0, alpha = (o.alpha ?? 1) * (e.alpha ?? 1), rgb = BOSS_RGB[this.kind];
+    const [sy, rx, ry] = o.shadow || [8, 20, 5], lift = Math.max(0.2, 1 - Math.abs(dy) / 160) * (e.sink ? Math.max(0, 1 - e.sink / 60) : 1);
+    if (alpha > 0) drawShadow(g, x, y + sy, rx * lift, ry * lift, 0.42 * Math.min(1, alpha + 0.3));
+    if (o.under && alpha > 0) o.under(g, x, y + dy, alpha);
+    const white = this.flash > 0 || o.tele ? 1 : dying ? (Math.floor(this.anim * (8 + dp * 22)) % 2 ? 0.25 + dp * 0.7 : dp * 0.35) : 0;
+    if (alpha > 0) stamp(g, x, y + dy, paint, { face: o.face, alpha, white, ghosts: o.ghosts, sink: e.sink, ground: e.ground, cracks: dp > 0.15 ? (dp - 0.15) / 0.85 : 0, rgb });
+    if (o.over && alpha > 0) o.over(g, x, y + dy, alpha);
+    if (this.roarT > 0 && !e.sink) roarRings(g, x, y - 30, this.roarT, rgb);
+    if (dying) deathRays(g, x, y - 30, dp, this.anim, rgb);
+  }
 }
 
 // ---------------------------------------------------------------- Thornmaw: charges, stuns on walls, thorn rings.
@@ -134,22 +186,14 @@ class Thornmaw extends Boss {
     }
   }
   draw(g, cam) {
-    const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
-    drawShadow(g, x, y + 8, 16, 5, 0.35);
-    const shake = this.state === 'wind' ? (Math.random() - 0.5) * 3 : 0;
-    const flash = this.flash > 0 || (this.state === 'wind' && Math.floor(this.t * 14) % 2 === 0);
-    const sq = this.state === 'stunned' ? 3 : 0;
-    const body = flash ? '#ffffff' : this.phase > 1 ? '#7a4a2a' : '#4e7a2e';
-    for (let k = 0; k < 8; k++) {
-      const a = (k * TAU) / 8 + Math.sin(this.t * 2) * 0.1;
-      g.fillStyle = flash ? '#fff' : '#2e5a1e';
-      g.beginPath(); g.moveTo(x + shake + Math.cos(a) * 10, y - 8 + Math.sin(a) * 8); g.lineTo(x + shake + Math.cos(a) * 22, y - 8 + Math.sin(a) * 15); g.lineTo(x + shake + Math.cos(a + 0.3) * 12, y - 8 + Math.sin(a + 0.3) * 9); g.fill();
-    }
-    g.fillStyle = body; g.beginPath(); g.ellipse(x + shake, y - 8 + sq, 15, 13 - sq, 0, 0, TAU); g.fill();
-    g.fillStyle = flash ? '#fff' : '#d04a6a'; g.beginPath(); g.ellipse(x + shake, y - 4 + sq, 9, this.state === 'charge' ? 6 : 3, 0, 0, TAU); g.fill();
-    for (let k = 0; k < 5; k++) R(g, x + shake - 8 + k * 4, y - 6 + sq, 2, 2, '#f0f0d0');
-    R(g, x + shake - 7, y - 14 + sq, 3, 3, '#ffe040'); R(g, x + shake + 4, y - 14 + sq, 3, 3, '#ffe040');
-    if (this.state === 'stunned') for (let k = 0; k < 3; k++) { const a = this.t * 5 + (k * TAU) / 3; R(g, x + Math.cos(a) * 12, y - 26 + Math.sin(a) * 3, 3, 3, '#ffe060'); }
+    const st = this.state, face = st === 'wind' && Math.abs(this.cdx) > 0.15 ? Math.sign(this.cdx) : this.face;
+    const tele = st === 'wind' && Math.floor(this.t * 14) % 2 === 0;
+    const jx = st === 'wind' ? Math.round(Math.sin(this.anim * 70) * 1.5) : 0;
+    this.drawBoss(g, { left: cam.left - jx, top: cam.top }, (b, L) => paintThornmaw(b, this, L), {
+      face, tele, shadow: [8, 30, 7],
+      under: (gg, x, y) => thornUnder(gg, this, x, y, face),
+      over: (gg, x, y) => thornOver(gg, this, x, y, face),
+    });
   }
 }
 
@@ -225,25 +269,12 @@ class CinderWarden extends Boss {
       g.beginPath(); g.ellipse(mx, my, 15, 9, 0, 0, TAU); g.stroke();
       g.fillStyle = 'rgba(255,90,30,0.2)'; g.beginPath(); g.ellipse(mx, my, 15 * (1 - m.t / 1.5), 9 * (1 - m.t / 1.5), 0, 0, TAU); g.fill();
     }
-    g.globalAlpha = this.alpha;
-    const hover = this.state === 'vent' ? 2 : -6 + Math.sin(this.t * 3) * 2;
-    drawShadow(g, x, y + 7, 10, 3, 0.35);
-    const flash = this.flash > 0;
-    const armor = flash ? '#fff' : this.state === 'vent' ? '#6a4a40' : '#3a2e2e';
-    R(g, x - 9, y - 18 + hover, 18, 18, armor);
-    R(g, x - 11, y - 18 + hover, 4, 8, armor); R(g, x + 7, y - 18 + hover, 4, 8, armor);
-    R(g, x - 9, y - 18 + hover, 18, 2, '#5e4a46');
-    R(g, x - 6, y - 4 + hover, 12, 6, flash ? '#fff' : '#2a2020');
-    const flame = this.state === 'vent' ? '#ffd060' : '#ff6a20';
-    g.fillStyle = flash ? '#fff' : flame;
-    g.beginPath(); g.moveTo(x - 6, y - 18 + hover); g.lineTo(x, y - 32 + hover + Math.sin(this.t * 18) * 2); g.lineTo(x + 6, y - 18 + hover); g.fill();
-    R(g, x - 4, y - 14 + hover, 2, 2, '#ffe080'); R(g, x + 2, y - 14 + hover, 2, 2, '#ffe080');
-    for (let k = 0; k < 2; k++) {
-      const a = this.t * 3 + k * Math.PI;
-      g.fillStyle = '#ff8030'; g.beginPath(); g.arc(x + Math.cos(a) * 16, y - 10 + hover + Math.sin(a) * 6, 3, 0, TAU); g.fill();
-    }
-    if (this.state === 'vent') { g.fillStyle = 'rgba(255,220,120,0.3)'; g.beginPath(); g.arc(x, y - 10, 18, 0, TAU); g.fill(); }
-    g.globalAlpha = 1;
+    const fade = this.state === 'fadeout' || this.state === 'fadein' ? 1 - this.alpha : 0;
+    this.drawBoss(g, cam, (b, L) => paintCinder(b, this, L), {
+      alpha: this.alpha, shadow: [7, 22, 6],
+      over: (gg, x, y, a) => fxCinder(gg, this, x, y, a),
+    });
+    if (fade > 0) emberSwirl(g, x, y, fade, this.anim);
   }
 }
 
@@ -337,7 +368,6 @@ class RimeSovereign extends Boss {
     this.walls = [];
   }
   draw(g, cam) {
-    const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
     for (const dr of this.drops) {
       if (dr.done) continue;
       g.fillStyle = `rgba(20,40,80,${0.25 + (1 - dr.t) * 0.4})`;
@@ -345,17 +375,13 @@ class RimeSovereign extends Boss {
       const h = dr.t * 120;
       g.fillStyle = '#d8f4ff'; g.fillRect(dr.x - cam.left - 2, dr.y - cam.top - h - 8, 4, 8);
     }
-    drawShadow(g, x, y + 7, 10, 3, 0.35);
-    const flash = this.flash > 0 || (this.state === 'wind' && Math.floor(this.t * 14) % 2 === 0);
-    const c = flash ? '#ffffff' : '#a8d8f0', dk = flash ? '#ffffff' : '#5a8ab0';
-    R(g, x - 7, y - 16, 14, 16, c); R(g, x - 7, y - 4, 14, 4, dk);
-    R(g, x - 11, y - 14, 4, 10, dk); R(g, x + 7, y - 14, 4, 10, dk);
-    R(g, x - 5, y - 24, 10, 8, c);
-    for (let k = 0; k < 4; k++) { g.fillStyle = flash ? '#fff' : '#e8fbff'; g.beginPath(); g.moveTo(x - 6 + k * 4, y - 24); g.lineTo(x - 4 + k * 4, y - 31 - (k % 2) * 3); g.lineTo(x - 2 + k * 4, y - 24); g.fill(); }
-    R(g, x - 3, y - 21, 2, 2, '#204060'); R(g, x + 1, y - 21, 2, 2, '#204060');
-    if (this.state === 'dash') { g.globalAlpha = 0.3; R(g, x - 7 - this.cdx * 10, y - 16 - this.cdy * 10, 14, 16, '#e0f8ff'); g.globalAlpha = 1; }
-    if (this.state === 'stunned') for (let k = 0; k < 3; k++) { const a = this.t * 5 + (k * TAU) / 3; R(g, x + Math.cos(a) * 10, y - 34 + Math.sin(a) * 3, 3, 3, '#ffe060'); }
-    if (this.state === 'skid') { g.fillStyle = 'rgba(220,245,255,0.6)'; g.fillRect(x - 10, y + 2, 20, 2); R(g, x + 6, y - 20, 3, 2, '#ffffff'); }
+    const st = this.state, tele = st === 'wind' && Math.floor(this.t * 14) % 2 === 0;
+    const ghosts = st === 'dash' ? [[-this.cdx * 12, -this.cdy * 12, 0.35], [-this.cdx * 24, -this.cdy * 24, 0.16]] : null;
+    this.drawBoss(g, cam, (b, L) => paintRime(b, this, L), {
+      tele, ghosts, shadow: [7, 20, 5],
+      under: (gg, x, y) => rimeUnder(gg, this, x, y),
+      over: (gg, x, y) => rimeOver(gg, this, x, y),
+    });
   }
 }
 

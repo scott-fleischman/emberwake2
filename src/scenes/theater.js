@@ -50,6 +50,7 @@ export class TheaterScene extends GameScene {
     b.dead = true;
     a.boss = null;
     a.enemyList = a.enemyList.filter((e) => e !== b);
+    a.entities = a.entities.filter((e) => e !== b);
     return { x: b.x, y: b.y };
   }
 
