@@ -11,6 +11,7 @@ export class TileMap {
     this.biome = null;
     this.extraSolid = new Uint8Array(w * h); // building footprints, props, push blocks
     this.version = 0; // bumped on mutation so render caches can invalidate
+    this.dirty = []; // tile indices changed since the renderer last looked
   }
 
   inBounds(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; }
@@ -19,12 +20,14 @@ export class TileMap {
   set(x, y, id) {
     if (!this.inBounds(x, y)) return;
     this.tiles[y * this.w + x] = id;
+    this.dirty.push(y * this.w + x);
     this.version++;
   }
   getDeco(x, y) { return this.inBounds(x, y) ? this.deco[y * this.w + x] : 0; }
   setDeco(x, y, d) {
     if (!this.inBounds(x, y)) return;
     this.deco[y * this.w + x] = d;
+    this.dirty.push(y * this.w + x);
     this.version++;
   }
 
@@ -40,6 +43,13 @@ export class TileMap {
 
   tileAtPixel(px, py) {
     return this.get(Math.floor(px / TILE), Math.floor(py / TILE));
+  }
+
+  // Wrap world arrays (shared, not copied) so the overworld can use TileMap queries.
+  static fromWorld(W) {
+    const m = new TileMap(1, 1);
+    Object.assign(m, { w: W.w, h: W.h, tiles: W.tiles, deco: W.deco, elev: W.elev, biome: W.biome, ground: W.ground, extraSolid: new Uint8Array(W.w * W.h) });
+    return m;
   }
 
   get pixelW() { return this.w * TILE; }

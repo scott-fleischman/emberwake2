@@ -11,7 +11,8 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 createServer(async (req, res) => {
   const path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname)).replace(/^(\.\.[/\\])+/, '');
   const file = join(root, path.endsWith('/') ? path + 'index.html' : path);
-  if (!file.startsWith(root)) { res.writeHead(403).end(); return; }
+  // Stay inside the project and never serve dotfiles/dot-directories (.git, .env, ...).
+  if (!file.startsWith(root) || path.split(/[/\\]/).some((seg) => seg.startsWith('.'))) { res.writeHead(403).end(); return; }
   try {
     const body = await readFile(file);
     res.writeHead(200, { 'Content-Type': types[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
@@ -19,4 +20,4 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404).end('Not found');
   }
-}).listen(port, () => console.log(`Emberwake running at http://localhost:${port}`));
+}).listen(port, '127.0.0.1', () => console.log(`Emberwake running at http://localhost:${port}`));
