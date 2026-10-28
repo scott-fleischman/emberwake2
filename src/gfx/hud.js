@@ -237,6 +237,7 @@ export function drawWorldMap(u, game) {
   if (pp) mark(pp.x, pp.y, blink ? '#ffffff' : '#4ae0ff', 'dot', 2.6);
   // Legend
   const lx = ox + mw + 14;
+  panel(u, lx - 7, oy - 14, 480 - lx, mh + 20);
   text(u, 'Objective', lx, oy + 6, { size: 7, bold: true, color: UI.gold });
   const lines = wrapLines(u, game.objective || '', 480 - lx - 10);
   lines.forEach((l, k) => text(u, l, lx, oy + 16 + k * 8, { size: 6 }));

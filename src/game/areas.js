@@ -156,7 +156,7 @@ export class Area {
   // Interact with whatever is in front of the player. Subclasses add their own targets first.
   interact() {
     const p = this.game.player;
-    const npc = this.npcInFront(p, 24);
+    const npc = this.npcInFront(p, this.talkRange || 24);
     if (npc) { this.game.talk(npc); return true; }
     const chest = this.entities.find((e) => e instanceof Chest && !e.opened && !e.hidden && Math.hypot(e.x - p.x, e.y - p.y) < 20);
     if (chest) { this.game.openChest(chest); return true; }
@@ -222,6 +222,7 @@ export class OverworldArea extends Area {
     this.groupT -= dt;
     if (this.groupT <= 0) { this.groupT = 0.4; this.updateGroups(); }
     this.checkTransitions();
+    if (this.game.area !== this) return; // we just left; player coordinates now belong to the new area
     this.updateRegion();
   }
 
@@ -457,6 +458,7 @@ export class InteriorArea extends Area {
       this.map.extraSolid[L.chest.y * L.w + L.chest.x] = 1;
     }
     this.name = building.type === 'home' ? 'Your Home' : `${building.type[0].toUpperCase()}${building.type.slice(1)}`;
+    this.talkRange = 42; // shopkeepers and innkeepers stand behind counters
   }
   get spawnPoint() { return { x: this.layout.spawn.x * TILE + 8, y: this.layout.spawn.y * TILE + 4 }; }
   drawGround(g, cam) { this.renderer.draw(g, cam); }

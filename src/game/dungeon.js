@@ -490,13 +490,13 @@ export class DungeonArea extends Area {
     const g = this.game, pr = this.pr;
     if (!pr.bosses.includes(this.id)) {
       pr.bosses.push(this.id);
-      pr.shards++;
       g.state.upgrades.hearts++;
       g.state.talents.points++;
       g.refreshDerived();
       const d = g.derived;
       Object.assign(g.state.player, { hp: d.maxHp, mana: d.maxMana });
     }
+    pr.shards = pr.bosses.length;
     this.boss = null;
     this.portalActive = true;
     this.shut = false;

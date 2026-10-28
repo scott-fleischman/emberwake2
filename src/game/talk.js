@@ -161,7 +161,14 @@ function mainLines(game, npc, c) {
 }
 
 const acceptLine = (q) => ({ fetch: 'Thank you! It glints when the light catches it.', hunt: 'Good. Come back when it\'s done.', deliver: 'Here it is. Mind you don\'t drop it.', rescue: 'Please hurry. Caves are no place to be lost.' }[q.type]);
-const thanksLine = (q) => ({ fetch: `My ${q.item}! I thought it was gone for good.`, hunt: 'The roads feel safer already.', rescue: `${q.kin[0].toUpperCase()}${q.kin.slice(1)} came stumbling home, filthy and grinning. Thank you.`, deliver: 'Thank you.' }[q.type]);
+function thanksLine(q) {
+  switch (q.type) {
+    case 'fetch': return `My ${q.item}! I thought it was gone for good.`;
+    case 'hunt': return 'The roads feel safer already.';
+    case 'rescue': return `${q.kin[0].toUpperCase()}${q.kin.slice(1)} came stumbling home, filthy and grinning. Thank you.`;
+    default: return 'Thank you.';
+  }
+}
 
 function reminderLine(q, game) {
   if (q.type === 'hunt') return `${game.state.quest.kills[q.id] || 0} of ${q.count} so far. Keep at it.`;

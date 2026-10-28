@@ -265,7 +265,7 @@ class RimeSovereign extends Boss {
       if (this.phase === 3) this.summon(ctx, 'skirmisher', 4, 2);
     }
     this.timer -= dt;
-    this.vulnerable = this.state === 'stunned';
+    this.vulnerable = this.state === 'stunned' || this.state === 'skid';
     for (const dr of this.drops) {
       dr.t -= dt;
       if (dr.t <= 0 && !dr.done) {
@@ -282,7 +282,7 @@ class RimeSovereign extends Boss {
       case 'intro': if (this.timer <= 0) { this.state = 'orbit'; this.timer = 2.2; this.shotT = 0.7; } break;
       case 'orbit': {
         this.orbitA += dt * (this.phase > 1 ? 1.9 : 1.4);
-        const tx = p.x + Math.cos(this.orbitA) * 82, ty = p.y + Math.sin(this.orbitA) * 62;
+        const tx = p.x + Math.cos(this.orbitA) * 70, ty = p.y + Math.sin(this.orbitA) * 52;
         const l = Math.hypot(tx - this.x, ty - this.y) || 1;
         moveActor(ctx.map, this, ((tx - this.x) / l) * 110 * dt, ((ty - this.y) / l) * 110 * dt);
         this.shotT -= dt;
@@ -295,14 +295,18 @@ class RimeSovereign extends Boss {
         const r = moveActor(ctx.map, this, this.cdx * 270 * dt, this.cdy * 270 * dt);
         if (Math.random() < 0.7) ctx.area.spawn(new Particles(this.x, this.y, { count: 1, color: '#e0f8ff', speed: 10, life: 0.5, layer: -1 }));
         this.touchPlayer(ctx, 2);
-        if (r.hitX || r.hitY) { ctx.game.cam.shake(3, 0.25); this.state = 'stunned'; this.timer = 1.4; break; }
+        if (r.hitX || r.hitY) { ctx.game.cam.shake(3, 0.25); ctx.game.audio.sfx('block', { pitch: 0.5 }); this.state = 'stunned'; this.timer = 1.8; break; }
         if (this.timer <= 0) {
           this.dashes--;
           if (this.dashes > 0) { this.state = 'wind'; this.timer = 0.35; this.cdx = dx / d; this.cdy = dy / d; }
-          else { this.state = 'rain'; this.timer = 0.3; }
+          else { this.state = 'skid'; this.timer = this.phase > 1 ? 0.9 : 1.2; }
         }
         break;
       }
+      case 'skid': // a missed dash leaves it sliding and winded: the everyday punish window
+        moveActor(ctx.map, this, this.cdx * 40 * this.timer * dt, this.cdy * 40 * this.timer * dt);
+        if (this.timer <= 0) { this.state = 'rain'; this.timer = 0.3; }
+        break;
       case 'stunned': if (this.timer <= 0) { this.state = 'rain'; this.timer = 0.3; } break;
       case 'rain':
         if (this.timer <= 0) {
@@ -311,7 +315,7 @@ class RimeSovereign extends Boss {
             const a = Math.random() * TAU, r = k === 0 ? 0 : 20 + Math.random() * 60;
             this.drops.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r * 0.7, t: 0.8 + k * 0.08 });
           }
-          this.state = 'orbit'; this.timer = 2.4; this.shotT = 1;
+          this.state = 'orbit'; this.timer = 1.8; this.shotT = 1;
         }
         break;
     }
@@ -351,6 +355,7 @@ class RimeSovereign extends Boss {
     R(g, x - 3, y - 21, 2, 2, '#204060'); R(g, x + 1, y - 21, 2, 2, '#204060');
     if (this.state === 'dash') { g.globalAlpha = 0.3; R(g, x - 7 - this.cdx * 10, y - 16 - this.cdy * 10, 14, 16, '#e0f8ff'); g.globalAlpha = 1; }
     if (this.state === 'stunned') for (let k = 0; k < 3; k++) { const a = this.t * 5 + (k * TAU) / 3; R(g, x + Math.cos(a) * 10, y - 34 + Math.sin(a) * 3, 3, 3, '#ffe060'); }
+    if (this.state === 'skid') { g.fillStyle = 'rgba(220,245,255,0.6)'; g.fillRect(x - 10, y + 2, 20, 2); R(g, x + 6, y - 20, 3, 2, '#ffffff'); }
   }
 }
 
