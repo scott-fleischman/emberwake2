@@ -261,7 +261,15 @@ export class Bot {
 
   combat() {
     const list = this.threats();
-    if (!list.length) return false;
+    if (!list.length) { this.calm = null; return false; }
+    // Juggling several foes resets each give-up timer; if nobody takes damage for a while, move on.
+    const a = this.g.area, hp = list.reduce((t, e) => t + e.hp, 0);
+    if (!this.calm || hp < this.calm.hp) this.calm = { hp, t: 0 };
+    else if (!(a.kind === 'dungeon' && (a.shut || a.shutPending || a.boss)) && (this.calm.t += this.dt) > 15) {
+      for (const e of list) this.ignore.set(e, this.time + 20);
+      this.engaged = null; this.calm = null; this.note('Breaking off a fight that goes nowhere');
+      return false;
+    }
     this.fight(list);
     return true;
   }

@@ -286,7 +286,7 @@ export class OverworldArea extends Area {
       const d = W.pois.dungeons[k];
       defs.push({ id: `guard:${k}`, kind: 'guard', x: d.front.x, y: d.front.y + 3, biome: d.biome, count: 3, ward: k });
     }
-    for (const [kind, list] of Object.entries(W.pois.relics)) for (const r of list) defs.push({ id: `relic:${r.id}`, kind: 'relic', x: r.x, y: r.y + 2, biome: W.biome[r.y * W.w + r.x], count: 3, relic: r, relicKind: kind });
+    for (const [kind, list] of Object.entries(W.pois.relics)) for (const r of list) defs.push({ id: `relic:${r.id}`, kind: 'relic', x: r.x, y: r.y + 1, biome: W.biome[r.y * W.w + r.x], count: 3, relic: r, relicKind: kind });
     for (const s of W.pois.spawns) defs.push({ id: s.id, kind: 'wild', x: s.x, y: s.y, biome: s.biome, count: s.count });
     for (const p of W.pois.patrols) defs.push({ id: p.id, kind: 'patrol', x: p.path[0].x, y: p.path[0].y, biome: p.biome, count: 2, path: p.path });
     this.defs = defs;
@@ -314,6 +314,8 @@ export class OverworldArea extends Area {
           const e = new Enemy(def.kind === 'camp' ? mix[k % mix.length] : rng.pick(mix), def.biome, def.x * TILE + 8 + rng.int(-24, 24), def.y * TILE + 8 + rng.int(-20, 20), { spawnId: def.id, hpMult: this.game.diff.enemyHp, leash: def.kind === 'camp' ? 160 : 220 });
           if (def.kind === 'patrol') e.patrol = def.path.map((q) => ({ x: q.x * TILE + 8, y: q.y * TILE + 8 }));
           if (!findFreeSpot(this.map, e, 4)) continue;
+          // A relic's guards stand on its own level, never down a cliff from it.
+          if (def.kind === 'relic' && this.map.elev[Math.floor(e.y / TILE) * this.map.w + Math.floor(e.x / TILE)] !== this.map.elev[def.relic.y * this.map.w + def.relic.x]) continue;
           grp.enemies.push(this.spawnEnemy(e));
         }
         if (def.kind === 'camp' && def.data.quest) {
