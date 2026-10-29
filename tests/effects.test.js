@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { sandbox } from './helpers/sandbox.js';
 import { EFFECTS, CONTROL_IMMUNITY, applyEffect, tickEffects, shakeEffects, clearEffects, moveMult, blocked } from '../src/game/effects.js';
 import { makeZone } from '../src/game/zones.js';
+import { Chest } from '../src/game/entities.js';
 import { drawEffectIcons, drawEffectChips, drawBlind, drawPatch } from '../src/gfx/effects.js';
 import { AudioEngine, SFX_NAMES } from '../src/audio/audio.js';
 import { Bot } from '../src/bot/bot.js';
@@ -129,6 +130,17 @@ test('mashing any button thaws a frozen player, and a thaw is not instant', asyn
   assert.ok(p.effects.freeze);
   s.app.input.press('KeyK'); s.step(1 / 60);
   assert.ok(!p.effects.freeze);
+});
+test('a frozen player cannot interact, and the press counts toward the mash', async () => {
+  const s = await sandbox(), p = s.game.player;
+  const chest = s.spawn(new Chest('frozen-chest', p.x + 8, p.y, 'coins'));
+  s.game.applyEffect('freeze');
+  s.app.input.press('KeyE'); s.step(1 / 60); s.app.input.release('KeyE');
+  assert.equal(s.game.uiStack.length, 0); assert.ok(!chest.opened);
+  assert.equal(p.effects.freeze.n, 1);
+  clearEffects(p);
+  s.app.input.press('KeyE'); s.step(1 / 60);
+  assert.ok(chest.opened); assert.equal(s.game.uiStack.length, 1);
 });
 test('a roll puts out burn and swings tear a snare', async () => {
   const s = await sandbox(), p = s.game.player;

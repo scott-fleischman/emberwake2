@@ -211,7 +211,8 @@ export class GameScene {
     if (input.pressed('pause')) { this.openPause(); return; }
     if (input.pressed('map')) { this.pushUI(new MapOverlay(this.area.kind === 'dungeon' ? 'dungeon' : 'world')); this.audio.sfx('menu'); return; }
     if (input.pressed('inventory') && this.player.mode !== 'dead') { this.pushUI(new ItemMenu(this)); this.audio.sfx('menu'); return; }
-    if (input.pressed('interact') && this.player.mode !== 'dead') {
+    // A frozen player can't interact; the press falls through to Player.update and counts as a mash.
+    if (input.pressed('interact') && this.player.mode !== 'dead' && !fx.blocked(this.player, 'all')) {
       if (this.area.interact()) return;
     }
     this.area.update(dt);
