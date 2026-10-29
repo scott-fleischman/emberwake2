@@ -7,7 +7,7 @@ import { shapePath, drawPatch } from '../gfx/effects.js';
 // The player's hitbox is 10x8; this much of it counts as inside a zone.
 export const HIT_PAD = 4;
 
-const DEFAULTS = { t: 0.8, life: 0, dmg: 1, effect: null, knock: 0, rgb: '255,80,60', art: null, owner: null, blockable: false, vx: 0, vy: 0, grow: 0, hit: false, cool: 0 };
+const DEFAULTS = { t: 0.8, life: 0, dmg: 1, effect: null, knock: 0, rgb: '255,80,60', art: null, owner: null, blockable: false, vx: 0, vy: 0, grow: 0, hit: false, blocked: false, cool: 0 };
 
 // `t` is seconds until the strike (negative once live); `t0` remembers it for the fill-in.
 export function makeZone(shape, fields) {
@@ -46,9 +46,11 @@ export function inZone(z, x, y, pad = 0) {
   return false;
 }
 
-// 0 outside, 1 early warning, 2 about to land, 3 live.
+// 0 outside, 1 early warning, 2 about to land, 3 live. A live zone that neither hurts nor afflicts
+// (a burrow's ripple) is nothing to avoid; a harmless telegraph still warns while it counts down, of
+// the strike that follows it (an aim line).
 export function zoneDanger(z, x, y, pad = 0) {
-  if (!inZone(z, x, y, pad)) return 0;
+  if (!inZone(z, x, y, pad) || (z.t <= 0 && !z.dmg && !z.effect)) return 0;
   return z.t <= 0 ? 3 : z.t < 0.9 ? 2 : 1;
 }
 
@@ -76,8 +78,15 @@ export function tickZones(zones, dt, ctx) {
       // try once the invulnerability ends.
       if (!z.hit && z.cool <= 0 && p.mode !== 'dead' && inZone(z, p.x, p.y, HIT_PAD)) {
         let landed = false;
-        if (z.dmg > 0) landed = g.damagePlayer(z.dmg, o ?? z, { effect: z.effect, knock: z.knock, unblockable: !z.blockable }) !== 'ignored';
-        else if (z.effect && p.iframes <= 0) { g.applyEffect(z.effect, o ?? z); landed = true; }
+        if (z.dmg > 0) {
+          const r = g.damagePlayer(z.dmg, o ?? z, { effect: z.effect, knock: z.knock, unblockable: !z.blockable });
+          landed = r !== 'ignored'; z.blocked = r === 'blocked';
+        } else if (z.effect && p.iframes <= 0) {
+          // A blockable effect-only strike meets the shield as a light blow would; blocked, it carries nothing.
+          z.blocked = z.blockable && g.guard(1, o ?? z);
+          if (!z.blocked) g.applyEffect(z.effect, o ?? z);
+          landed = true;
+        }
         if (landed) { if (z.art && z.life > 0) z.cool = PATCH_BEAT; else z.hit = true; }
       }
       if (z.t <= -z.life) continue;

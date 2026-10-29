@@ -82,6 +82,8 @@ export class Enemy extends Actor {
     if (this.state === 'spawn') { this.timer -= dt; if (this.timer <= 0) this.state = 'idle'; return; }
     if (this.knockStep(dt, map, this.solidFn(map))) {
       if (this.state === 'windup' || this.state === 'crouch' || this.state === 'aim') { this.state = 'recover'; this.timer = 0.45; this.releaseToken(ctx); }
+      // A special knocked out of its windup fizzles into its recovery; it has put nothing down yet.
+      else if (this.state === 'special' && this.sub === 'windup') { this.sub = 'recover'; this.timer = 0.45; }
       return;
     }
     const p = ctx.player;

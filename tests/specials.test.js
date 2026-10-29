@@ -11,6 +11,7 @@ import { BIOME_KEYS } from '../src/world/tiles.js';
 import { AudioEngine, SFX_NAMES } from '../src/audio/audio.js';
 import { Bot } from '../src/bot/bot.js';
 import { ARCHETYPES, enemyStats } from '../src/data/enemies.js';
+import { makeZone, zoneDanger, drawZones } from '../src/game/zones.js';
 
 const ARCH = ['brute', 'lunger', 'skirmisher', 'ranged'];
 const DONE = ['forest', 'swamp', 'desert', 'mountain', 'snow', 'volcanic'];
@@ -139,6 +140,29 @@ test('a Mire Leech latches on, keeps the poison going, and comes off with a roll
   p.tryDodge(1, 0, s.area.ctx); s.step(0.1);
   assert.ok(!e.latched);
 });
+// R12
+const shieldUp = (s) => { s.game.state.gear.shield = 'buckler'; s.app.input.press('KeyL'); s.game.player.aim = Math.PI; };
+test('a shield turns away a blockable effect-only strike, effect and all', async () => {
+  const strike = async (blockable) => {
+    const s = await sandbox(), p = s.game.player, heard = [];
+    s.app.audio.sfx = (name) => heard.push(name);
+    shieldUp(s); s.step(0.1);
+    s.area.zones.push(makeZone('circle', { x: p.x, y: p.y, r: 10, t: 0.05, life: 0.1, dmg: 0, effect: 'poison', blockable, owner: { x: p.x - 20, y: p.y, hp: 1 } }));
+    s.step(0.2);
+    return { poisoned: !!p.effects.poison, blocked: heard.includes('block') };
+  };
+  assert.deepEqual(await strike(true), { poisoned: false, blocked: true });
+  assert.deepEqual(await strike(false), { poisoned: true, blocked: false });
+});
+test("a Mire Leech's leap and a Marsh Fly's dive can be blocked; a blocked leech doesn't latch", async () => {
+  const { s, e } = await special('lunger', 'swamp', { dx: -50 });
+  shieldUp(s);
+  assert.ok(stepUntil(s, () => e.sub === 'recover'));
+  assert.ok(!e.latched); assert.ok(!s.game.player.effects.poison);
+  const f = await special('skirmisher', 'swamp');
+  assert.ok(stepUntil(f.s, () => f.s.area.zones.some((z) => z.owner === f.e && z.dmg > 0)));
+  assert.ok(f.s.area.zones.find((z) => z.owner === f.e && z.dmg > 0).blockable);
+});
 test('a hit knocks a latched leech off', async () => {
   const { s, e } = await special('lunger', 'swamp');
   assert.ok(stepUntil(s, () => e.latched));
@@ -150,7 +174,7 @@ test('a Dune Scorpion burrows out of reach, then erupts where the player stood a
   const { s, e } = await special('lunger', 'desert', { dx: 80 });
   const p = s.game.player;
   assert.ok(stepUntil(s, () => e.untargetable));
-  assert.ok(e.hidden); assert.ok(s.area.zones.some((z) => z.owner === e && z.art === 'dust'));
+  assert.ok(e.hidden); assert.ok(s.area.zones.some((z) => z.owner === e && z.art === 'ripple'));
   assert.ok(stepUntil(s, () => s.area.zones.some((z) => z.owner === e && z.effect === 'blind'), 3));
   const mark = s.area.zones.find((z) => z.owner === e && z.effect === 'blind');
   assert.ok(Math.hypot(mark.x - p.x, mark.y - p.y) < 1); assert.ok(Math.abs(mark.t - 0.8) < 0.02);
@@ -158,6 +182,35 @@ test('a Dune Scorpion burrows out of reach, then erupts where the player stood a
   assert.ok(stepUntil(s, () => !e.untargetable, 1.2));
   assert.ok(Math.hypot(e.x - mark.x, e.y - mark.y) < 2);
   assert.ok(p.effects.blind);
+});
+// R14: the move's own clock ends it, so losing its zones can't strand it.
+test('a burrow and a dust devil end on their own clocks, even with their zones swept away', async () => {
+  const { s, e } = await special('lunger', 'desert', { dx: 80 });
+  assert.ok(stepUntil(s, () => s.area.zones.some((z) => z.owner === e && z.effect === 'blind'), 4));
+  s.area.zones = [];
+  assert.ok(stepUntil(s, () => !e.untargetable && !e.hidden, 1.5));
+  assert.ok(stepUntil(s, () => e.state !== 'special', 1.5));
+  const q = await special('lunger', 'desert', { dx: 80 });
+  assert.ok(stepUntil(q.s, () => q.e.hidden));
+  q.s.area.zones = [];
+  assert.ok(stepUntil(q.s, () => q.e.state !== 'special', 4));
+  assert.ok(!q.e.untargetable);
+  const d = await special('skirmisher', 'desert', { dx: 70 });
+  assert.ok(stepUntil(d.s, () => d.e.sub === 'act'));
+  d.s.step(1); d.s.area.zones = [];
+  assert.ok(stepUntil(d.s, () => d.e.state !== 'special', 5));
+});
+// R13
+test('knocked back mid-windup, a special fizzles into its recovery with nothing left behind', async () => {
+  const { s, e } = await special('brute', 'forest'), heard = [];
+  s.app.audio.sfx = (name) => heard.push(name);
+  assert.ok(stepUntil(s, () => e.state === 'special'));
+  e.knock(150, 0, 0.15); s.step(1 / 60);
+  assert.equal(e.sub, 'recover');
+  s.step(1.5);
+  assert.notEqual(e.state, 'special');
+  assert.ok(!s.area.zones.some((z) => z.owner === e)); assert.ok(!heard.includes('mv_forest_brute'));
+  assert.ok(e.specialCool >= 7);
 });
 test('a Harpy dives out of reach, its shadow marking the spot 0.9 s before a heavy knockback', async () => {
   const { s, e } = await special('skirmisher', 'mountain');
@@ -317,6 +370,12 @@ test('the bot sees a rolling boulder coming, and knows a shield will not stop it
   const d = new Bot(s.game).danger(p.x, p.y, []);
   assert.ok(d.lv >= 2); assert.equal(d.block, false);
 });
+// R15: a ripple warns of nothing, so the bot needn't roll away from it.
+test('a live zone that neither hurts nor afflicts is no danger; a telegraph still warns as it counts down', () => {
+  assert.equal(zoneDanger(makeZone('circle', { x: 0, y: 0, r: 10, t: 0, life: 4, dmg: 0, art: 'ripple' }), 0, 0), 0);
+  assert.equal(zoneDanger(makeZone('circle', { x: 0, y: 0, r: 10, t: 0, life: 4, dmg: 0, effect: 'blind' }), 0, 0), 3);
+  assert.equal(zoneDanger(makeZone('segment', { x1: 0, y1: 0, x2: 50, y2: 0, w: 8, t: 0.3, dmg: 0 }), 20, 0), 2);
+});
 
 // ---------------------------------------------------------------- art and sound
 test('every move has its own sound, named for its region and archetype', () => {
@@ -351,4 +410,26 @@ test('monsters mid-special and the new projectiles draw without randomness', asy
   try { for (const t of things) t.draw(g, cam, s.area.ctx); } finally { Math.random = rnd; }
   assert.ok(calls.filter((c) => c[0] === 'drawImage').length >= 24);
   assert.ok(calls.some((c) => c[0] === 'arc'));
+});
+test('the burrow ripple is harmless ground with its own art', async () => {
+  const { s, e } = await special('lunger', 'desert', { dx: 80 });
+  assert.ok(stepUntil(s, () => e.hidden));
+  const z = s.area.zones.find((q) => q.owner === e);
+  assert.equal(z.art, 'ripple'); assert.equal(z.dmg, 0); assert.equal(z.effect, null);
+  z.t = -0.5;
+  const { g, calls } = recorder(), rnd = Math.random;
+  Math.random = () => { throw new Error('drawing used Math.random'); };
+  try { drawZones(g, { left: 0, top: 0 }, [z], 1); } finally { Math.random = rnd; }
+  assert.ok(calls.filter((c) => c[0] === 'fillRect').length >= 3);
+});
+// R16
+test('a hidden elite draws nothing at all, aura and nameplate included', async () => {
+  await sandbox(); // the canvas shim
+  const e = new Elite('frostfang', 50, 50);
+  e.hidden = true;
+  const { g, calls } = recorder();
+  e.draw(g, { left: 0, top: 0 });
+  assert.deepEqual(calls, []);
+  e.hidden = false; e.draw(g, { left: 0, top: 0 });
+  assert.ok(calls.some((c) => c[0] === 'fillText'));
 });

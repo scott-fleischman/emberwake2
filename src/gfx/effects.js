@@ -137,6 +137,12 @@ const MARKS = {
     R(g, x - 1, y - 1, 6, 3, '#0a0606'); R(g, x + 3, y + 1, 3, 4, '#0a0606');
     R(g, x, y, 4, 1, c); R(g, x + 3, y + 1, 1, 3, c); R(g, x + 3, y + 3, 3, 1, c);
   },
+  // sand heaving in little crescents over something digging below
+  ripple: (g, x, y, a, b, time) => {
+    const h = Math.sin(time * 9 + a * 7) > 0 ? 1 : 0;
+    R(g, x - 2, y - h, 5, 1, '#f0dca8'); R(g, x - 3, y + 1 - h, 1, 1, '#c8a060'); R(g, x + 3, y + 1 - h, 1, 1, '#c8a060');
+    R(g, x - 2, y + 1, 5, 1, '#8a6a3a');
+  },
   frost: (g, x, y, a, b, time) => {
     R(g, x, y - 2, 1, 5, '#ffffff'); R(g, x - 2, y, 5, 1, '#d8f4ff'); R(g, x - 1, y - 1, 3, 3, '#a8dcf8'); R(g, x, y, 1, 1, '#ffffff');
     if (Math.sin(time * 5 + a * 20) > 0.8) R(g, x + 2, y - 3, 1, 1, '#ffffff');
@@ -146,6 +152,7 @@ const MARKS = {
 const STAIN = {
   thorns: ['46,66,30', '#8cb04a'], roots: ['70,48,28', '#a07a48'], mud: ['84,58,32', '#9a7444'], poison: ['58,110,36', '#b4e860'],
   dust: ['176,142,92', '#e8d6a8'], fire: ['120,38,16', '#ffa038'], fissure: ['22,14,12', '#ff7a28'], frost: ['150,200,230', '#f0fcff'],
+  ripple: ['160,120,68', '#e0c890'],
 };
 const CELL = 10;
 

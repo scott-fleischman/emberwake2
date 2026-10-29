@@ -20,6 +20,7 @@ export class Elite extends Enemy {
     this.mass *= 2.5;
   }
   draw(g, cam) {
+    if (this.hidden) return; // burrowed: no aura or nameplate to give it away
     const x = this.x - cam.left, y = this.y - cam.top + this.h / 2;
     const c = AURA[this.eliteId] || '255,220,120';
     if (this.state !== 'dying') {

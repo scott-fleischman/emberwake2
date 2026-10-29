@@ -151,15 +151,18 @@ export const SPECIALS = {
           return false;
         }
         if (m.held) return true; // knocked off by a hit
-        if (m.z?.hit) { e.latched = m.held = true; m.drip = 1.5; e.spose = 'crouch'; drop(ctx, m.z); return false; }
-        return lunge(e, dt, ctx, 0.25, 220, 0.4, { dmg: 0, effect: 'poison' });
+        if (m.z?.hit) {
+          if (m.z.blocked) return true; // a shield turned it away
+          e.latched = m.held = true; m.drip = 1.5; e.spose = 'crouch'; drop(ctx, m.z); return false;
+        }
+        return lunge(e, dt, ctx, 0.25, 220, 0.4, { dmg: 0, effect: 'poison', blockable: true });
       },
     }),
     // Dives onto the player's spot as the mark lands, in a cloud of biting gnats.
     skirmisher: move('poison', {
       name: 'Swarm Dive', windup: 0.55, range: 110, sfx: 'mv_swamp_skirmisher',
       start(e, ctx, p) {
-        e.mv.z = put(ctx, e, 'circle', { x: p.x, y: p.y, r: 14 * size(e), t: 0.5, life: 0.25, dmg: e.dmg, effect: 'poison' });
+        e.mv.z = put(ctx, e, 'circle', { x: p.x, y: p.y, r: 14 * size(e), t: 0.5, life: 0.25, dmg: e.dmg, effect: 'poison', blockable: true });
         e.mv.vx = (p.x - e.x) / 0.5; e.mv.vy = (p.y - e.y) / 0.5;
         e.spose = 'dart';
       },
@@ -200,7 +203,7 @@ export const SPECIALS = {
       name: 'Burrow', windup: 0.6, range: 120, sfx: 'mv_desert_lunger',
       start(e, ctx) {
         e.untargetable = e.hidden = true;
-        e.mv.ripple = put(ctx, e, 'circle', { x: e.x, y: e.y, r: 8 * size(e), t: 0, life: 4, dmg: 0, art: 'dust' });
+        e.mv.ripple = put(ctx, e, 'circle', { x: e.x, y: e.y, r: 8 * size(e), t: 0, life: 4, dmg: 0, art: 'ripple' });
         puff(ctx, e.x, e.y, ['#b07a3a', '#f0d080'], { count: 10 });
       },
       update(e, dt, ctx, p) {
@@ -211,12 +214,14 @@ export const SPECIALS = {
           m.ripple.x = e.x; m.ripple.y = e.y;
           return d;
         };
+        // Timed on the move's own clock, not its zones', so losing them can't leave it buried.
         if (!m.mark) {
           if (dig(p.x, p.y, 115) > 6 && m.t < 1.6) return false;
           m.mark = put(ctx, e, 'circle', { x: p.x, y: p.y, r: 14 * size(e), t: 0.8, life: 0.15, dmg: e.dmg, effect: 'blind' });
+          m.erupt = m.t + 0.8;
           return false;
         }
-        if (m.mark.t > 0) { dig(m.mark.x, m.mark.y, 140); return false; }
+        if (m.t < m.erupt) { dig(m.mark.x, m.mark.y, 140); return false; }
         e.untargetable = e.hidden = false;
         e.spose = 'lunge';
         drop(ctx, m.ripple);
@@ -231,7 +236,7 @@ export const SPECIALS = {
       start(e, ctx) { e.mv.z = put(ctx, e, 'circle', { x: e.x, y: e.y + 4, r: 13 * size(e), t: 0.5, life: 4, dmg: 0, effect: 'blind', art: 'dust' }); },
       update(e, dt, ctx, p) {
         const m = e.mv, z = m.z;
-        if (z.t > 0) return false;
+        if (m.t < 0.5) return false;
         const dx = p.x - z.x, dy = p.y - z.y, l = Math.hypot(dx, dy) || 1;
         z.vx = (dx / l) * 30; z.vy = (dy / l) * 30;
         if ((m.swirl = (m.swirl ?? 0) - dt) <= 0) {
@@ -239,7 +244,7 @@ export const SPECIALS = {
           const a = m.t * 9;
           puff(ctx, z.x + Math.cos(a) * z.r, z.y + Math.sin(a) * z.r * 0.6, ['#e0c090', '#f0e0b8'], { count: 2, speed: 40, angle: a + Math.PI / 2, spread: 0.5, up: 25, life: 0.5 });
         }
-        return z.t <= -z.life;
+        return m.t >= 4.5; // the zone's own life, on the move's clock
       },
     }),
     // A pouch of sand that bursts into a blinding cloud on the player's spot.

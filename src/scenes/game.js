@@ -326,22 +326,7 @@ export class GameScene {
     const p = this.player, res = this.state.player;
     if (p.mode === 'dead' || this.deathT > 0) return 'ignored';
     if (p.iframes > 0 && !opts.ignoreIframes) return 'ignored';
-    const shield = SHIELDS[this.state.gear.shield];
-    if (src && shield && !opts.unblockable && p.shielding && shieldBlocks(p, src.x, src.y, shield.arc)) {
-      const cost = dmg * shield.cost * this.derived.blockMult;
-      if (res.stamina >= cost) {
-        res.stamina -= cost;
-        p.staminaDelay = 0.6;
-        this.audio.sfx('block');
-        this.area.spawn(new Particles(p.x + Math.cos(p.aim) * 8, p.y - 4 + Math.sin(p.aim) * 8, { count: 6, color: ['#ffffff', '#ffe080'], speed: 70, life: 0.25 }));
-        const [kx, ky] = knockbackVector(src.x, src.y, p.x, p.y, 70);
-        p.knock(kx, ky, 0.1);
-        if (src.knock && src.team === 'enemy' && !src.boss) { const [ex, ey] = knockbackVector(p.x, p.y, src.x, src.y, 160); src.knock(ex, ey, 0.2); }
-        return 'blocked';
-      }
-      res.stamina = 0;
-      this.toast('Guard broken!');
-    }
+    if (!opts.unblockable && this.guard(dmg, src)) return 'blocked';
     const amount = dmg * this.diff.damageTaken;
     res.hp = Math.max(0, res.hp - amount);
     p.iframes = 0.9;
@@ -353,6 +338,23 @@ export class GameScene {
     this.hitstop = 0.06;
     if (res.hp <= 0) this.die(); else if (opts.effect) this.applyEffect(opts.effect, src);
     return 'hit';
+  }
+
+  // The shield takes a blow from `src` if it faces it and stamina covers `dmg`: true when it does,
+  // with the clang, the sparks and the shove. Effect-only zone strikes ask too (see zones.js).
+  guard(dmg, src) {
+    const p = this.player, res = this.state.player, shield = SHIELDS[this.state.gear.shield];
+    if (!src || !shield || !p.shielding || !shieldBlocks(p, src.x, src.y, shield.arc)) return false;
+    const cost = dmg * shield.cost * this.derived.blockMult;
+    if (res.stamina < cost) { res.stamina = 0; this.toast('Guard broken!'); return false; }
+    res.stamina -= cost;
+    p.staminaDelay = 0.6;
+    this.audio.sfx('block');
+    this.area.spawn(new Particles(p.x + Math.cos(p.aim) * 8, p.y - 4 + Math.sin(p.aim) * 8, { count: 6, color: ['#ffffff', '#ffe080'], speed: 70, life: 0.25 }));
+    const [kx, ky] = knockbackVector(src.x, src.y, p.x, p.y, 70);
+    p.knock(kx, ky, 0.1);
+    if (src.knock && src.team === 'enemy' && !src.boss) { const [ex, ey] = knockbackVector(p.x, p.y, src.x, src.y, 160); src.knock(ex, ey, 0.2); }
+    return true;
   }
 
   // ---------------------------------------------------------------- status effects
