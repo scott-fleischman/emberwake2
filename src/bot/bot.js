@@ -354,10 +354,22 @@ export class Bot {
     if (shield) this.want.add(K.shield);
     if (open && focus.boss && dist > reach + 12 && res.stamina > 10) this.want.add(K.sprint);
     if ((!shield && here.lv >= 2) || here.lv >= 3) {
-      if (res.stamina >= d.dodgeCost && p.mode === 'normal' && this.time - this.lastDodge > 0.45) { this.tap(K.dodge); this.lastDodge = this.time; }
+      const roll = mv || [Math.cos(p.aim), Math.sin(p.aim)];
+      if (res.stamina >= d.dodgeCost && p.mode === 'normal' && this.time - this.lastDodge > 0.45 && this.safeRoll(roll)) { this.tap(K.dodge); this.lastDodge = this.time; }
     }
     if (open && dist <= reach && p.cool <= 0 && p.mode === 'normal' && !shield) this.tap(K.attack);
     else if (dist > reach + 2 && dist < 160 && !shield && p.mode === 'normal' && this.rangedReady(focus)) this.tap(K.item);
+  }
+
+  // A dodge carries us ~46px, far past the step bestMove checked; landing in lava hurts more than the blow.
+  safeRoll([dx, dy]) {
+    const p = this.g.player, map = this.g.area.map, l = Math.hypot(dx, dy) || 1;
+    for (let s = 8; s <= 48; s += 8) {
+      const t = tileOf(p.x + (dx / l) * s, p.y + (dy / l) * s);
+      if (map.isSolid(t.x, t.y)) return true; // the roll stops at the wall
+      if (!walkable(map, t.x, t.y)) return false;
+    }
+    return true;
   }
 
   // One step along an A* path toward an enemy, for when walls or hazards stand between us.
