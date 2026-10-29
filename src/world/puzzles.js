@@ -1,11 +1,14 @@
-// Tide-lever rooms (pure data, no DOM). The room has two sets of floor tiles, A and B, and a lever
+// Puzzle rooms laid out from a solved plan (pure data, no DOM): the tide levers, the ember beam and the
+// ember carry.
+//
+// Tide-lever rooms: the room has two sets of floor tiles, A and B, and a lever
 // floods one set as it drains the other. It runs entry shore, A band, island, B band, exit shore. The
 // bands are rings about the two doors (a cell's place is its distance to the way in against its
 // distance to the way out), so they fit whichever walls the doors are on. The stored tiles keep both
 // sets dry: which one is under water is the room's tide, kept at runtime ('a': A dry, B flooded).
-import { astar } from '../core/grid.js';
+import { astar, bfsDistances } from '../core/grid.js';
 import { T, TILE_INFO } from './tiles.js';
-import { ROOM_W, ROOM_H, DOOR_TILES } from './dungeons.js';
+import { ROOM_W, ROOM_H, DOOR_TILES, spread } from './dungeons.js';
 
 const SHORE = 0, BAND_A = 1, ISLAND = 2, BAND_B = 3, FAR = 4, WALL = 255;
 const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -169,4 +172,156 @@ export function tideSolvable(room, { start = room.puzzle.start, back = false } =
   if (!entry || !onward) return false;
   const [from, to] = back ? [onward, entry] : [entry, onward];
   return crossable(room.tiles, { ...room.puzzle, start }, DOOR_TILES[from], DOOR_TILES[to]);
+}
+
+// ---------------------------------------------------------------- the ember beam
+// A brazier throws a beam of light along the floor. Mirror pedestals turn it (a mirror is '/' or '\' as
+// drawn, and a strike swaps one for the other), and it must reach the receiver. Everything stands off
+// the wall ring, so a beam that runs true never meets a torch or a doorway.
+const STEP = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
+const TURN = { '/': ([dx, dy]) => [-dy, -dx], '\\': ([dx, dy]) => [dy, dx] };
+const inField = (x, y) => x >= 2 && y >= 2 && x <= ROOM_W - 3 && y <= ROOM_H - 3;
+const walkTile = (t) => !TILE_INFO[t].solid && t !== T.PIT && t !== T.HAZARD;
+
+// The cells the beam lights, from the one past the source on, and whether it ends on the receiver.
+// `end` is the cell that stopped it: a wall, a solid tile, the source, or the receiver itself.
+export function traceBeam(room, states) {
+  const { source, receiver, mirrors } = room.puzzle;
+  const at = new Map(mirrors.map((m, i) => [idx(m.x, m.y), i]));
+  let [dx, dy] = STEP[source.dir], x = source.x, y = source.y;
+  const cells = [];
+  // A beam can't loop (it would have to come back through the source), but cap it all the same.
+  for (let n = 0; n < ROOM_W * ROOM_H * 2; n++) {
+    x += dx; y += dy;
+    if (!inRoom(x, y) || TILE_INFO[room.tiles[idx(x, y)]].solid || (x === source.x && y === source.y)) break;
+    cells.push({ x, y });
+    if (x === receiver.x && y === receiver.y) return { cells, hit: true, end: { x, y } };
+    const m = at.get(idx(x, y));
+    if (m !== undefined) [dx, dy] = TURN[states[m]]([dx, dy]);
+  }
+  return { cells, hit: false, end: { x, y } };
+}
+
+export const beamSolved = (room, states) => traceBeam(room, states).hit;
+
+// With these objects solid, every door still reaches every other and each object has a side to stand on.
+function roomy(L, objs) {
+  const solid = new Set(objs.map((o) => idx(o.x, o.y)));
+  const d = bfsDistances(ROOM_W, ROOM_H, (x, y) => !solid.has(idx(x, y)) && walkTile(L.tiles[idx(x, y)]), [L.gaps[0]]);
+  return L.gaps.every((g) => d[idx(g.x, g.y)] >= 0) && objs.every((o) => N4.some(([dx, dy]) => d[idx(o.x + dx, o.y + dy)] >= 0));
+}
+
+export function setupBeam(L) {
+  const runs = L.r.int(2, 4); // drawn once: retrying would favour the short paths, which fail less
+  for (let t = 0; t < 500; t++) {
+    const plan = planBeam(L, runs);
+    if (!plan) continue;
+    const { source, receiver, mirrors, plaque } = plan;
+    L.put({ type: 'beamSource', x: source.x, y: source.y, dir: source.dir });
+    mirrors.forEach((m, index) => L.put({ type: 'mirror', x: m.x, y: m.y, index }));
+    L.put({ type: 'receiver', x: receiver.x, y: receiver.y });
+    L.put({ type: 'plaque', x: plaque.x, y: plaque.y, text: 'Strike the mirrors to turn them. Lead the ember\'s light to the eye.' });
+    L.puzzle = { kind: 'beam', source, receiver, mirrors };
+    return;
+  }
+  throw new Error('beam puzzle layout failed');
+}
+
+// The solved path first: 2–4 straight runs of 3 or more cells from the source, a mirror at each turn
+// and the receiver at the end. Then 1–2 decoys, set where a wrongly turned mirror throws the light if
+// there's room, and the path's mirrors scrambled so the beam starts off its mark.
+function planBeam(L, runs) {
+  const r = L.r, used = new Set(), objs = [];
+  const stop = (x, y) => L.isFree(x, y) && L.doorDist(x, y) >= 3 && objs.every((o) => cheb(o, { x, y }) >= 2);
+  const src = r.pick(L.spots(3, inField));
+  const source = { x: src.x, y: src.y, dir: r.pick(Object.keys(STEP)) };
+  used.add(idx(src.x, src.y)); objs.push(source);
+  let at = src, dir = STEP[source.dir];
+  const mirrors = [];
+  for (let k = 0; k < runs; k++) {
+    const ends = [];
+    for (let n = 1; ; n++) {
+      const x = at.x + dir[0] * n, y = at.y + dir[1] * n;
+      if (!inField(x, y) || used.has(idx(x, y)) || !walkTile(L.tiles[idx(x, y)])) break;
+      if (n >= 3 && stop(x, y)) ends.push(n);
+    }
+    if (!ends.length) return null;
+    const len = r.pick(ends);
+    for (let n = 1; n <= len; n++) used.add(idx(at.x + dir[0] * n, at.y + dir[1] * n));
+    at = { x: at.x + dir[0] * len, y: at.y + dir[1] * len };
+    if (k === runs - 1) break;
+    const out = r.pick(dir[0] ? [STEP.n, STEP.s] : [STEP.e, STEP.w]);
+    const solution = Object.keys(TURN).find((m) => TURN[m](dir).join() === out.join());
+    const m = { x: at.x, y: at.y, state: solution, solution, wrong: TURN[solution === '/' ? '\\' : '/'](dir) };
+    mirrors.push(m); objs.push(m);
+    dir = out;
+  }
+  const receiver = { x: at.x, y: at.y };
+  objs.push(receiver);
+
+  const decoys = [];
+  for (let k = r.int(1, 2); k > 0; k--) {
+    const free = (x, y) => inField(x, y) && !used.has(idx(x, y)) && stop(x, y);
+    const thrown = [];
+    for (const m of mirrors) {
+      for (let n = 2; ; n++) {
+        const x = m.x + m.wrong[0] * n, y = m.y + m.wrong[1] * n;
+        if (!inField(x, y) || used.has(idx(x, y)) || !walkTile(L.tiles[idx(x, y)])) break;
+        if (free(x, y)) thrown.push({ x, y });
+      }
+    }
+    const c = thrown.length ? r.pick(thrown) : r.pick(L.spots(3, free));
+    if (!c) return null;
+    // A decoy's answer is the way it already faces: no one need touch it.
+    const state = r.pick(Object.keys(TURN)), d = { x: c.x, y: c.y, state, solution: state };
+    decoys.push(d); objs.push(d);
+  }
+  for (const m of mirrors) m.state = r.pick(Object.keys(TURN));
+  if (mirrors.every((m) => m.state === m.solution)) { const m = r.pick(mirrors); m.state = m.state === '/' ? '\\' : '/'; }
+
+  const all = [...mirrors, ...decoys].map(({ x, y, state, solution }) => ({ x, y, state, solution })).sort((p, q) => p.y - q.y || p.x - q.x);
+  const room = { tiles: L.tiles, puzzle: { source, receiver, mirrors: all } };
+  if (!beamSolved(room, all.map((m) => m.solution)) || beamSolved(room, all.map((m) => m.state))) return null;
+  const plaque = r.pick(L.spots(3, onRing));
+  if (!plaque || !roomy(L, [...objs, plaque])) return null;
+  return { source, receiver, mirrors: all, plaque };
+}
+
+// ---------------------------------------------------------------- the ember carry
+// Take flame at the source and light every dark brazier before it gutters. The flame lasts for the
+// nearest-neighbour tour at 100 px a second, plus a second to spare.
+export function setupCarry(L) {
+  for (let t = 0; t < 500; t++) {
+    const field = L.spots(3, inField), src = L.r.pick(field);
+    const n = L.r.int(3, 5), far = field.filter((c) => cheb(c, src) >= 4);
+    let braziers = [];
+    for (const gap of [7, 6, 5, 4]) if ((braziers = spread(L.r, far, n, gap)).length === n) break;
+    const plaque = L.r.pick(L.spots(3, onRing));
+    if (braziers.length < n || !plaque || !roomy(L, [src, ...braziers, plaque])) continue;
+    const source = { x: src.x, y: src.y };
+    L.put({ type: 'brazier', x: source.x, y: source.y, source: true });
+    braziers.forEach((b, index) => L.put({ type: 'brazier', x: b.x, y: b.y, index }));
+    L.put({ type: 'plaque', x: plaque.x, y: plaque.y, text: 'Take the flame and kindle every brazier before it gutters. A roll will snuff it.' });
+    const burn = Math.round((tourLength(L, source, braziers) * 16 / 100 + 1.0) * 100) / 100;
+    L.puzzle = { kind: 'carry', source, braziers: braziers.map(({ x, y }) => ({ x, y })), burn };
+    return;
+  }
+  throw new Error('carry puzzle layout failed');
+}
+
+// Walking steps from the source to the nearest brazier, on to the nearest one left, and so on through
+// them all. Steps go round every solid object (all but the torches) and count from object to object,
+// a little more than the walk from beside one to beside the next.
+export function tourLength(room, source, braziers) {
+  const solid = new Set(room.objects.filter((o) => o.type !== 'torch').map((o) => idx(o.x, o.y)));
+  const open = (x, y) => !solid.has(idx(x, y)) && walkTile(room.tiles[idx(x, y)]);
+  let at = source, left = braziers.slice(), total = 0;
+  while (left.length) {
+    const d = bfsDistances(ROOM_W, ROOM_H, open, [at]);
+    const steps = left.map((c) => Math.min(...N4.map(([dx, dy]) => d[idx(c.x + dx, c.y + dy)]).filter((v) => v >= 0)) + 1);
+    const k = steps.indexOf(Math.min(...steps));
+    total += steps[k];
+    at = left.splice(k, 1)[0];
+  }
+  return total;
 }

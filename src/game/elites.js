@@ -51,6 +51,30 @@ export class Elite extends Enemy {
   }
 }
 
+// A descent fight's champion: a ward monster swollen with Gloam to an elite's size and toughness, with
+// no name to its credit.
+export class Champion extends Enemy {
+  constructor(archetype, biome, x, y, opts = {}) {
+    super(archetype, biome, x, y, { ...opts, hpMult: 1.6 * (opts.hpMult || 1) });
+    this.champion = true;
+    this.scale = 1.6;
+    this.w = Math.round(this.w * 1.3); this.h = Math.round(this.h * 1.3);
+    this.mass *= 2.5;
+  }
+  draw(g, cam) {
+    if (this.hidden) return;
+    const x = this.x - cam.left, y = this.y - cam.top + this.h / 2;
+    if (this.state !== 'dying') {
+      g.fillStyle = `rgba(${GLOAM_AURA},${0.14 + 0.06 * Math.sin(this.anim * 4)})`;
+      g.beginPath(); g.ellipse(x, y - 2, this.w * 0.8, this.h * 0.5, 0, 0, TAU); g.fill();
+    }
+    g.save();
+    g.translate(x, y); g.scale(this.scale, this.scale); g.translate(-x, -y);
+    super.draw(g, cam);
+    g.restore();
+  }
+}
+
 // A bronze leaf of the Verdant Sigil, hovering over its raided shrine.
 export class SigilLeaf extends Pickup {
   constructor(relic, x, y) {

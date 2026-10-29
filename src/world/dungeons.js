@@ -5,7 +5,7 @@
 import { makeRng } from '../core/rng.js';
 import { bfsDistances } from '../core/grid.js';
 import { T, TILE_INFO } from './tiles.js';
-import { setupTide } from './puzzles.js';
+import { setupTide, setupBeam, setupCarry } from './puzzles.js';
 
 export const ROOM_W = 24, ROOM_H = 15;
 export const DOOR_TILES = {
@@ -48,10 +48,10 @@ const TEMPLATES = {
       { at: 5, roles: ['combat', 'treasure'] }, { at: 8, roles: ['treasure'] }],
   },
   // Two hubs, each with a ward wing either side; a wing's key hangs off it on a side room (`keyAt`), and
-  // its echo ends it. The inner door out of the second hub opens on the descent. The switches and
-  // ordered rooms after its tide room hold the places of the ember beam and the ember carry.
+  // its echo ends it. The inner door out of the second hub opens on the descent: its hardest fights, and
+  // the ember beam and the ember carry.
   spire: {
-    main: ['entrance', 'combat', 'hub', 'hub', { role: 'combat', entry: 'inner' }, 'tide', 'switches', 'combat', 'ordered',
+    main: ['entrance', 'combat', 'hub', 'hub', { role: 'combat', entry: 'inner' }, 'tide', 'beam', 'combat', 'carry',
       'switches', 'combat', 'bossdoor', 'boss'],
     branches: [
       { at: 1, roles: ['treasure'] },
@@ -81,8 +81,12 @@ const THEMES = {
 
 const DIRS = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
 const OPP = { n: 's', s: 'n', e: 'w', w: 'e' };
-const PUZZLE_ROLES = new Set(['timed', 'switches', 'ordered', 'push']);
+const PUZZLE_ROLES = new Set(['timed', 'switches', 'ordered', 'push', 'beam', 'carry']);
 const ARCHETYPES = ['brute', 'lunger', 'skirmisher', 'ranged'];
+const WARDS = Object.keys(ECHO);
+// A descent fight's fixed core, under its champion brute; 2–3 more join it from the theme's mix. With
+// that core it outweighs any wing's fight (at most five brutes) in numbers and in health.
+const DESCENT_CORE = ['brute', 'brute', 'lunger', 'lunger'];
 // Theme-obstacle density per role (puzzle and boss rooms get none), and the fallback multipliers tried
 // in turn when a layout fails the connectivity check.
 const OBSTACLE_SCALE = { entrance: 0.4, combat: 1, key: 0.8, treasure: 0.7, bossdoor: 0.5 };
@@ -143,12 +147,16 @@ export function generateDungeon(id, seed) {
   }
 
   const firstTreasure = rooms.find((r) => r.role === 'treasure')?.id;
+  // The Spire's descent: the main path past the inner door.
+  const inner = graph.mainIds.findIndex((i) => graph.nodes[i].entry === 'inner');
+  const descent = new Set(inner < 0 ? [] : graph.mainIds.slice(inner));
   for (const room of rooms) {
     const { next, parent } = graph.nodes[room.id];
     const r = rng.fork(`room${room.id}`);
     const spec = {
       theme: room.theme, info, role: room.role, doors: room.doors, r,
       inner: Object.values(room.doors).some((d) => d.type === 'inner'),
+      deep: descent.has(room.id),
       entryDir: Object.keys(room.doors).find((d) => room.doors[d].to === parent),
       exitDir: next === null ? null : Object.keys(room.doors).find((d) => room.doors[d].to === next),
       treasure: room.id === firstTreasure ? 'map' : r.pick(['heart', 'coins']),
@@ -309,7 +317,7 @@ class Layout {
 }
 
 // Greedy spaced selection from shuffled candidates.
-function spread(r, cands, count, minGap) {
+export function spread(r, cands, count, minGap) {
   const out = [];
   for (const c of r.shuffle(cands.slice())) {
     if (out.length >= count) break;
@@ -344,9 +352,26 @@ function layoutRoom(spec, density, r) {
   for (const p of spread(r, L.spots(3, (x, y) => onRing(x, y) && reachable(x, y)), r.int(4, 6), 6)) {
     L.objects.push({ type: 'torch', x: p.x, y: p.y });
   }
-  const enemyCount = spec.role === 'combat' ? r.int(3, 5) : spec.role === 'key' ? r.int(2, 3) : 0;
-  if (enemyCount) placeEnemies(L, L.spots(4, reachable), enemyCount, theme.enemies);
+  if (spec.role === 'combat' && spec.deep) placeDescent(L, L.spots(4, reachable), theme.enemies);
+  else {
+    const enemyCount = spec.role === 'combat' ? r.int(3, 5) : spec.role === 'key' ? r.int(2, 3) : 0;
+    if (enemyCount) placeEnemies(L, L.spots(4, reachable), enemyCount, theme.enemies);
+  }
   return L;
+}
+
+// A descent fight: a champion brute with room about it to stand at its size, the fixed core and 2–3 from
+// the mix, dealt round the four wards' kin so every ward is in it.
+function placeDescent(L, cands, weights) {
+  const r = L.r, open = (x, y) => [-1, 0, 1].every((dy) => [-1, 0, 1].every((dx) => L.tiles[idx(x + dx, y + dy)] === T.DFLOOR));
+  const roomy = cands.filter((c) => open(c.x, c.y)), champ = r.pick(roomy.length ? roomy : cands);
+  const kinds = [...DESCENT_CORE, ...Array.from({ length: r.int(2, 3) }, () => r.weighted(weights))];
+  const rest = cands.filter((c) => cheb(c, champ) >= 3);
+  let picks = [];
+  for (const gap of [3, 2]) if ((picks = spread(r, rest, kinds.length, gap)).length === kinds.length) break;
+  const wards = r.shuffle(WARDS.slice());
+  L.objects.push({ type: 'enemy', archetype: 'brute', x: champ.x, y: champ.y, ward: wards[0], champion: true });
+  picks.forEach((p, i) => L.objects.push({ type: 'enemy', archetype: kinds[i], x: p.x, y: p.y, ward: wards[(i + 1) % WARDS.length] }));
 }
 
 function placeEnemies(L, cands, count, weights) {
@@ -454,6 +479,8 @@ const SETUP = {
     if (tile !== null && density > 0) ringHazards(L, tile, density);
   },
   tide: (L, s) => setupTide(L, s),
+  beam: (L) => setupBeam(L),
+  carry: (L) => setupCarry(L),
   // The hub before the inner door rings its four sockets, one per wing; the other reads the wards.
   hub(L, s) {
     if (s.inner) Object.keys(ECHO).forEach((wing, i) => L.put({ type: 'socket', x: HUB_SOCKETS[i][0], y: HUB_SOCKETS[i][1], wing }));

@@ -5,7 +5,7 @@ import { canUseItem, lockOnTarget } from './combat.js';
 import { WEAPONS, USE_ITEMS, SHIELDS } from '../data/items.js';
 import { TILE, TILE_INFO, T } from '../world/tiles.js';
 import { humanSprite, idleLife, LOOKS, R } from '../gfx/sprites.js';
-import { drawShadow } from '../gfx/render.js';
+import { drawShadow, drawFlame } from '../gfx/render.js';
 import { drawEffectIcons } from '../gfx/effects.js';
 import { EFFECTS, moveMult, blocked, shakeEffects } from './effects.js';
 import { normalize, facingFromVector, TAU } from '../core/math.js';
@@ -39,6 +39,7 @@ export class Player extends Actor {
     this.team = 'player';
     this.effects = {}; // status effects, see effects.js
     this.controlImmune = 0;
+    this.flame = 0; // seconds left on a flame carried from an ember-carry source
     this.look = LOOKS[game.state.classId];
   }
 
@@ -54,6 +55,7 @@ export class Player extends Actor {
     this.anim += dt;
     if (this.mode === 'dead') return;
     this.cool -= dt; this.itemCool -= dt; this.shootT -= dt;
+    if (this.flame > 0 && (this.flame -= dt) <= 0) this.snuff(ctx);
 
     // Regeneration
     this.staminaDelay -= dt;
@@ -196,9 +198,17 @@ export class Player extends Actor {
     this.mode = 'dodge';
     this.modeT = DODGE_TIME;
     this.iframes = Math.max(this.iframes, 0.24 + (d.shadow ? 0.12 : 0));
+    if (this.flame > 0) this.snuff(ctx);
     this.game.audio.sfx('dash');
     ctx.area.spawn(new Particles(this.x, this.y + 4, { count: 6, color: '#d8d0c0', speed: 30, life: 0.35, layer: -1 }));
     this.shake('roll');
+  }
+
+  // The carried flame goes out: burnt down, or rolled out.
+  snuff(ctx) {
+    this.flame = 0;
+    this.game.audio.sfx('flame_out');
+    ctx.area.spawn(new Particles(this.x + (this.facing === 'left' ? -6 : 5), this.y - 12, { count: 6, color: ['#6a6070', '#9a90a0'], speed: 12, life: 0.7, up: 22 }));
   }
 
   useItem(ctx) {
@@ -289,15 +299,23 @@ export class Player extends Actor {
     drawShadow(g, x, y + 4, 5, 2);
     const frame = this.moving ? Math.floor(this.anim * (this.sprinting ? 12 : 8)) % 4 : 0;
     const idle = !this.moving && this.mode === 'normal' && !this.shielding && this.shootT <= 0 && this.charge <= 0.15;
-    const behind = this.facing === 'up';
+    const behind = this.facing === 'up', flame = this.flame > 0, arms = flame ? 'rd' : 'dd';
     if (behind) this.drawGear(g, x, y);
-    g.drawImage(humanSprite(this.look, this.facing, frame, `p${this.game.state.classId}`, idle ? idleLife(this.game.time ?? this.anim, 0.37) + 'dd' : ''), x - 8, y + 5 - 20);
+    g.drawImage(humanSprite(this.look, this.facing, frame, `p${this.game.state.classId}`, idle ? idleLife(this.game.time ?? this.anim, 0.37) + arms : flame ? `00${arms}` : ''), x - 8, y + 5 - 20);
     if (!behind) this.drawGear(g, x, y);
+    if (flame) this.drawHeldFlame(g, x, y);
     if (this.mode === 'dodge') {
       g.globalAlpha = 0.3;
       g.drawImage(humanSprite(this.look, this.facing, frame, `p${this.game.state.classId}`), x - 8 - this.dodgeX * 6, y + 5 - 20 - this.dodgeY * 6);
       g.globalAlpha = 1;
     }
+  }
+
+  // The carried flame burns in the raised weapon hand, smaller as it burns down, stuttering at the end.
+  drawHeldFlame(g, x, y) {
+    if (this.flame < 1 && Math.floor(this.anim * 16) % 3 === 0) return;
+    const k = Math.min(1, this.flame / (this.flameMax || this.flame));
+    drawFlame(g, x + (this.facing === 'left' ? -6 : 5) + 0.5, y - 10, this.anim, 0.35 + 0.3 * k);
   }
 
   drawGear(g, x, y) {

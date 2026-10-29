@@ -278,6 +278,35 @@ const SFX = {
     a.tone(t + 0.12, { type: 'triangle', f: 170, f2: 80, dur: 0.2, vol: 0.2 });
     a.noise(t + 0.12, { dur: 0.18, vol: 0.09, type: 'lowpass', f: 700, f2: 180 });
   },
+  // the ember beam and the ember carry
+  beam_turn: (a, t) => { // a stone drum grinding a quarter turn, then clicking home
+    a.noise(t, { dur: 0.22, vol: 0.1, type: 'lowpass', f: 500, f2: 900, q: 2, attack: 0.02 });
+    a.tone(t, { type: 'sawtooth', f: 70, f2: 95, dur: 0.2, vol: 0.06, lp: 300 });
+    a.noise(t + 0.22, { dur: 0.03, vol: 0.12, f: 3200, q: 5 });
+  },
+  beam_hum: (a, t) => { // the light settling on its new line: a warm, glassy hum
+    a.tone(t + 0.15, { f: 330, dur: 0.6, vol: 0.05, attack: 0.08 });
+    a.tone(t + 0.15, { type: 'triangle', f: 495, dur: 0.55, vol: 0.03, attack: 0.1, detune: 7 });
+  },
+  beam_lit: (a, t) => { // the eye catches the light: a rising chord that rings on
+    a.notes(t + 0.1, [69, 73, 76, 81], 0.07, { type: 'triangle', dur: 0.9, vol: 0.06 });
+    a.tone(t + 0.1, { f: 220, f2: 440, dur: 0.5, vol: 0.06, attack: 0.05 });
+    a.noise(t + 0.3, { dur: 0.6, vol: 0.03, type: 'highpass', f: 6000, attack: 0.1 });
+  },
+  flame_take: (a, t) => { // a hand dipped in fire: a soft whoomp as it catches
+    a.noise(t, { dur: 0.35, vol: 0.16, type: 'lowpass', f: 250, f2: 1800, attack: 0.04 });
+    a.tone(t, { f: 140, f2: 260, dur: 0.25, vol: 0.08 });
+  },
+  flame_light: (a, t) => { // a brazier roaring up, crackling bright
+    a.noise(t, { dur: 0.5, vol: 0.2, type: 'lowpass', f: 400, f2: 3000, attack: 0.03 });
+    a.tone(t, { f: 90, f2: 180, dur: 0.3, vol: 0.14 });
+    [0.12, 0.2, 0.31].forEach((d) => a.noise(t + d, { dur: 0.02, vol: 0.1, f: 3500, q: 4 }));
+    a.notes(t + 0.1, [76, 83], 0.06, { type: 'triangle', dur: 0.4, vol: 0.04 });
+  },
+  flame_out: (a, t) => { // snuffed: a falling hiss and a puff of smoke
+    a.noise(t, { dur: 0.45, vol: 0.13, type: 'highpass', f: 5000, f2: 1500, attack: 0.01 });
+    a.tone(t, { type: 'triangle', f: 300, f2: 120, dur: 0.25, vol: 0.05 });
+  },
   lift: (a, t) => {
     a.tone(t, { f: 220, f2: 440, dur: 0.16, vol: 0.11 });
     a.noise(t, { dur: 0.1, vol: 0.05, type: 'lowpass', f: 1200 });

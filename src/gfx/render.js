@@ -139,6 +139,22 @@ export function drawCampfire(g, px, py, time) {
   g.fillStyle = 'rgba(255,160,60,0.12)'; g.beginPath(); g.arc(px + 8, py + 8, 18, 0, Math.PI * 2); g.fill();
 }
 
+// A live flame with its base at x, y: tongues licking up over a warm glow. Size 1 fills a brazier.
+export function drawFlame(g, x, y, time, size = 1) {
+  const s = size, f = (k) => Math.sin(time * (9 + k * 3.7) + k * 2.1);
+  const tongue = (cx, h, w, col, k) => {
+    g.fillStyle = col; g.beginPath();
+    g.moveTo(cx - w, y); g.quadraticCurveTo(cx - w, y - h * 0.55, cx + f(k) * 0.8 * s, y - h);
+    g.quadraticCurveTo(cx + w, y - h * 0.55, cx + w, y); g.closePath(); g.fill();
+  };
+  g.fillStyle = `rgba(255,150,60,${0.2 + 0.05 * f(0)})`; g.beginPath(); g.arc(x, y - 3 * s, 9 * s, 0, Math.PI * 2); g.fill();
+  tongue(x - 2.5 * s, (5 + f(1)) * s, 2 * s, '#d8482a', 1);
+  tongue(x + 2.5 * s, (5 + f(2)) * s, 2 * s, '#d8482a', 2);
+  tongue(x, (8 + 1.5 * f(3)) * s, 3.2 * s, '#ff8a30', 3);
+  tongue(x, (5 + f(4)) * s, 2 * s, '#ffd060', 4);
+  g.fillStyle = '#fff6d0'; g.fillRect(Math.round(x - s), Math.round(y - 2 * s), Math.max(1, Math.round(2 * s)), Math.max(1, Math.round(2 * s)));
+}
+
 export function drawEmberGlow(g, x, y, time, color = '255,170,70') {
   const r = 4 + Math.sin(time * 4) * 0.8;
   g.fillStyle = `rgba(${color},0.25)`; g.beginPath(); g.arc(x, y, r * 3, 0, Math.PI * 2); g.fill();

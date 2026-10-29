@@ -2,9 +2,10 @@
 import { Area } from './areas.js';
 import { Entity, Chest, Particles, FloatText } from './entities.js';
 import { Enemy } from './enemies.js';
-import { Elite, AURA } from './elites.js';
+import { Elite, Champion, AURA } from './elites.js';
 import { createBoss } from './bosses.js';
-import { Lever, setTide, drawTide } from './puzzles.js';
+import { Lever, setTide, drawTide, Mirror, BeamSource, Receiver, Brazier, drawBeam } from './puzzles.js';
+import { traceBeam } from '../world/puzzles.js';
 import { findFreeSpot } from './physics.js';
 import { WARDENS, MEMORIES, bossIntroShots, bossOutroShots, learnLore } from '../data/story.js';
 import { meleeTargets } from './combat.js';
@@ -19,8 +20,10 @@ import { TAU } from '../core/math.js';
 import { tileHash } from '../core/rng.js';
 
 const OPP = { n: 's', s: 'n', e: 'w', w: 'e' };
-const PUZZLE_ROLES = new Set(['timed', 'switches', 'ordered', 'push']);
-const IN_ROOM_PUZZLES = new Set(['switches', 'ordered', 'push']); // timed rooms already gate with their bars
+const PUZZLE_ROLES = new Set(['timed', 'switches', 'ordered', 'push', 'beam', 'carry']);
+const IN_ROOM_PUZZLES = new Set(['switches', 'ordered', 'push', 'beam', 'carry']); // timed rooms already gate with their bars
+// The beam's and the carry's pieces, all solid.
+const PIECES = { beamSource: BeamSource, mirror: Mirror, receiver: Receiver, brazier: Brazier };
 const WARDS = Object.keys(ECHO);
 const echoKey = (wing) => `spire:echo:${wing}`;
 // A room's palette: a Spire wing wears its ward's colours, the rest of the Spire its own.
@@ -267,7 +270,12 @@ export class DungeonArea extends Area {
     for (const o of room.objects) {
       switch (o.type) {
         case 'enemy':
-          if (!cleared) { this.spawnEnemy(new Enemy(o.archetype, this.family, o.x * TILE + 8, o.y * TILE + 8, { aggro: true, leash: 999, hpMult: g.diff.enemyHp, tier: this.tier, gloam: this.gloam })); hasEnemies = true; }
+          if (!cleared) {
+            // A descent foe names its own ward's kin; its champion stands an elite's size.
+            const E = o.champion ? Champion : Enemy, fam = o.ward ? DUNGEON_FAMILY[o.ward] : this.family;
+            this.spawnEnemy(new E(o.archetype, fam, o.x * TILE + 8, o.y * TILE + 8, { aggro: true, leash: 999, hpMult: g.diff.enemyHp, tier: this.tier, gloam: this.gloam }));
+            hasEnemies = true;
+          }
           break;
         case 'echo':
           if (!this.pr.solved.includes(echoKey(room.theme))) {
@@ -308,6 +316,8 @@ export class DungeonArea extends Area {
         case 'plaque': this.objs.push(this.spawn(new Plaque(o, this))); this.map.extraSolid[o.y * ROOM_W + o.x] = 1; break;
         case 'torch': this.spawn(new Torch(o, this)); break;
         case 'lever': this.objs.push(this.spawn(new Lever(o, this))); this.map.extraSolid[o.y * ROOM_W + o.x] = 1; break;
+        case 'beamSource': case 'mirror': case 'receiver': case 'brazier':
+          this.objs.push(this.spawn(new PIECES[o.type](o, this))); this.map.extraSolid[o.y * ROOM_W + o.x] = 1; break;
         case 'boss':
           if (!bossDone) {
             this.boss = createBoss(o.kind, o.x * TILE + 8, o.y * TILE + 8, g.diff.enemyHp);
@@ -320,6 +330,7 @@ export class DungeonArea extends Area {
     if (room.puzzle?.kind === 'ordered') this.nextOrder = 1;
     if (room.puzzle?.kind === 'timed' && this.solved) this.setGate(true);
     if (room.puzzle?.kind === 'tide') { this.tide = this.pr.tides[this.key()] ?? room.puzzle.start; setTide(this); }
+    if (room.puzzle?.kind === 'beam') this.relight();
     this.applyDoors();
     if (hasEnemies && room.clearToOpen) this.shutPending = true;
     // Place the player just inside the door they came through.
@@ -332,6 +343,7 @@ export class DungeonArea extends Area {
     p.facing = { n: 'down', s: 'up', w: 'right', e: 'left' }[dir];
     p.aim = { n: Math.PI / 2, s: -Math.PI / 2, w: 0, e: Math.PI }[dir];
     p.lock = null; p.vx = p.vy = 0; p.kbT = 0;
+    p.flame = 0; // a carried flame never makes it through a doorway
     p.lastSafe = { x: p.x, y: p.y };
     if (this.boss) {
       g.audio.playMusic('boss');
@@ -354,6 +366,23 @@ export class DungeonArea extends Area {
     if (!this.plates) this.plates = {};
     if (!this.plates[this.roomId]) this.plates[this.roomId] = [...pz.initial];
     return this.plates[this.roomId];
+  }
+
+  // The beam's mirrors and the carry's braziers keep their state for the visit; a solved room shows its answer.
+  mirrorState() {
+    const st = (this.mirrorStates ??= {});
+    return st[this.roomId] ??= this.room.puzzle.mirrors.map((m) => (this.solved ? m.solution : m.state));
+  }
+
+  brazierState() {
+    const st = (this.litBraziers ??= {});
+    return st[this.roomId] ??= this.room.puzzle.braziers.map(() => this.solved);
+  }
+
+  // Traces the beam afresh for the mirrors as they stand.
+  relight() {
+    this.beam = traceBeam(this.room, this.mirrorState());
+    this.beamLit = new Set(this.beam.cells.map((c) => c.y * ROOM_W + c.x));
   }
 
   applyDoors() {
@@ -418,8 +447,48 @@ export class DungeonArea extends Area {
     }
   }
 
+  // Struck, a mirror turns a quarter and the beam finds its new line; on the receiver, the room is solved.
+  turnMirror(m) {
+    if (this.solved) return;
+    const st = this.mirrorState(), i = m.obj.index;
+    st[i] = st[i] === '/' ? '\\' : '/';
+    m.turned();
+    this.relight();
+    this.game.audio.sfx('beam_turn');
+    if (this.beam.hit) {
+      this.game.audio.sfx('beam_lit');
+      this.solve('The beam finds the eye. The sealed door grinds open.');
+    } else this.game.audio.sfx('beam_hum', { pitch: 0.8 + this.beam.cells.length / 40 });
+  }
+
+  takeFlame() {
+    const p = this.game.player;
+    p.flame = p.flameMax = this.room.puzzle.burn;
+    this.game.audio.sfx('flame_take');
+    this.spawn(new Particles(p.x, p.y - 10, { count: 8, color: ['#ffd060', '#ff8a30'], speed: 30, life: 0.4, up: 20 }));
+  }
+
+  lightBrazier(b) {
+    const st = this.brazierState();
+    st[b.obj.index] = true;
+    b.lightT = 0.5;
+    this.game.audio.sfx('flame_light');
+    this.spawn(new Particles(b.x, b.y - 8, { count: 12, color: ['#ffd060', '#ff8a30', '#fff6d0'], speed: 40, life: 0.5, up: 30 }));
+    if (st.every(Boolean)) this.solve('Every brazier burns. The sealed door grinds open.');
+  }
+
   strikeWorld(player, o) {
-    for (const c of meleeTargets(player.x, player.y - 2, o.angle, o.reach + 4, o.arc, this.objs.filter((q) => q instanceof Crystal).map((q) => Object.assign(q, { hp: 1 })))) this.hitCrystal(c);
+    const hittable = this.objs.filter((q) => q instanceof Crystal || q instanceof Mirror).map((q) => Object.assign(q, { hp: 1 }));
+    for (const c of meleeTargets(player.x, player.y - 2, o.angle, o.reach + 4, o.arc, hittable)) {
+      if (c instanceof Mirror) this.turnMirror(c); else this.hitCrystal(c);
+    }
+  }
+
+  // An arrow or a bolt that hits a mirror turns it too.
+  onProjectileWall(p, tx, ty) {
+    if (p.team !== 'player') return;
+    const m = this.objs.find((o) => o instanceof Mirror && o.obj.x === tx && o.obj.y === ty);
+    if (m) this.turnMirror(m);
   }
 
   projectileObjects(p) {
@@ -470,6 +539,10 @@ export class DungeonArea extends Area {
     // Bog and mire cling to whoever wades in; a roll carries you over them.
     const muck = TILE_INFO[this.map.tileAtPixel(p.x, p.y + 2)]?.effect;
     if (muck && p.mode !== 'dodge') g.applyEffect(muck, null);
+    // A carried flame lights any dark brazier it's held to (within the reach of a hand, as for USE).
+    if (room.puzzle?.kind === 'carry' && p.flame > 0 && !this.solved) {
+      for (const b of this.objs) if (b instanceof Brazier && !b.lit && Math.hypot(b.x - p.x, b.y - p.y) < 22) this.lightBrazier(b);
+    }
     // Push blocks
     const block = this.objs.find((o) => o instanceof Block);
     if (block && !this.solved) this.updateBlock(block, dt, ctx);
@@ -539,6 +612,7 @@ export class DungeonArea extends Area {
     for (const o of this.objs) {
       if (Math.hypot(o.x - p.x, o.y - p.y) > 22) continue;
       if (o instanceof Plaque) { g.message(o.obj.text, 'Inscription'); return true; }
+      if (o instanceof Brazier && o.obj.source) { this.takeFlame(); return true; }
       if (o instanceof Fountain) {
         const d = g.derived;
         Object.assign(g.state.player, { hp: d.maxHp, mana: d.maxMana, stamina: d.maxStamina });
@@ -612,6 +686,7 @@ export class DungeonArea extends Area {
   drawGround(g, cam) {
     this.renderer.draw(g, cam);
     if (this.room.puzzle?.kind === 'tide') drawTide(g, cam, this);
+    if (this.room.puzzle?.kind === 'beam') drawBeam(g, cam, this);
     if (this.room.role === 'hub') this.drawSeal(g, cam);
     // Muck stirs: now and then a bubble swells and pops on each bog or mire tile.
     for (let i = 0; i < this.map.tiles.length; i++) {

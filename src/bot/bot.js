@@ -16,7 +16,7 @@ import { findPath, reachMap, walkable, tileOf, center, besideTile, standableNear
 
 const K = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', attack: 'KeyJ', item: 'KeyK', shield: 'KeyL', dodge: 'Space', sprint: 'ShiftLeft', interact: 'KeyE', cycle: 'KeyQ', lock: 'KeyR', eat: 'KeyF', confirm: 'Enter', back: 'Escape' };
 const TELEGRAPH = new Set(['windup', 'slam', 'crouch', 'lunge', 'dart', 'special']);
-const IN_ROOM_PUZZLES = new Set(['switches', 'ordered', 'push']);
+const IN_ROOM_PUZZLES = new Set(['switches', 'ordered', 'push', 'beam', 'carry']);
 const INNER = { n: { x: 11, y: 1 }, s: { x: 11, y: 13 }, w: { x: 1, y: 7 }, e: { x: 22, y: 7 } };
 const OUT = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
 
@@ -957,11 +957,13 @@ export class Bot {
   // ---------------------------------------------------------------- puzzles
   *solvePuzzle() {
     const a = this.g.area, kind = a.room.puzzle.kind;
-    this.status = `Solving the ${{ switches: 'floor plates', ordered: 'crystals', push: 'block', timed: 'timed gate' }[kind]}`;
+    this.status = `Solving the ${{ switches: 'floor plates', ordered: 'crystals', push: 'block', timed: 'timed gate', beam: 'ember beam', carry: 'ember carry' }[kind]}`;
     for (let tries = 0; tries < 6 && this.g.area === a && !a.solved; tries++) {
       if (kind === 'switches') yield* this.solvePlates();
       else if (kind === 'ordered') yield* this.solveCrystals();
       else if (kind === 'push') yield* this.solveBlock();
+      else if (kind === 'beam') yield* this.solveBeam();
+      else if (kind === 'carry') yield* this.solveCarry();
       else yield* this.solveTimed();
     }
   }
@@ -1007,6 +1009,46 @@ export class Bot {
           }
         }.bind(this),
       });
+    }
+  }
+
+  // Strike every mirror that faces the wrong way.
+  *solveBeam() {
+    const a = this.g.area, pz = a.room.puzzle;
+    for (let guard = 0; guard < 12 && !a.solved && this.g.area === a; guard++) {
+      const i = pz.mirrors.findIndex((m, k) => a.mirrorState()[k] !== m.solution);
+      if (i < 0) return;
+      const m = pz.mirrors[i];
+      yield* this.useTile({ x: m.x, y: m.y }, {
+        then: function* strike() {
+          for (let t = 0; t < 1 && a.mirrorState()[i] !== m.solution && !a.solved; t += this.dt) {
+            if (this.g.player.cool <= 0 && this.g.player.mode === 'normal') this.tap(K.attack);
+            yield;
+          }
+        }.bind(this),
+      });
+    }
+  }
+
+  // Take the flame, then walk (never roll) to the nearest dark brazier and on to the next, sprinting;
+  // back to the source for more whenever it gutters. Lit braziers stay lit.
+  *solveCarry() {
+    const a = this.g.area, pz = a.room.puzzle, p = this.g.player;
+    for (let guard = 0; guard < 16 && !a.solved && this.g.area === a; guard++) {
+      if (p.flame <= 0) {
+        while (this.g.state.player.stamina < this.g.derived.maxStamina * 0.9) yield;
+        yield* this.useTile(pz.source);
+        continue;
+      }
+      const cur = tileOf(p.x, p.y), reach = reachMap(a.map, cur), lit = a.brazierState();
+      let best = null, bd = Infinity;
+      pz.braziers.forEach((b, i) => {
+        const at = !lit[i] && besideTile(a.map, b, cur, reach), d = at ? reach[at.y * ROOM_W + at.x] : -1;
+        if (d >= 0 && d < bd) { bd = d; best = { i, at }; }
+      });
+      if (!best) return;
+      yield* this.walkTo(best.at, { sprint: true, exact: true, timeout: 20, until: () => a.brazierState()[best.i] || p.flame <= 0 });
+      yield;
     }
   }
 
