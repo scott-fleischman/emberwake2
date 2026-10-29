@@ -3,12 +3,16 @@ import assert from 'node:assert/strict';
 import { generateDungeon, solveDungeon, ROOM_W, ROOM_H, DOOR_TILES, DUNGEON_INFO } from '../src/world/dungeons.js';
 import { T, TILE_INFO } from '../src/world/tiles.js';
 import { bfsDistances } from '../src/core/grid.js';
+import { tideSolvable } from '../src/world/puzzles.js';
+import { enemyStats } from '../src/data/enemies.js';
+import { SFX_NAMES } from '../src/audio/audio.js';
+import { sandbox, botDo } from './helpers/sandbox.js';
 
-const IDS = ['verdant', 'ashen', 'frost'];
+const IDS = ['verdant', 'ashen', 'frost', 'drowned'];
 const SEEDS = [1, 2, 3, 42, 'ember', 'wake', 'hearth', 9001];
 const OPP = { n: 's', s: 'n', e: 'w', w: 'e' };
 const STEP = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
-const PUZZLES = new Set(['timed', 'switches', 'ordered', 'push']);
+const PUZZLES = new Set(['timed', 'switches', 'ordered', 'push', 'tide']);
 
 const cache = new Map();
 const get = (id, seed) => {
@@ -100,8 +104,9 @@ for (const id of IDS) {
           assert.equal(o.gy, r.gy + STEP[dir][1], `door ${door.id} direction`);
           assert.deepEqual(o.doors[OPP[dir]], { to: r.id, type: door.type, id: door.id }, `door ${door.id} symmetric`);
         }
-        if (PUZZLES.has(r.role)) {
-          // every puzzle room seals (or is followed by a locked door to) at least one onward room
+        if (PUZZLES.has(r.role) && r.role !== 'tide') {
+          // every puzzle room seals (or is followed by a locked door to) at least one onward room; a
+          // tide room's water is its gate
           assert.ok(Object.values(r.doors).some((dr) => dr.to > r.id && (dr.type === 'sealed' || dr.type === 'locked')));
         }
       }
@@ -174,6 +179,7 @@ for (const id of IDS) {
         if (!PUZZLES.has(r.role)) { assert.equal(r.puzzle, null); continue; }
         assert.equal(r.puzzle.kind, r.role);
         if (r.role === 'timed') checkTimed(r, where);
+        if (r.role === 'tide') checkTide(r, where);
         if (r.role === 'switches') {
           const plates = r.objects.filter((o) => o.type === 'plate');
           assert.equal(plates.length, 4);
@@ -230,6 +236,108 @@ function checkTimed(r, where) {
   assert.ok(Math.abs(duration - (fromGate * 16 / 100 + 0.5)) < 0.01, `${where} duration ${duration}`);
 }
 
+// The doors a tide room joins: the way in (from its parent) and the way on (to the next room).
+const entryOf = (r) => Object.keys(r.doors).find((d) => r.doors[d].to < r.id);
+const onwardOf = (r) => Object.keys(r.doors).filter((d) => r.doors[d].to > r.id).sort((x, y) => r.doors[x].to - r.doors[y].to)[0];
+
+// Two disjoint sets of tide tiles, both dry in the stored tiles, and a lever on each shore and the
+// island. Under either tide alone the far door can't be reached: crossing takes a lever.
+function checkTide(r, where) {
+  const { a, b, levers, start } = r.puzzle;
+  assert.equal(start, 'a');
+  assert.ok(a.length && b.length, `${where} tide tiles`);
+  const key = (c) => `${c.x},${c.y}`, inA = new Set(a.map(key)), inB = new Set(b.map(key));
+  assert.ok(b.every((c) => !inA.has(key(c))), `${where} A and B overlap`);
+  for (const c of [...a, ...b]) assert.equal(at(r, c.x, c.y), T.DFLOOR, `${where} tide tile ${key(c)} stored dry`);
+  assert.equal(levers.length, 3);
+  assert.deepEqual(levers.map(key).sort(), r.objects.filter((o) => o.type === 'lever').map(key).sort());
+  const lever = new Set(levers.map(key)), dry = passable(r, false);
+  for (const tide of ['a', 'b']) {
+    const wet = tide === 'a' ? inB : inA;
+    const d = bfsDistances(ROOM_W, ROOM_H, (x, y) => !wet.has(`${x},${y}`) && !lever.has(`${x},${y}`) && dry(x, y), DOOR_TILES[entryOf(r)]);
+    assert.ok(DOOR_TILES[onwardOf(r)].every((g) => d[g.y * ROOM_W + g.x] < 0), `${where} crossable at tide ${tide} without a lever`);
+  }
+}
+
+test('Fane tide rooms can always be crossed', () => {
+  for (const seed of SEEDS) for (const r of get('drowned', seed).rooms.filter((r) => r.puzzle?.kind === 'tide')) assert.ok(tideSolvable(r), `${seed}/${r.id}`);
+});
+
+test('the Fane is about the size of the Sanctuary and uses swamp hazards', () => {
+  for (const seed of SEEDS) {
+    const d = get('drowned', seed);
+    assert.ok(d.rooms.length >= 15 && d.rooms.length <= 19);
+    assert.ok(d.rooms.some((r) => r.tiles.includes(T.BOG)));
+    assert.equal(d.rooms.filter((r) => r.role === 'tide').length, 2);
+    assert.ok(d.rooms[d.bossId].tiles.includes(T.DWATER), `${seed}: pools in the Tidewarden's arena`);
+  }
+});
+
+test('the bot crosses a tide room', async () => {
+  const s = await sandbox(); s.game.enterDungeon('drowned');
+  const a = s.game.area, room = a.dungeon.rooms.find((r) => r.puzzle?.kind === 'tide');
+  a.enterRoom(room.id, OPP[entryOf(room)]);
+  const r = botDo(s, (bot) => bot.solveTide(), { maxSeconds: 90 });
+  assert.ok(r.done, r.status);
+  // It ends on the far shore, a walk from just inside the onward door (which may still be locked).
+  const p = s.game.player, d = bfsDistances(ROOM_W, ROOM_H, (x, y) => !a.map.isSolid(x, y), [{ x: Math.floor(p.x / 16), y: Math.floor(p.y / 16) }]);
+  const on = onwardOf(room), [ix, iy] = STEP[OPP[on]];
+  assert.ok(DOOR_TILES[on].some((g) => d[(g.y + iy) * ROOM_W + g.x + ix] >= 0), 'on the far shore');
+});
+
+test('a lever turns the tide, and the room remembers it', async () => {
+  const s = await sandbox(), heard = [];
+  s.app.audio.sfx = (name) => heard.push(name);
+  s.game.enterDungeon('drowned');
+  const a = s.game.area, room = a.dungeon.rooms.find((r) => r.puzzle?.kind === 'tide'), pz = room.puzzle;
+  const from = OPP[entryOf(room)];
+  a.enterRoom(room.id, from);
+  const tiles = () => [pz.a.map((c) => a.map.get(c.x, c.y)), pz.b.map((c) => a.map.get(c.x, c.y))];
+  const all = (list, t) => list.every((v) => v === t);
+  assert.equal(a.tide, 'a');
+  let [ta, tb] = tiles();
+  assert.ok(all(ta, T.DFLOOR) && all(tb, T.DWATER), 'A dry, B flooded');
+  // Stand beside a lever and use it.
+  const lv = pz.levers[0], beside = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: lv.x + dx, y: lv.y + dy })).find((c) => !a.map.isSolid(c.x, c.y));
+  s.game.player.x = beside.x * 16 + 8; s.game.player.y = beside.y * 16 + 8;
+  assert.ok(a.interact());
+  assert.equal(a.tide, 'b');
+  [ta, tb] = tiles();
+  assert.ok(all(ta, T.DWATER) && all(tb, T.DFLOOR), 'A flooded, B dry');
+  assert.ok(heard.includes('lever') && heard.includes('splash'));
+  assert.ok(SFX_NAMES.includes('lever'));
+  assert.equal(s.game.state.progress.tides[`drowned:${room.id}`], 'b');
+  a.enterRoom(a.dungeon.entranceId, 'n');
+  a.enterRoom(room.id, from);
+  assert.equal(a.tide, 'b');
+  [ta, tb] = tiles();
+  assert.ok(all(ta, T.DWATER) && all(tb, T.DFLOOR), 'the tide is as it was left');
+});
+
+test('bog mires and mire poisons whoever wades in', async () => {
+  const s = await sandbox(); s.game.enterDungeon('drowned');
+  const a = s.game.area, p = s.game.player;
+  for (const [tile, effect] of [[T.BOG, 'mud'], [T.MIRE, 'poison']]) {
+    p.effects = {};
+    a.map.set(10, 12, tile);
+    p.x = 10 * 16 + 8; p.y = 12 * 16 + 6;
+    s.step(0.1);
+    assert.ok(p.effects[effect], `${effect} from the ${effect === 'mud' ? 'bog' : 'mire'}`);
+    a.map.set(10, 12, T.DFLOOR);
+  }
+});
+
+test('the Fane\'s monsters are swamp kin as tough as the Sanctuary\'s', async () => {
+  const s = await sandbox(); s.game.enterDungeon('drowned');
+  const a = s.game.area, room = a.dungeon.rooms.find((r) => r.role === 'combat');
+  a.enterRoom(room.id, OPP[entryOf(room)]);
+  assert.ok(a.enemyList.length >= 3);
+  for (const e of a.enemyList) {
+    assert.equal(e.biome, 1);
+    assert.equal(e.maxHp, Math.max(1, Math.round(enemyStats(e.archetype, 1, { tier: 1.9 }).hp * s.game.diff.enemyHp)), e.archetype);
+  }
+});
+
 test('every dungeon can be walked to its warden under the runtime door rules', async () => {
   const { makeApp } = await import('../tools/headless.mjs');
   const { GameScene } = await import('../src/scenes/game.js');
@@ -237,7 +345,7 @@ test('every dungeon can be walked to its warden under the runtime door rules', a
   const app = await makeApp();
   for (const seed of ['d1', 'ember123', 'fen77', 'quests', 'zz9']) {
     const game = new GameScene(app, newGameState(seed, 'swordsman'));
-    for (const id of ['verdant', 'ashen', 'frost']) {
+    for (const id of ['verdant', 'ashen', 'frost', 'drowned']) {
       game.enterDungeon(id);
       const a = game.area, pr = game.state.progress;
       // Explore like a player: rooms you stand in get their puzzle solved and chests looted,

@@ -42,6 +42,7 @@ export const THEMES = {
   verdant: { floor: ['#4c5e3c', '#45573a', '#546644'], wall: ['#5a6e48', '#3a4a32', '#26321f'], accent: '#8ac850', glow: 'rgba(140,220,90,0.25)', pit: '#141a10' },
   ashen: { floor: ['#4e3c36', '#46352f', '#56423b'], wall: ['#5a463e', '#33272a', '#1e1618'], accent: '#ff7a30', glow: 'rgba(255,120,40,0.25)', pit: '#100808' },
   frost: { floor: ['#9db2c6', '#93a8bc', '#a8bcd0'], wall: ['#8aa0b8', '#5a7088', '#3a4a5e'], accent: '#b8ecff', glow: 'rgba(170,230,255,0.28)', pit: '#1a2230' },
+  drowned: { floor: ['#46564c', '#3e4d44', '#506256'], wall: ['#4e6a62', '#2e423e', '#1a2826'], accent: '#5adcc8', glow: 'rgba(90,220,200,0.25)', pit: '#0c1614', water: '#26524e' },
   interior: { floor: ['#a07850', '#94704a', '#ac8458'], wall: ['#c8b08a', '#7a5a3e', '#4a3424'], accent: '#e0c080', glow: 'rgba(255,220,150,0.2)', pit: '#000' },
 };
 

@@ -202,6 +202,14 @@ export function drawRoomTile(g, map, x, y, px, py, th) {
     R(g, px + 1, py, 1, 16, '#8a8a96'); R(g, px + 7, py, 1, 16, '#8a8a96'); R(g, px + 13, py, 1, 16, '#8a8a96');
   } else if (t === T.HAZARD) {
     R(g, px + 2, py + 4, 12, 2, '#ff6a20'); R(g, px + 5, py + 6, 2, 6, '#ff6a20'); R(g, px + 9, py + 9, 5, 2, '#ffa040');
+  } else if (t === T.BOG || t === T.MIRE) {
+    // A sunken pool of muck, banked wherever its neighbour isn't the same muck.
+    const [deep, mid, fleck] = t === T.BOG ? ['#3a2c1c', '#5a4630', '#7e6848'] : ['#24401a', '#43702a', '#9ed858'];
+    const l = map.get(x - 1, y) === t ? 0 : 2, r = map.get(x + 1, y) === t ? 0 : 2, u = above === t ? 0 : 2, d = below === t ? 0 : 2;
+    R(g, px + l, py + u, 16 - l - r, 16 - u - d, mid);
+    if (u) R(g, px + l, py + u, 16 - l - r, 2, deep);
+    R(g, px + 3 + Math.floor(hsh * 8), py + 7 + Math.floor(tileHash(x, y, 6) * 5), 3, 1, fleck);
+    R(g, px + 9 - Math.floor(hsh * 5), py + 4 + Math.floor(tileHash(x, y, 7) * 8), 1, 1, fleck);
   } else if (t === T.THORNS) {
     R(g, px + 1, py + 3, 14, 11, '#2e4e22'); R(g, px + 3, py + 1, 10, 3, '#3a6a2a');
     for (let k = 0; k < 6; k++) R(g, px + 1 + k * 2 + (k % 2), py + 3 + (k % 3) * 4, 1, 2, '#d8e0a0');

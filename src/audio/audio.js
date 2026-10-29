@@ -273,6 +273,11 @@ const SFX = {
     a.noise(t, { dur: 0.4, vol: 0.2, f: 1400, f2: 350, q: 0.8, attack: 0.01 });
     [0.08, 0.15, 0.22].forEach((d, i) => a.tone(t + d, { f: 900 + i * 350, f2: 1700 + i * 300, dur: 0.06, vol: 0.035 }));
   },
+  lever: (a, t) => { // an iron handle thrown over: a ratchet, then the sluice gates clunk home
+    [0, 0.04, 0.08].forEach((d) => a.noise(t + d, { dur: 0.03, vol: 0.07, f: 2600, q: 6 }));
+    a.tone(t + 0.12, { type: 'triangle', f: 170, f2: 80, dur: 0.2, vol: 0.2 });
+    a.noise(t + 0.12, { dur: 0.18, vol: 0.09, type: 'lowpass', f: 700, f2: 180 });
+  },
   lift: (a, t) => {
     a.tone(t, { f: 220, f2: 440, dur: 0.16, vol: 0.11 });
     a.noise(t, { dur: 0.1, vol: 0.05, type: 'lowpass', f: 1200 });

@@ -15,7 +15,7 @@ const RANGED_SHOT = ['arrow', 'shot', 'shot', 'shot', 'ice', 'ember'];
 
 export class Enemy extends Actor {
   constructor(archetype, biome, x, y, opts = {}) {
-    const st = enemyStats(archetype, biome, opts.gloam ? { tier: GLOAM_TIER } : {});
+    const st = enemyStats(archetype, biome, { tier: opts.gloam ? GLOAM_TIER : opts.tier });
     if (opts.gloam) { st.pal = gloamPalette(st.pal); st.name = `Gloam ${st.name}`; }
     super(x, y, st.w, st.h);
     this.archetype = archetype;

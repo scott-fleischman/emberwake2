@@ -5,6 +5,7 @@
 import { makeRng } from '../core/rng.js';
 import { bfsDistances } from '../core/grid.js';
 import { T, TILE_INFO } from './tiles.js';
+import { setupTide } from './puzzles.js';
 
 export const ROOM_W = 24, ROOM_H = 15;
 export const DOOR_TILES = {
@@ -17,6 +18,7 @@ export const DUNGEON_INFO = {
   verdant: { name: 'Verdant Vault', biome: 0, boss: 'thornmaw' },
   ashen: { name: 'Ashen Reliquary', biome: 5, boss: 'cinder' },
   frost: { name: 'Frostbound Sanctuary', biome: 4, boss: 'rime' },
+  drowned: { name: 'Drowned Fane', biome: 1, boss: 'tide' },
 };
 
 const TEMPLATES = {
@@ -35,18 +37,27 @@ const TEMPLATES = {
     branches: [{ at: 1, roles: ['key'] }, { at: 2, roles: ['combat', 'treasure'] },
       { at: 4, roles: ['timed', 'key'] }, { at: 5, roles: ['treasure'] }],
   },
+  // Tide rooms never anchor a branch: their shores have room for two doors only.
+  drowned: {
+    main: ['entrance', 'combat', 'tide', { role: 'switches', entry: 'locked' }, 'combat', 'timed',
+      { role: 'ordered', entry: 'locked' }, 'tide', 'combat', 'bossdoor', 'boss'],
+    branches: [{ at: 1, roles: ['key'] }, { at: 4, roles: ['push', 'key'] },
+      { at: 5, roles: ['combat', 'treasure'] }, { at: 8, roles: ['treasure'] }],
+  },
 };
 
 const ENTRANCE_LINES = {
   verdant: 'The old roots remember every trespass.',
   ashen: 'The embers here have never gone out.',
   frost: 'Silence is the oldest guardian.',
+  drowned: 'What the tide takes, it keeps.',
 };
 
 const THEMES = {
   verdant: { hazard: T.THORNS, ringHazard: T.THORNS, enemies: [['brute', 2], ['lunger', 3], ['skirmisher', 2], ['ranged', 1]] },
   ashen: { hazard: T.HAZARD, ringHazard: T.HAZARD, enemies: [['brute', 3], ['lunger', 1], ['skirmisher', 2], ['ranged', 2]] },
   frost: { hazard: T.DWATER, ringHazard: null, enemies: [['brute', 1], ['lunger', 2], ['skirmisher', 3], ['ranged', 2]] },
+  drowned: { hazard: T.BOG, ringHazard: T.MIRE, enemies: [['brute', 2], ['lunger', 3], ['skirmisher', 2], ['ranged', 2]] },
 };
 
 const DIRS = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
@@ -110,10 +121,11 @@ export function generateDungeon(id, seed) {
 
   const firstTreasure = rooms.find((r) => r.role === 'treasure')?.id;
   for (const room of rooms) {
-    const next = graph.nodes[room.id].next;
+    const { next, parent } = graph.nodes[room.id];
     const r = rng.fork(`room${room.id}`);
     const spec = {
       theme: id, info, role: room.role, doors: room.doors, r,
+      entryDir: Object.keys(room.doors).find((d) => room.doors[d].to === parent),
       exitDir: next === null ? null : Object.keys(room.doors).find((d) => room.doors[d].to === next),
       treasure: room.id === firstTreasure ? 'map' : r.pick(['heart', 'coins']),
     };
@@ -352,6 +364,20 @@ function ringHazards(L, tile, density) {
   }
 }
 
+// Still water pooled in the arena's corners, on the wall ring like its hazards: décor only (the
+// Tidewarden carries its own water), leaving the floor open for its waves and rings.
+function cornerPools(L) {
+  for (const [cx, sx] of [[1, 1], [22, -1]]) {
+    for (const [cy, sy] of [[1, 1], [13, -1]]) {
+      if (!L.r.chance(0.75)) continue;
+      const cells = [{ x: cx, y: cy }];
+      for (let k = 1, n = L.r.int(2, 4); k < n; k++) cells.push({ x: cx + sx * k, y: cy });
+      for (let k = 1, n = L.r.int(2, 3); k < n; k++) cells.push({ x: cx, y: cy + sy * k });
+      L.stamp(cells, T.DWATER);
+    }
+  }
+}
+
 // Role-specific fixed objects, puzzles and structure.
 const SETUP = {
   entrance(L, s) {
@@ -372,9 +398,11 @@ const SETUP = {
     L.put({ type: 'boss', kind: s.info.boss, x: 12, y: 7 });
     L.put({ type: 'chest', x: 12, y: 9, contents: 'shard' });
     L.put({ type: 'portal', x: 12, y: 5 });
+    if (s.theme === 'drowned') cornerPools(L);
     const tile = THEMES[s.theme].ringHazard;
     if (tile !== null && density > 0) ringHazards(L, tile, density);
   },
+  tide: (L, s) => setupTide(L, s),
   // A full gate line 3 tiles in front of the exit door; the switch sits 12–18 tiles of walking away.
   // For n/s exits a baffle wall forces the run around its ends so that distance is achievable.
   timed(L, s) {

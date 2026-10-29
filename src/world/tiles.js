@@ -13,6 +13,7 @@ export const T = {
   // dungeon rooms & caves
   DFLOOR: 40, DWALL: 41, PIT: 42, GATE: 43, DDOOR: 44, CFLOOR: 45, CWALL: 46,
   HAZARD: 47, BLOCKSPOT: 48, DWATER: 49, THORNS: 50, DICE: 51,
+  BOG: 52, MIRE: 53, // swamp muck: wading in mires (mud) or poisons
 };
 
 export const BIOME = { FOREST: 0, SWAMP: 1, DESERT: 2, MOUNTAIN: 3, SNOW: 4, VOLCANIC: 5 };
@@ -51,6 +52,8 @@ set(T.CWALL, info(true));
 set(T.HAZARD, info(false, { damage: 1 }));
 set(T.DWATER, info(true, { water: true }));
 set(T.THORNS, info(true, { damage: 1 }));
+set(T.BOG, info(false, { effect: 'mud' }));
+set(T.MIRE, info(false, { effect: 'poison' }));
 set(T.MUD, info(false, { slow: 0.9 }));
 set(T.TALLGRASS, info(false, { slow: 0.95 }));
 

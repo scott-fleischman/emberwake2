@@ -18,6 +18,7 @@ import { stageElite, stageRelics } from './quests.js';
 import { Elite, SigilLeaf } from './elites.js';
 import { collectWardProps } from '../gfx/wards.js';
 import { tickZones, drawZones } from './zones.js';
+import { Lever } from './puzzles.js';
 
 const overlap = (a, b, pad = 0) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 + pad && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + pad;
 
@@ -183,6 +184,8 @@ export class Area {
     if (npc) { this.game.talk(npc); return true; }
     const chest = this.entities.find((e) => e instanceof Chest && !e.opened && !e.hidden && Math.hypot(e.x - p.x, e.y - p.y) < 20);
     if (chest) { this.game.openChest(chest); return true; }
+    const lever = this.entities.find((e) => e instanceof Lever && Math.hypot(e.x - p.x, e.y - p.y) < 22);
+    if (lever) { lever.use(this.game); return true; }
     return false;
   }
   npcInFront(p, range) {

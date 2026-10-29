@@ -3,6 +3,7 @@ import { Area } from './areas.js';
 import { Entity, Chest, Particles, FloatText } from './entities.js';
 import { Enemy } from './enemies.js';
 import { createBoss } from './bosses.js';
+import { Lever, setTide, drawTide } from './puzzles.js';
 import { findFreeSpot } from './physics.js';
 import { WARDENS, MEMORIES, bossIntroShots, bossOutroShots, learnLore } from '../data/story.js';
 import { meleeTargets } from './combat.js';
@@ -12,8 +13,9 @@ import { T, TILE, TILE_INFO } from '../world/tiles.js';
 import { THEMES } from '../gfx/palette.js';
 import { RoomRenderer, drawEmberGlow, drawShadow } from '../gfx/render.js';
 import { R } from '../gfx/sprites.js';
-import { DUNGEON_FAMILY } from '../data/enemies.js';
+import { DUNGEON_FAMILY, DUNGEON_TIER } from '../data/enemies.js';
 import { TAU } from '../core/math.js';
+import { tileHash } from '../core/rng.js';
 
 const OPP = { n: 's', s: 'n', e: 'w', w: 'e' };
 const PUZZLE_ROLES = new Set(['timed', 'switches', 'ordered', 'push']);
@@ -180,8 +182,9 @@ export class DungeonArea extends Area {
     this.id = id;
     this.dungeon = generateDungeon(id, game.world.seed);
     this.byId = new Map(this.dungeon.rooms.map((r) => [r.id, r]));
-    this.theme = { ...THEMES[id], kind: 'dungeon', water: id === 'frost' ? '#6a9ac8' : '#3a5a7a' };
+    this.theme = { ...THEMES[id], kind: 'dungeon', water: THEMES[id].water ?? (id === 'frost' ? '#6a9ac8' : '#3a5a7a') };
     this.family = DUNGEON_FAMILY[id];
+    this.tier = DUNGEON_TIER[id]; // undefined: the region's own
     this.name = DUNGEON_INFO[id].name;
     this.tokenMax = 2;
     this.lockMsgT = 0;
@@ -238,7 +241,7 @@ export class DungeonArea extends Area {
     for (const o of room.objects) {
       switch (o.type) {
         case 'enemy':
-          if (!cleared) { this.spawnEnemy(new Enemy(o.archetype, this.family, o.x * TILE + 8, o.y * TILE + 8, { aggro: true, leash: 999, hpMult: g.diff.enemyHp })); hasEnemies = true; }
+          if (!cleared) { this.spawnEnemy(new Enemy(o.archetype, this.family, o.x * TILE + 8, o.y * TILE + 8, { aggro: true, leash: 999, hpMult: g.diff.enemyHp, tier: this.tier })); hasEnemies = true; }
           break;
         case 'chest': {
           const id = `d:${this.key()}:chest`;
@@ -268,6 +271,7 @@ export class DungeonArea extends Area {
         case 'portal': this.objs.push(this.spawn(new Portal(o, this))); break;
         case 'plaque': this.objs.push(this.spawn(new Plaque(o, this))); this.map.extraSolid[o.y * ROOM_W + o.x] = 1; break;
         case 'torch': this.spawn(new Torch(o, this)); break;
+        case 'lever': this.objs.push(this.spawn(new Lever(o, this))); this.map.extraSolid[o.y * ROOM_W + o.x] = 1; break;
         case 'boss':
           if (!bossDone) {
             this.boss = createBoss(o.kind, o.x * TILE + 8, o.y * TILE + 8, g.diff.enemyHp);
@@ -279,6 +283,7 @@ export class DungeonArea extends Area {
     }
     if (room.puzzle?.kind === 'ordered') this.nextOrder = 1;
     if (room.puzzle?.kind === 'timed' && this.solved) this.setGate(true);
+    if (room.puzzle?.kind === 'tide') { this.tide = this.pr.tides[this.key()] ?? room.puzzle.start; setTide(this); }
     this.applyDoors();
     if (hasEnemies && room.clearToOpen) this.shutPending = true;
     // Place the player just inside the door they came through.
@@ -426,6 +431,9 @@ export class DungeonArea extends Area {
         else g.audio.sfx('gate', { pitch: 0.8 });
       }
     }
+    // Bog and mire cling to whoever wades in; a roll carries you over them.
+    const muck = TILE_INFO[this.map.tileAtPixel(p.x, p.y + 2)]?.effect;
+    if (muck && p.mode !== 'dodge') g.applyEffect(muck, null);
     // Push blocks
     const block = this.objs.find((o) => o instanceof Block);
     if (block && !this.solved) this.updateBlock(block, dt, ctx);
@@ -558,6 +566,17 @@ export class DungeonArea extends Area {
 
   drawGround(g, cam) {
     this.renderer.draw(g, cam);
+    if (this.room.puzzle?.kind === 'tide') drawTide(g, cam, this);
+    // Muck stirs: now and then a bubble swells and pops on each bog or mire tile.
+    for (let i = 0; i < this.map.tiles.length; i++) {
+      const t = this.map.tiles[i];
+      if (t !== T.BOG && t !== T.MIRE) continue;
+      const x = i % ROOM_W, y = (i / ROOM_W) | 0, h = tileHash(x, y, 13), ph = (this.time * (t === T.MIRE ? 0.8 : 0.45) + h * 7) % 3;
+      if (ph > 0.7) continue;
+      const bx = x * TILE - cam.left + 4 + Math.floor(h * 8), by = y * TILE - cam.top + 5 + Math.floor(tileHash(x, y, 14) * 6);
+      g.strokeStyle = t === T.MIRE ? 'rgba(190,240,110,0.8)' : 'rgba(150,120,80,0.8)'; g.lineWidth = 1;
+      g.beginPath(); g.arc(bx, by, 0.5 + ph * 2.5, 0, TAU); g.stroke();
+    }
     // Door frames and their states.
     for (const [dir, state] of Object.entries(this.doorState)) {
       const tiles = DOOR_TILES[dir];

@@ -17,10 +17,11 @@ export function walkable(map, x, y, avoid, bush = false) {
   return !(avoid && avoid.has(y * map.w + x));
 }
 
+// Muck is walkable, but mud halves the pace and mire poisons: worth a detour of a few tiles.
 export function stepCost(map, x, y) {
   if (isBush(map, x, y)) return 5;
   const t = map.tiles[y * map.w + x];
-  return t === T.SHALLOW || t === T.TALLGRASS ? 1.6 : 1;
+  return t === T.SHALLOW || t === T.TALLGRASS ? 1.6 : t === T.BOG ? 4 : t === T.MIRE ? 6 : 1;
 }
 
 const cutsBushes = (map) => !!map.ground; // only the overworld has bushes

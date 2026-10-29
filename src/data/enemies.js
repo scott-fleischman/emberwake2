@@ -31,7 +31,9 @@ export const FAMILIES = [
   }),
 ];
 
-export const DUNGEON_FAMILY = { verdant: 0, ashen: 5, frost: 4 };
+export const DUNGEON_FAMILY = { verdant: 0, ashen: 5, frost: 4, drowned: 1 };
+// A dungeon tougher than its region: the Fane's swamp kin fight at the Sanctuary's tier.
+export const DUNGEON_TIER = { drowned: 1.9 };
 
 // opts.tier overrides the region's, as for the Gloam-touched.
 export function enemyStats(archetype, biome, opts = {}) {

@@ -532,6 +532,8 @@ export class Bot {
       let s = -dz.lv * 12;
       // Brambles prick from beside the tile too (Player's contact probes), not only underfoot.
       if ([[-7, 0], [7, 0], [0, -6], [0, 6]].some(([ox, oy]) => map.tileAtPixel(qx + ox, qy + oy) === T.THORNS)) s -= 8;
+      const under = map.tileAtPixel(qx, qy + 2);
+      if (under === T.BOG || under === T.MIRE) s -= 4;
       s -= Math.abs(Math.hypot(focus.x - qx, focus.y - (qy - 2)) - desired) * 0.25;
       for (const e of list) if (e !== focus && Math.hypot(e.x - qx, e.y - qy) < 22) s -= 1.5;
       if (g.area.kind === 'dungeon') s -= Math.hypot(qx - ROOM_W * 8, qy - ROOM_H * 8) * 0.006;
@@ -846,7 +848,17 @@ export class Bot {
       const f = room.objects.find((o) => o.type === 'fountain');
       if (f) { this.status = 'Drinking from the fountain'; yield* this.useTile({ x: f.x, y: f.y }); }
     }
-    if (room.puzzle && !pr.solved.includes(`${a.id}:${room.id}`)) yield* this.solvePuzzle();
+    // A tide room never counts as solved: its water is crossed afresh, whenever the way on is cut off.
+    if (room.puzzle?.kind === 'tide') {
+      const on = this.onwardDir(), p = this.g.player;
+      if (on && reachMap(a.map, tileOf(p.x, p.y))[INNER[on].y * ROOM_W + INNER[on].x] < 0) yield* this.solveTide(on);
+    } else if (room.puzzle && !pr.solved.includes(`${a.id}:${room.id}`)) yield* this.solvePuzzle();
+  }
+
+  // The door on to the next room of this one's chain (the parent's door has the lower id).
+  onwardDir() {
+    const r = this.g.area.room;
+    return Object.keys(r.doors).filter((d) => r.doors[d].to > r.id).sort((x, y) => r.doors[x].to - r.doors[y].to)[0] ?? null;
   }
 
   planDungeon(full) {
@@ -895,13 +907,14 @@ export class Bot {
     const boss = a.dungeon.bossId;
     return pick(strict, chestLeft)
       || (!bossDone && loose.has(boss) ? firstStep(loose, boss) : null)
-      || pick(strict, (r) => r.puzzle && !solved(r))
+      || pick(strict, (r) => r.puzzle && r.puzzle.kind !== 'tide' && !solved(r))
       || pick(loose, (r) => !visited.has(r.id))
       || (full ? pick(loose, chestLeft) : null);
   }
 
   *exitRoom(dir) {
     const a = this.g.area, start = a.roomId;
+    if (a.room.puzzle?.kind === 'tide') yield* this.solveTide(dir);
     yield* this.walkTo(INNER[dir], { timeout: 20 });
     const [ox, oy] = OUT[dir];
     for (let t = 0; t < 3 && this.g.area === a && a.roomId === start; t += this.dt) {
@@ -1034,6 +1047,53 @@ export class Bot {
     }
     if (!best) return;
     yield* this.walkTo(best, { sprint: true, near: 0, timeout: a.room.puzzle.duration + 1, until: () => a.solved });
+  }
+
+  // Cross a tide room to the door `dir`: plan over (tile, tide), walk each dry stretch, and throw the
+  // levers on the way. Re-plans after every throw, so a tide left anyhow is no trouble.
+  *solveTide(dir = this.onwardDir()) {
+    const a = this.g.area;
+    if (a.room.puzzle?.kind !== 'tide' || !dir) return false;
+    const goal = INNER[dir];
+    for (let throws = 0; throws < 8 && this.g.area === a; throws++) {
+      const plan = this.tidePlan(goal);
+      if (!plan) { this.status = 'No way across the water'; this.note(this.status); return false; }
+      if (!plan.length) { this.status = 'Wading across'; return yield* this.walkTo(goal, { timeout: 30 }); }
+      this.status = 'Turning the tide';
+      const before = a.tide;
+      yield* this.useTile(plan[0].lever, { from: plan[0].from });
+      for (let t = 0; t < 0.3 && a.tide === before; t += this.dt) yield;
+    }
+    return false;
+  }
+
+  // The (tile, tide) BFS through our own walkable(): a tide tile is open when its set is dry at that
+  // tide, and a lever is thrown from a tile beside it. Returns the throws in order ({lever, from}),
+  // [] when the goal is already a walk away, or null when it can't be reached.
+  tidePlan(goal) {
+    const a = this.g.area, map = a.map, pz = a.room.puzzle, p = this.g.player, W = map.w;
+    // A state is tile * 2 + tide (0: 'a', 1: 'b').
+    const side = new Map([...pz.a.map((c) => [c.y * W + c.x, 0]), ...pz.b.map((c) => [c.y * W + c.x, 1])]);
+    const throwAt = new Map();
+    for (const l of pz.levers) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) throwAt.set((l.y + dy) * W + l.x + dx, l);
+    const open = (x, y, s) => { const k = side.get(y * W + x); return k === undefined ? walkable(map, x, y) : k === s; };
+    const cur = tileOf(p.x, p.y), start = (cur.y * W + cur.x) * 2 + (a.tide === 'a' ? 0 : 1);
+    const prev = new Map([[start, -1]]), q = [start];
+    for (let h = 0; h < q.length; h++) {
+      const st = q[h], i = st >> 1, s = st & 1, x = i % W, y = (i / W) | 0;
+      if (x === goal.x && y === goal.y) {
+        const throws = [];
+        for (let k = st; prev.get(k) >= 0; k = prev.get(k)) {
+          const j = prev.get(k) >> 1;
+          if (j === k >> 1) throws.unshift({ lever: throwAt.get(j), from: { x: j % W, y: (j / W) | 0 } });
+        }
+        return throws;
+      }
+      const next = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => open(x + dx, y + dy, s)).map(([dx, dy]) => ((y + dy) * W + x + dx) * 2 + s);
+      if (throwAt.has(i)) next.push(st ^ 1);
+      for (const n of next) if (!prev.has(n)) { prev.set(n, st); q.push(n); }
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------- the any% route
