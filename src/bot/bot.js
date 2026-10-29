@@ -1030,8 +1030,8 @@ export class Bot {
     }
   }
 
-  // Take the flame, then walk (never roll) to the nearest dark brazier and on to the next, sprinting;
-  // back to the source for more whenever it gutters. Lit braziers stay lit.
+  // Take the flame, then walk (never roll) to the nearest dark brazier and on to the next, sprinting.
+  // If it gutters, its braziers go dark with it: back to the source to start the tour again.
   *solveCarry() {
     const a = this.g.area, pz = a.room.puzzle, p = this.g.player;
     for (let guard = 0; guard < 16 && !a.solved && this.g.area === a; guard++) {

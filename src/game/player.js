@@ -204,10 +204,11 @@ export class Player extends Actor {
     this.shake('roll');
   }
 
-  // The carried flame goes out: burnt down, or rolled out.
+  // The carried flame goes out: burnt down, or rolled out. The braziers it lit may go with it.
   snuff(ctx) {
     this.flame = 0;
     this.game.audio.sfx('flame_out');
+    ctx.area.flameOut?.();
     ctx.area.spawn(new Particles(this.x + (this.facing === 'left' ? -6 : 5), this.y - 12, { count: 6, color: ['#6a6070', '#9a90a0'], speed: 12, life: 0.7, up: 22 }));
   }
 

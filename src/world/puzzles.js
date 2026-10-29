@@ -184,7 +184,8 @@ const inField = (x, y) => x >= 2 && y >= 2 && x <= ROOM_W - 3 && y <= ROOM_H - 3
 const walkTile = (t) => !TILE_INFO[t].solid && t !== T.PIT && t !== T.HAZARD;
 
 // The cells the beam lights, from the one past the source on, and whether it ends on the receiver.
-// `end` is the cell that stopped it: a wall, a solid tile, the source, or the receiver itself.
+// `end` is the cell that stopped it: the wall ring (a doorway too: the light stays in the room), a solid
+// tile, the source, or the receiver itself.
 export function traceBeam(room, states) {
   const { source, receiver, mirrors } = room.puzzle;
   const at = new Map(mirrors.map((m, i) => [idx(m.x, m.y), i]));
@@ -193,7 +194,7 @@ export function traceBeam(room, states) {
   // A beam can't loop (it would have to come back through the source), but cap it all the same.
   for (let n = 0; n < ROOM_W * ROOM_H * 2; n++) {
     x += dx; y += dy;
-    if (!inRoom(x, y) || TILE_INFO[room.tiles[idx(x, y)]].solid || (x === source.x && y === source.y)) break;
+    if (!inInterior(x, y) || TILE_INFO[room.tiles[idx(x, y)]].solid || (x === source.x && y === source.y)) break;
     cells.push({ x, y });
     if (x === receiver.x && y === receiver.y) return { cells, hit: true, end: { x, y } };
     const m = at.get(idx(x, y));
@@ -288,8 +289,9 @@ function planBeam(L, runs) {
 }
 
 // ---------------------------------------------------------------- the ember carry
-// Take flame at the source and light every dark brazier before it gutters. The flame lasts for the
-// nearest-neighbour tour at 100 px a second, plus a second to spare.
+// Take flame at the source and light every dark brazier with it before it gutters (when it dies, its
+// braziers die with it). The flame lasts for the nearest-neighbour tour at 100 px a second, plus a
+// second to spare.
 export function setupCarry(L) {
   for (let t = 0; t < 500; t++) {
     const field = L.spots(3, inField), src = L.r.pick(field);
@@ -301,7 +303,7 @@ export function setupCarry(L) {
     const source = { x: src.x, y: src.y };
     L.put({ type: 'brazier', x: source.x, y: source.y, source: true });
     braziers.forEach((b, index) => L.put({ type: 'brazier', x: b.x, y: b.y, index }));
-    L.put({ type: 'plaque', x: plaque.x, y: plaque.y, text: 'Take the flame and kindle every brazier before it gutters. A roll will snuff it.' });
+    L.put({ type: 'plaque', x: plaque.x, y: plaque.y, text: 'Kindle every brazier from one flame before it gutters. If it dies, so do they. A roll will snuff it.' });
     const burn = Math.round((tourLength(L, source, braziers) * 16 / 100 + 1.0) * 100) / 100;
     L.puzzle = { kind: 'carry', source, braziers: braziers.map(({ x, y }) => ({ x, y })), burn };
     return;

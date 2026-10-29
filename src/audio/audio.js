@@ -307,6 +307,10 @@ const SFX = {
     a.noise(t, { dur: 0.45, vol: 0.13, type: 'highpass', f: 5000, f2: 1500, attack: 0.01 });
     a.tone(t, { type: 'triangle', f: 300, f2: 120, dur: 0.25, vol: 0.05 });
   },
+  brazier_douse: (a, t) => { // every brazier the flame lit sighs out together: a soft, falling breath
+    a.noise(t + 0.1, { dur: 0.8, vol: 0.07, type: 'lowpass', f: 1400, f2: 200, attack: 0.15 });
+    a.notes(t + 0.1, [64, 60, 55], 0.12, { type: 'triangle', dur: 0.5, vol: 0.035, lp: 1500 });
+  },
   lift: (a, t) => {
     a.tone(t, { f: 220, f2: 440, dur: 0.16, vol: 0.11 });
     a.noise(t, { dur: 0.1, vol: 0.05, type: 'lowpass', f: 1200 });

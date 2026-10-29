@@ -116,10 +116,11 @@ export class GameScene {
     this.clearEffects();
   }
 
-  // Whatever the player was in the middle of (a roll, a swing, a charge, a shove) doesn't carry across a jump.
+  // Whatever the player was in the middle of (a roll, a swing, a charge, a shove, a carried flame)
+  // doesn't carry across a jump.
   settlePlayer() {
     const p = this.player;
-    Object.assign(p, { lock: null, mode: p.mode === 'dead' ? 'dead' : 'normal', modeT: 0, charge: 0, kbT: 0, vx: 0, vy: 0 });
+    Object.assign(p, { lock: null, mode: p.mode === 'dead' ? 'dead' : 'normal', modeT: 0, charge: 0, kbT: 0, vx: 0, vy: 0, flame: 0 });
   }
 
   placePlayer(x, y, facing = 'down') {

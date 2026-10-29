@@ -331,6 +331,8 @@ export class DungeonArea extends Area {
     if (room.puzzle?.kind === 'timed' && this.solved) this.setGate(true);
     if (room.puzzle?.kind === 'tide') { this.tide = this.pr.tides[this.key()] ?? room.puzzle.start; setTide(this); }
     if (room.puzzle?.kind === 'beam') this.relight();
+    // An unsolved carry room's fire lasts only as long as the flame that lit it, and no flame passes a door.
+    if (room.puzzle?.kind === 'carry' && !this.solved) delete (this.litBraziers ??= {})[room.id];
     this.applyDoors();
     if (hasEnemies && room.clearToOpen) this.shutPending = true;
     // Place the player just inside the door they came through.
@@ -461,11 +463,26 @@ export class DungeonArea extends Area {
     } else this.game.audio.sfx('beam_hum', { pitch: 0.8 + this.beam.cells.length / 40 });
   }
 
+  // Fresh flame starts a fresh run: whatever the last one lit goes dark.
   takeFlame() {
     const p = this.game.player;
+    this.douse();
     p.flame = p.flameMax = this.room.puzzle.burn;
     this.game.audio.sfx('flame_take');
     this.spawn(new Particles(p.x, p.y - 10, { count: 8, color: ['#ffd060', '#ff8a30'], speed: 30, life: 0.4, up: 20 }));
+  }
+
+  // The carried flame went out (see Player.snuff): every brazier it lit dies with it, unless they all burn.
+  flameOut() {
+    if (this.room.puzzle?.kind === 'carry') this.douse();
+  }
+
+  douse() {
+    const st = this.brazierState();
+    if (this.solved || !st.some(Boolean)) return;
+    for (const b of this.objs) if (b instanceof Brazier && !b.obj.source && b.lit) this.spawn(new Particles(b.x, b.y - 10, { count: 6, color: ['#6a6070', '#9a90a0'], speed: 12, life: 0.8, up: 24 }));
+    st.fill(false);
+    this.game.audio.sfx('brazier_douse');
   }
 
   lightBrazier(b) {

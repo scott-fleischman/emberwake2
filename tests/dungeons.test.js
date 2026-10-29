@@ -411,29 +411,52 @@ test('an arrow turns a mirror too', async () => {
   assert.notEqual(a.mirrorState()[0], m.state);
 });
 
-test('a carried flame lights dark braziers; they stay lit when it gutters, and the source gives more', async () => {
+test('one flame must light them all: when it gutters, is rolled out or is retaken, its braziers go dark', async () => {
   const s = await sandbox(), heard = [];
   s.app.audio.sfx = (name) => heard.push(name);
   s.game.enterDungeon('spire');
   const a = s.game.area, room = a.dungeon.rooms.find((r) => r.puzzle?.kind === 'carry'), pz = room.puzzle, p = s.game.player;
   a.enterRoom(room.id, OPP[entryOf(room)]);
-  const on = onwardOf(room);
+  const on = onwardOf(room), lit = () => a.brazierState().filter(Boolean).length;
   assert.ok([pz.source, ...pz.braziers].every((c) => a.map.isSolid(c.x, c.y)), 'solid');
   standBy(s, pz.braziers[0]); s.step(0.1);
-  assert.ok(!a.brazierState()[0], 'no flame, no fire');
+  assert.equal(lit(), 0, 'no flame, no fire');
+  // Gutters mid-tour: the braziers it lit go dark, and it lights nothing more.
   standBy(s, pz.source); assert.ok(a.interact());
   assert.equal(p.flame, pz.burn);
   standBy(s, pz.braziers[0]); s.step(0.1);
-  assert.ok(a.brazierState()[0], 'lit');
+  standBy(s, pz.braziers[1]); s.step(0.1);
+  assert.equal(lit(), 2);
+  heard.length = 0;
   s.step(pz.burn);
   assert.equal(p.flame, 0, 'guttered');
-  standBy(s, pz.braziers[1]); s.step(0.1);
-  assert.ok(!a.brazierState()[1], 'a guttered flame lights nothing');
-  assert.ok(a.brazierState()[0], 'a lit brazier stays lit');
+  assert.equal(lit(), 0, 'its braziers go dark');
+  assert.ok(heard.includes('flame_out') && heard.includes('brazier_douse'), heard.join());
+  standBy(s, pz.braziers[2]); s.step(0.1);
+  assert.equal(lit(), 0, 'a guttered flame lights nothing');
+  // Rolled out: the same.
+  standBy(s, pz.source); a.interact(); standBy(s, pz.braziers[0]); s.step(0.1);
+  assert.equal(lit(), 1);
+  s.app.input.press('Space'); s.step(0.1); s.app.input.release('Space');
+  assert.equal(p.flame, 0); assert.equal(lit(), 0, 'rolled out');
+  // Retaken: a fresh run.
+  standBy(s, pz.source); a.interact(); standBy(s, pz.braziers[0]); s.step(0.1);
+  standBy(s, pz.source); a.interact();
+  assert.equal(lit(), 0, 'retaken');
+  assert.equal(p.flame, pz.burn);
+  // Walked out on: none of them wait for you to come back.
+  standBy(s, pz.braziers[0]); s.step(0.1);
+  a.enterRoom(a.dungeon.entranceId, 'n'); a.enterRoom(room.id, OPP[entryOf(room)]);
+  assert.equal(p.flame, 0); assert.equal(lit(), 0, 'reset on leaving');
   assert.equal(a.doorState[on], 'sealed');
-  for (let i = 1; i < pz.braziers.length; i++) { standBy(s, pz.source); a.interact(); standBy(s, pz.braziers[i]); s.step(0.1); }
+  // The whole tour on one flame solves it, and a solved room keeps its fire.
+  standBy(s, pz.source); a.interact();
+  for (const b of pz.braziers) { standBy(s, b); s.step(0.1); }
   assert.ok(a.solved);
   assert.equal(a.doorState[on], 'open');
+  s.step(pz.burn);
+  assert.equal(p.flame, 0);
+  assert.equal(lit(), pz.braziers.length, 'solved stays lit');
   for (const n of ['flame_take', 'flame_light', 'flame_out']) assert.ok(heard.includes(n), n);
   // The flame never leaves the room.
   standBy(s, pz.source); a.interact();
@@ -441,12 +464,45 @@ test('a carried flame lights dark braziers; they stay lit when it gutters, and t
   assert.equal(p.flame, 0);
 });
 
+test('a carried flame never survives a jump between areas, or a fall', async () => {
+  const s = await sandbox(); s.game.enterDungeon('spire');
+  const p = s.game.player;
+  p.flame = 5; s.game.exitDungeon();
+  assert.equal(s.game.area.kind, 'overworld');
+  assert.equal(p.flame, 0, 'out of the dungeon');
+  s.game.enterDungeon('spire');
+  const a = s.game.area, room = a.dungeon.rooms.find((r) => r.puzzle?.kind === 'carry');
+  a.enterRoom(room.id, OPP[entryOf(room)]);
+  p.flame = 5; s.game.die();
+  for (let t = 0; t < 8 && (s.game.deathT > 0 || s.game.uiStack.length); t += 0.1) { s.app.input.press('Enter'); s.step(0.05); s.app.input.release('Enter'); s.step(0.05); }
+  assert.equal(p.mode, 'normal', 'back on its feet');
+  assert.equal(p.flame, 0, 'after a fall');
+});
+
+test('the beam stops at the room\'s edge, never out through a doorway', () => {
+  for (const seed of SEEDS) for (const r of get('spire', seed).rooms.filter((q) => q.puzzle?.kind === 'beam')) {
+    const n = r.puzzle.mirrors.length;
+    for (let m = 0; m < 1 << n; m++) {
+      const b = traceBeam(r, r.puzzle.mirrors.map((_, i) => ((m >> i) & 1 ? '/' : '\\')));
+      assert.ok(b.cells.every((c) => c.x >= 1 && c.y >= 1 && c.x <= ROOM_W - 2 && c.y <= ROOM_H - 2), `${seed}/${r.id} mirrors ${m}`);
+    }
+  }
+  // Aimed straight at each door, it ends at the doorway.
+  const r = get('spire', 1).rooms.find((q) => q.puzzle?.kind === 'beam');
+  for (const dir of Object.keys(r.doors)) {
+    const g = DOOR_TILES[dir][0], [dx, dy] = STEP[dir], source = { x: g.x - dx * 5, y: g.y - dy * 5, dir };
+    const b = traceBeam({ tiles: r.tiles, puzzle: { source, receiver: { x: -1, y: -1 }, mirrors: [] } }, []);
+    assert.deepEqual(b.end, g, dir);
+    assert.equal(b.cells.length, 4, dir);
+  }
+});
+
 test('the beam and the carried flame have sounds of their own', () => {
   const engine = new AudioEngine(), calls = [];
   engine.ctx = { currentTime: 0 };
   for (const k of ['tone', 'noise']) engine[k] = (t, o) => calls.push([k, t, o]);
   const recipe = (name) => { calls.length = 0; engine._last = {}; engine.sfx(name); return JSON.stringify(calls); };
-  const names = ['beam_turn', 'beam_hum', 'beam_lit', 'flame_take', 'flame_light', 'flame_out'];
+  const names = ['beam_turn', 'beam_hum', 'beam_lit', 'flame_take', 'flame_light', 'flame_out', 'brazier_douse'];
   for (const n of names) { assert.ok(SFX_NAMES.includes(n), n); assert.ok(recipe(n).length > 2, `${n} makes no sound`); }
   assert.equal(new Set(names.map(recipe)).size, names.length);
 });
@@ -471,7 +527,7 @@ test('beam and carry rooms, and the flame in hand, draw without randomness', asy
   }
 });
 
-test('the descent fights hardest: more Gloam kin, of every ward, and a champion', async () => {
+test('the descent fights hardest: more Gloam kin than any other fight, of every ward, and a champion', async () => {
   for (const seed of ['d1', 'quests', 'fen77']) {
     const s = await sandbox({ seed }); s.game.enterDungeon('spire');
     const a = s.game.area, deep = descentOf(a.dungeon), diff = s.game.diff.enemyHp;
@@ -479,9 +535,9 @@ test('the descent fights hardest: more Gloam kin, of every ward, and a champion'
       a.enterRoom(room.id, OPP[entryOf(room)]);
       return { room, list: a.enemyList.slice(), n: a.enemyList.length, hp: a.enemyList.reduce((t, e) => t + e.maxHp, 0) };
     });
-    const hard = fights.filter((f) => deep.has(f.room.id)), wings = fights.filter((f) => WINGS.includes(f.room.theme));
+    const hard = fights.filter((f) => deep.has(f.room.id)), others = fights.filter((f) => !deep.has(f.room.id));
     assert.equal(hard.length, 3, seed);
-    assert.ok(wings.length >= 4, seed);
+    assert.ok(others.length >= 5 && others.some((f) => f.room.theme === 'spire'), seed);
     for (const f of hard) {
       const champs = f.list.filter((e) => e.champion);
       assert.equal(champs.length, 1, `${seed}/${f.room.id} champion`);
@@ -491,7 +547,7 @@ test('the descent fights hardest: more Gloam kin, of every ward, and a champion'
       const c = champs[0];
       assert.equal(c.scale, 1.6);
       assert.equal(c.maxHp, Math.round(enemyStats(c.archetype, c.biome, { tier: 2.2 }).hp * 1.6 * diff));
-      for (const w of wings) assert.ok(f.n > w.n && f.hp > w.hp, `${seed}: descent room ${f.room.id} (${f.n} foes, ${f.hp} hp) vs wing room ${w.room.id} (${w.n}, ${w.hp})`);
+      for (const w of others) assert.ok(f.n > w.n && f.hp > w.hp, `${seed}: descent room ${f.room.id} (${f.n} foes, ${f.hp} hp) vs room ${w.room.id} (${w.n}, ${w.hp})`);
     }
   }
 });
