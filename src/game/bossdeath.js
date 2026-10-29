@@ -3,7 +3,7 @@
 // player a few steps south facing it; a fade back in; then the boss dematerializes on the spot and
 // the area takes the victory (its spirit appears where the boss stood). The scene runs this in
 // place of the area, so nothing else moves and the player can't act. Elites keep their own defeat.
-import { Poof, Projectile } from './entities.js';
+import { Bomb, Poof, Projectile } from './entities.js';
 import { Burst, DIE } from './bosses.js';
 
 const STEPS = { stop: 0.25, fadeout: 0.6, fadein: 0.6, dissolve: DIE };
@@ -21,10 +21,10 @@ export class BossDeath {
     game.cam.shake(4, 0.4);
   }
 
-  // Every minion, shot and zone goes: in poofs at the killing blow, unseen once the screen is black.
+  // Every minion, shot, lit bomb and zone goes: in poofs at the killing blow, unseen once the screen is black.
   sweep(poof) {
     const a = this.area;
-    for (const e of [...a.enemyList, ...a.entities.filter((q) => q instanceof Projectile)]) {
+    for (const e of [...a.enemyList, ...a.entities.filter((q) => q instanceof Projectile || q instanceof Bomb)]) {
       if (e === this.boss || e.dead) continue;
       e.dead = true;
       if (poof) a.spawn(new Poof(e.x, e.y - 4));
@@ -40,7 +40,7 @@ export class BossDeath {
     b.x = b.spawn.x; b.y = b.spawn.y; b.lx = b.x; b.ly = b.y; // a jump, not a walk: tickTimers mustn't turn it
     Object.assign(b, { view: 'front', state: 'defeated', roarT: 0, flash: 0 });
     g.placePlayer(b.spawn.x, b.spawn.y + 48, 'up'); // freed onto open floor
-    Object.assign(g.player, { vx: 0, vy: 0, kbT: 0 });
+    g.settlePlayer();
     g.followCamera(0, true);
   }
 

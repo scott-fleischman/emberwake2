@@ -85,6 +85,7 @@ class Boss extends Actor {
     this.face = -1; this.view = this.info.view; this.roarT = 0; this.phaseT = 9; this.mvx = this.mvy = 0; // visual only
   }
   update(dt, ctx) {
+    if (this.hp <= 0 && this.state !== 'dying') return; // killed this frame (the player updates first): the death flow has the stage
     this.tickTimers(dt); this.t += dt;
     if (this.state === 'dying') return this.dyingUpdate(dt, ctx);
     this.checkPhase(ctx);

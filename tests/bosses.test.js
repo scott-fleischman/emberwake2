@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { sandbox, recorder } from './helpers/sandbox.js';
 import { WARDEN_MOVES, createBoss, viewFrom } from '../src/game/bosses.js';
 import { Enemy } from '../src/game/enemies.js';
+import { Bomb, Projectile } from '../src/game/entities.js';
 import { makeZone } from '../src/game/zones.js';
 import { AudioEngine, SFX_NAMES, MUSIC_KEYS } from '../src/audio/audio.js';
 import { paintCinder, CINDER_PAL } from '../src/gfx/art-cinder.js';
@@ -174,6 +175,8 @@ test('the death flow clears the arena and frees the player', async () => {
   const b = s.spawn(createBoss('cinder', s.center.x, s.center.y - 40)); b.phase = 2; b.state = 'volley';
   s.spawn(new Enemy('skirmisher', 5, s.center.x - 30, s.center.y));
   s.area.zones.push(makeZone('circle', { ...s.center, r: 10, t: 2 }));
+  const foeShot = s.spawn(new Projectile('thorn', s.center.x + 60, s.center.y - 20, Math.PI, 90, 1, 'enemy'));
+  const myShot = s.spawn(new Projectile('arrow', s.center.x - 60, s.center.y - 20, 0, 90, 1, 'player'));
   b.x += 70; s.game.player.x = b.spawn.x; s.game.player.y = b.spawn.y;
   let defeated = false; s.area.onBossDefeated = () => { defeated = true; };
   b.damage(9999, s.game.player, s.game.area.ctx);
@@ -181,10 +184,54 @@ test('the death flow clears the arena and frees the player', async () => {
   assert.deepEqual({ x: b.x, y: b.y }, b.spawn);
   assert.equal(b.view, 'front');
   assert.equal(s.area.enemyList.filter((e) => !e.boss && !e.dead).length, 0);
+  assert.ok(foeShot.dead && myShot.dead && !s.area.entities.some((e) => e instanceof Projectile), 'every shot, theirs and ours, is gone');
   assert.equal(s.area.zones.length, 0);
   assert.ok(!s.area.map.isSolid(Math.floor(s.game.player.x / 16), Math.floor(s.game.player.y / 16)));
   assert.ok(s.game.player.y > b.spawn.y);
   s.step(2); assert.ok(defeated);
+});
+// The player's blow runs before the warden's own update, so a melee kill leaves it a turn to act in.
+test('a warden killed this frame does nothing more this frame', async () => {
+  const s = await sandbox();
+  const b = s.spawn(createBoss('thornmaw', s.center.x, s.center.y - 40)); b.phase = 2; b.state = 'thorns'; b.timer = 0; b.bursts = 1;
+  b.damage(9999, s.game.player, s.area.ctx);
+  const seen = s.area.entities.length;
+  b.update(1 / 60, s.area.ctx);
+  assert.equal(s.area.entities.length, seen, 'its thorn ring would have outlived the sweep');
+  assert.equal(b.state, 'thorns');
+});
+test('a lit bomb goes with the death sweep and never goes off', async () => {
+  const s = await sandbox(), p = s.game.player; let blasts = 0;
+  s.area.explode = () => { blasts++; };
+  const b = s.spawn(createBoss('cinder', s.center.x, s.center.y - 40)); b.phase = 2; b.state = 'vent';
+  const bomb = s.spawn(new Bomb(p.x + 10, p.y, p));
+  b.damage(9999, p, s.area.ctx); s.step(3.4);
+  assert.ok(bomb.dead && !s.area.entities.includes(bomb));
+  assert.equal(blasts, 0);
+});
+test('the player is freed from a roll, a charge and a lock, standing where the flow set them', async () => {
+  const s = await sandbox(), p = s.game.player;
+  const b = s.spawn(createBoss('cinder', s.center.x, s.center.y - 40)); b.phase = 2; b.state = 'vent';
+  Object.assign(p, { mode: 'dodge', modeT: 0.3, dodgeX: 1, dodgeY: 0, charge: 5, lock: b });
+  b.damage(9999, p, s.area.ctx); s.step(1.2);
+  assert.deepEqual([p.mode, p.charge, p.lock, p.facing], ['normal', 0, null, 'up']);
+  const at = { x: p.x, y: p.y };
+  s.step(3.2); // the flow ends and the area runs on a few frames
+  assert.ok(b.dead && !s.game.bossDeath);
+  assert.deepEqual({ x: p.x, y: p.y }, at, 'no roll or spin carried on from the killing blow');
+  assert.equal(p.mode, 'normal');
+});
+// A zone or a foe earlier in the frame can kill the player before the arrow that fells the warden lands.
+test('a warden felled after the player died starts no death flow', async () => {
+  const s = await sandbox(), p = s.game.player;
+  const b = s.spawn(createBoss('cinder', s.center.x, s.center.y - 40)); b.phase = 2; b.state = 'vent';
+  s.game.die();
+  b.damage(9999, p, s.area.ctx);
+  assert.ok(!s.game.bossDeath, 'no white stop-flash over the death screen');
+  assert.equal(s.game.touchMode(), 'ui');
+  s.game.deathT = 0; // the screen has run; the fallen player waits on the dialog
+  b.damage(9999, p, s.area.ctx);
+  assert.ok(!s.game.bossDeath);
 });
 // R11: a patch outlives its owner, so the flow must clear it, and nothing may afflict the victor.
 test('nothing hurts or afflicts the player while a warden dies', async () => {

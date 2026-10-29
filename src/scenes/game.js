@@ -111,11 +111,15 @@ export class GameScene {
     this.area = area;
     this.fade = 1;
     this.doorGrace = 0.35; // don't bounce straight back through the door we came out of
-    this.player.lock = null;
-    this.player.mode = this.player.mode === 'dead' ? 'dead' : 'normal';
-    this.player.kbT = 0;
+    this.settlePlayer();
     this.bossDeath = null;
     this.clearEffects();
+  }
+
+  // Whatever the player was in the middle of (a roll, a swing, a charge, a shove) doesn't carry across a jump.
+  settlePlayer() {
+    const p = this.player;
+    Object.assign(p, { lock: null, mode: p.mode === 'dead' ? 'dead' : 'normal', modeT: 0, charge: 0, kbT: 0, vx: 0, vy: 0 });
   }
 
   placePlayer(x, y, facing = 'down') {
@@ -267,7 +271,7 @@ export class GameScene {
   // A warden's hp hit 0: the centered death flow takes the scene over until it hands the victory to
   // the area. Nothing may hold the player through it.
   beginBossDeath(boss, opts = {}) {
-    if (this.bossDeath) return;
+    if (this.bossDeath || this.deathT > 0 || this.player.mode === 'dead') return; // the fallen watch no victory
     this.clearEffects();
     this.bossDeath = new BossDeath(this, boss, opts);
   }
