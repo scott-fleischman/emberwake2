@@ -12,6 +12,7 @@ import { paintRime, RIME_PAL } from '../src/gfx/art-rime.js';
 import { portraitPose } from '../src/gfx/bossart.js';
 import { T } from '../src/world/tiles.js';
 import { Bot } from '../src/bot/bot.js';
+import { reachMap, tileOf } from '../src/bot/nav.js';
 
 test('every warden has a complete moveset', () => {
   for (const [k, m] of Object.entries(WARDEN_MOVES)) {
@@ -375,4 +376,37 @@ test('the bot keeps clear of the brambles beside its path', async () => {
   const foe = s.spawn(new Enemy('brute', 0, p.x + 120, p.y)); // pulls it toward the brambles
   const mv = bot.bestMove([foe], foe, 40, { lv: 0 });
   assert.ok(!mv || mv[0] <= 0, `stepped ${mv}`);
+});
+// A spore cloud is wider than any step bestMove probes, and its patch lives on after it lands.
+test('the bot leaves a cloud wider than its steps by the shortest way', async () => {
+  const s = await sandbox(), p = s.game.player, bot = idleBot(s);
+  const z = makeZone('circle', { x: p.x - 10, y: p.y, r: 40, t: 1, life: 2.5, dmg: 0, effect: 'snare', art: 'roots' });
+  s.area.zones.push(z);
+  assert.deepEqual(bot.zoneEscape([]), [1, 0]);
+});
+test('the bot won\'t chase a warden across a live patch', async () => {
+  const s = await sandbox(), p = s.game.player, bot = idleBot(s);
+  const b = s.spawn(createBoss('thornmaw', p.x + 160, p.y)); Object.assign(b, { state: 'stalk', timer: 9, aggro: true });
+  s.area.zones.push(makeZone('circle', { x: p.x + 47, y: p.y, r: 40, t: -0.1, life: 2.5, dmg: 0, effect: 'snare', art: 'roots' })); // just short of us
+  bot.want.clear(); bot.fight([b]);
+  assert.ok(!bot.want.has('KeyD'), `stepped ${[...bot.want]} onto the snare`);
+});
+test('the bot won\'t cut a pit\'s corner on a diagonal', async () => {
+  const s = await sandbox(), p = s.game.player, map = s.area.map, bot = idleBot(s);
+  const tx = Math.floor(p.x / 16), ty = Math.floor(p.y / 16);
+  p.x = tx * 16 + 3; p.y = ty * 16 + 13; map.set(tx, ty + 1, T.PIT);
+  const foe = s.spawn(new Enemy('brute', 0, p.x - 70, p.y + 70)); // draws it down and to the left, past the pit
+  const mv = bot.bestMove([foe], foe, 40, { lv: 0 });
+  assert.notDeepEqual(mv, [-1, 1]);
+});
+// A roll that meets a wall slides along it, round the corner into whatever lies there.
+test('the bot won\'t roll round a corner into a pocket it can\'t walk out of', async () => {
+  const s = await sandbox(), p = s.game.player, map = s.area.map, bot = idleBot(s);
+  const tx = Math.floor(p.x / 16), ty = Math.floor(p.y / 16);
+  p.x = tx * 16 + 4.3; p.y = ty * 16 + 11.2;
+  map.set(tx, ty + 1, T.DWALL); // the wall the roll meets; the pocket beyond, walled in by pits
+  for (const [x, y] of [[tx - 1, ty], [tx - 2, ty + 1], [tx - 1, ty + 2]]) map.set(x, y, T.PIT);
+  bot.reach = { area: s.area, t: 0, map: reachMap(map, tileOf(p.x, p.y)) };
+  assert.equal(bot.safeRoll([-0.31, 0.95]), false);
+  assert.equal(bot.safeRoll([1, 0]), true);
 });
