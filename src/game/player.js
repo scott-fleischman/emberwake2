@@ -11,8 +11,8 @@ import { EFFECTS, moveMult, blocked, shakeEffects } from './effects.js';
 import { normalize, facingFromVector, TAU } from '../core/math.js';
 
 const SPRINT_MULT = 1.55;
-const DODGE_SPEED = 255;
-const DODGE_TIME = 0.18;
+export const DODGE_SPEED = 255;
+export const DODGE_TIME = 0.18;
 const CHARGE_TIME = 0.5;  // hold attack this long after a swing to ready a spin
 const SPIN_TIME = 0.32;
 

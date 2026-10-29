@@ -10,6 +10,8 @@ import { Dialog, Menu } from '../gfx/ui.js';
 import { Cutscene } from '../gfx/cutscene.js';
 import { fullMethods } from './full.js';
 import { zoneDanger, HIT_PAD } from '../game/zones.js';
+import { moveActor } from '../game/physics.js';
+import { DODGE_SPEED, DODGE_TIME } from '../game/player.js';
 import { findPath, reachMap, walkable, tileOf, center, besideTile, standableNear, isBush } from './nav.js';
 
 const K = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', attack: 'KeyJ', item: 'KeyK', shield: 'KeyL', dodge: 'Space', sprint: 'ShiftLeft', interact: 'KeyE', cycle: 'KeyQ', lock: 'KeyR', eat: 'KeyF', confirm: 'Enter', back: 'Escape' };
@@ -385,9 +387,12 @@ export class Bot {
     const shieldOk = !!g.state.gear.shield && res.stamina > 18;
     const shield = shieldOk && here.lv > 0 && here.block && !(open && dist <= reach);
     const desired = open ? reach - 6 : focus.boss ? 56 : 40;
-    const chase = dist > desired + 14 && here.lv === 0 ? this.chaseStep(focus) : null;
-    // A charge's lane is wider than any one step bestMove weighs: leave it square to the side.
-    const out = here.lv >= 2 ? this.laneEscape(list) : null;
+    // The path knows walls, not zones: a step onto a live patch is left to bestMove to walk around.
+    let chase = dist > desired + 14 && here.lv === 0 ? this.chaseStep(focus) : null;
+    if (chase && a.zones.some((z) => z.t <= 0 && zoneDanger(z, p.x + chase[0] * 8, p.y + chase[1] * 8, HIT_PAD))) chase = null;
+    // A charge's lane is wider than any one step bestMove weighs: leave it square to the side. So is
+    // a wide zone: leave it the shortest way, unless that throws away an opening.
+    const out = (here.lv >= 2 && this.laneEscape(list)) || (here.lv > 0 && !open && this.zoneEscape(list)) || null;
     const mv = out || chase || this.bestMove(list, focus, desired, here);
     if (mv) this.move(mv[0], mv[1]);
     if (shield) this.want.add(K.shield);
@@ -408,13 +413,16 @@ export class Bot {
     else if (dist > reach + 2 && dist < 160 && !shield && p.mode === 'normal' && this.rangedReady(focus)) this.tap(K.item);
   }
 
-  // A dodge carries us ~46px, far past the step bestMove checked; landing in lava hurts more than the blow.
+  // A dodge carries us ~46px, far past the step bestMove checked; landing in lava hurts more than the
+  // blow, and so does sliding round a corner into a pocket we can't walk back out of. So the roll is
+  // played out frame by frame, sliding along walls as the real one will.
   safeRoll([dx, dy]) {
-    const p = this.g.player, map = this.g.area.map, l = Math.hypot(dx, dy) || 1;
-    for (let s = 8; s <= 48; s += 8) {
-      const t = tileOf(p.x + (dx / l) * s, p.y + (dy / l) * s);
-      if (map.isSolid(t.x, t.y)) return true; // the roll stops at the wall
-      if (!walkable(map, t.x, t.y)) return false;
+    const p = this.g.player, a = this.g.area, map = a.map, l = Math.hypot(dx, dy) || 1, reach = this.reach?.area === a ? this.reach.map : null;
+    const q = { x: p.x, y: p.y, w: p.w, h: p.h }, step = DODGE_SPEED / 60;
+    for (let s = 0; s < DODGE_SPEED * DODGE_TIME; s += step) {
+      moveActor(map, q, (dx / l) * step, (dy / l) * step, { slide: 4 });
+      const t = tileOf(q.x, q.y);
+      if (!walkable(map, t.x, t.y) || (reach && reach[t.y * map.w + t.x] < 0)) return false;
     }
     return true;
   }
@@ -432,6 +440,23 @@ export class Bot {
       }
     }
     return null;
+  }
+
+  // Out of a zone too wide for bestMove's short probes (they all land inside it): the way that
+  // reaches safe ground in the fewest steps.
+  zoneEscape(list) {
+    const g = this.g, p = g.player, map = g.area.map, reach = this.reach?.area === g.area ? this.reach.map : null;
+    if (!g.area.zones.some((z) => zoneDanger(z, p.x, p.y, HIT_PAD))) return null;
+    let best = null, bd = Infinity;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const l = Math.hypot(dx, dy);
+      for (let s = 6; s < Math.min(bd, 60); s += 6) {
+        const x = p.x + (dx / l) * s, y = p.y + (dy / l) * s, t = tileOf(x, y);
+        if (!walkable(map, t.x, t.y) || (reach && reach[t.y * map.w + t.x] < 0)) break;
+        if (!this.danger(x, y, list).lv) { bd = s; best = [dx, dy]; break; }
+      }
+    }
+    return best;
   }
 
   // Whether a roll would end against a warden that can't be hit yet (its body hurts to touch).
@@ -491,6 +516,8 @@ export class Bot {
       const qx = p.x + (dx / l) * step, qy = p.y + (dy / l) * step;
       const qt = tileOf(qx, qy);
       if ((dx || dy) && (!walkable(map, qt.x, qt.y) || (reach && reach[qt.y * map.w + qt.x] < 0))) continue;
+      // A diagonal crosses one of its straight neighbours first: no cutting a pit's corner.
+      if (dx && dy && [tileOf(qx, p.y), tileOf(p.x, qy)].some((t) => !walkable(map, t.x, t.y) && !map.isSolid(t.x, t.y))) continue;
       if (portal && Math.hypot(qx - (portal.x * TILE + 8), qy - (portal.y * TILE + 8)) < 14) continue;
       const dz = this.danger(qx, qy, list);
       let s = -dz.lv * 12;

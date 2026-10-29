@@ -327,12 +327,57 @@ const SFX = {
     [0, 0.02, 0.05, 0.09].forEach((d, i) => a.tone(t + d, { f: 2600 - i * 380, f2: 1800 - i * 300, dur: 0.18, vol: 0.06 }));
     a.tone(t, { type: 'triangle', f: 240, f2: 70, dur: 0.12, vol: 0.2 });
   },
-  // wardens: a phase change (the roar of the transform) and a death (the dematerialize)
-  thornmaw_phase: (a, t) => { // a deep woody groan cracking into a roar, leaves thrashing
+  // wardens: their fights' own voices, a phase change (the roar of the transform) and a death (the
+  // dematerialize). A sound timed to a strike schedules its crack for the moment the zone lands.
+  thornmaw_roar: (a, t) => { // a throaty bellow with thorns rattling loose
+    a.tone(t, { type: 'sawtooth', f: 78, f2: 104, dur: 0.6, vol: 0.13, lp: 420, lp2: 1300, attack: 0.06 });
+    a.tone(t, { type: 'sawtooth', f: 80, f2: 99, dur: 0.6, vol: 0.09, lp: 380, lp2: 1000, attack: 0.06, detune: 22 });
+    a.noise(t, { dur: 0.5, vol: 0.09, type: 'lowpass', f: 700, f2: 1600, attack: 0.05 });
+    [0.08, 0.13, 0.19, 0.24, 0.31].forEach((d, i) => a.noise(t + d, { dur: 0.025, vol: 0.1, type: 'highpass', f: 3200 + i * 400 }));
+  },
+  thornmaw_charge: (a, t) => { // a hoof pawing the earth twice, a snort, then the rumble of the rush
+    [0, 0.17].forEach((d) => a.noise(t + d, { dur: 0.12, vol: 0.15, f: 700, f2: 260, q: 1.6, attack: 0.01 }));
+    a.noise(t + 0.3, { dur: 0.16, vol: 0.14, f: 1100, f2: 420, q: 1.2, attack: 0.01 });
+    a.tone(t + 0.3, { type: 'sawtooth', f: 90, f2: 140, dur: 0.3, vol: 0.08, lp: 600, attack: 0.04 });
+    a.noise(t + 0.5, { dur: 0.7, vol: 0.13, type: 'lowpass', f: 140, f2: 320, attack: 0.08 });
+  },
+  thornmaw_slam: (a, t) => { // a wooden crack against stone, a deep thud, splinters
+    a.tone(t, { f: 100, f2: 34, dur: 0.6, vol: 0.45 });
+    a.noise(t, { dur: 0.7, vol: 0.32, type: 'lowpass', f: 2400, f2: 110, q: 0.6, attack: 0.003 });
+    a.tone(t, { type: 'triangle', f: 320, f2: 110, dur: 0.09, vol: 0.2 });
+    [0.03, 0.08, 0.14, 0.21].forEach((d, i) => a.noise(t + d, { dur: 0.03, vol: 0.12 - i * 0.02, type: 'highpass', f: 2600 + i * 300 }));
+  },
+  thornmaw_roots: (a, t) => { // something burrowing toward you, then three roots snapping up out of the ground
+    a.noise(t, { dur: 1.1, vol: 0.13, type: 'lowpass', f: 110, f2: 420, attack: 0.4 });
+    a.tone(t, { type: 'sawtooth', f: 44, f2: 70, dur: 1.1, vol: 0.06, lp: 220, attack: 0.3 });
+    [0.7, 0.9, 1.1].forEach((d, i) => {
+      a.tone(t + d, { f: 170 - i * 15, f2: 55, dur: 0.18, vol: 0.28 });
+      a.noise(t + d, { dur: 0.1, vol: 0.13, f: 1300 - i * 150, q: 4 });
+      a.noise(t + d, { dur: 0.05, vol: 0.1, type: 'highpass', f: 3000 });
+    });
+  },
+  thornmaw_spores: (a, t) => { // the flower's wet gasp and puff, then spores hissing down
+    a.noise(t, { dur: 0.3, vol: 0.13, type: 'lowpass', f: 300, f2: 2200, attack: 0.18 });
+    a.tone(t + 0.28, { f: 230, f2: 85, dur: 0.12, vol: 0.18 });
+    a.noise(t + 0.28, { dur: 0.25, vol: 0.12, type: 'lowpass', f: 1800, f2: 300, attack: 0.01 });
+    a.noise(t + 0.35, { dur: 0.75, vol: 0.05, type: 'highpass', f: 6000, f2: 3600, attack: 0.25 });
+    a.notes(t + 0.4, [88, 84, 91], 0.12, { type: 'triangle', dur: 0.3, vol: 0.02 });
+  },
+  thornmaw_lash: (a, t) => { // vines creaking back, a swish, and the crack of the whip
+    a.tone(t, { type: 'sawtooth', f: 140, f2: 200, dur: 0.45, vol: 0.06, lp: 700, q: 5, attack: 0.2 });
+    a.noise(t, { dur: 0.45, vol: 0.06, f: 2000, f2: 1200, q: 3, attack: 0.15 });
+    a.noise(t + 0.45, { dur: 0.15, vol: 0.12, f: 500, f2: 3200, q: 1.5, attack: 0.1 });
+    a.noise(t + 0.6, { dur: 0.03, vol: 0.32, type: 'highpass', f: 3000 });
+    a.noise(t + 0.6, { dur: 0.14, vol: 0.13, f: 4200, f2: 800, q: 2 });
+  },
+  thornmaw_phase: (a, t) => { // a deep woody groan, bark splitting open, and the flower bursting out with a roar
     a.tone(t, { type: 'sawtooth', f: 62, f2: 96, dur: 1.2, vol: 0.14, lp: 300, lp2: 1100, attack: 0.25 });
     a.tone(t, { type: 'sawtooth', f: 64, f2: 99, dur: 1.2, vol: 0.1, lp: 300, lp2: 900, attack: 0.25, detune: 18 });
-    [0.2, 0.45, 0.6].forEach((d) => a.noise(t + d, { dur: 0.06, vol: 0.16, type: 'highpass', f: 1800 }));
-    a.noise(t + 0.3, { dur: 1.0, vol: 0.1, f: 2400, f2: 900, q: 0.8, attack: 0.2 });
+    [0.2, 0.38, 0.52, 0.62, 0.69].forEach((d, i) => a.noise(t + d, { dur: 0.05, vol: 0.12 + i * 0.02, type: 'highpass', f: 1800 + i * 200 }));
+    a.noise(t + 0.75, { dur: 0.45, vol: 0.24, f: 3000, f2: 400, q: 0.7, attack: 0.01 });
+    a.tone(t + 0.75, { f: 120, f2: 45, dur: 0.5, vol: 0.32 });
+    [50, 57, 61, 64].forEach((m, i) => a.tone(t + 0.8 + i * 0.04, { type: 'triangle', f: mtof(m), dur: 0.9, vol: 0.04, attack: 0.15 }));
+    a.noise(t + 0.3, { dur: 1.2, vol: 0.1, f: 2400, f2: 900, q: 0.8, attack: 0.2 });
   },
   cinder_phase: (a, t) => { // a furnace drawing breath, then a roaring burst of flame
     a.noise(t, { dur: 0.7, vol: 0.12, type: 'lowpass', f: 300, f2: 2600, attack: 0.6 });
@@ -346,11 +391,14 @@ const SFX = {
     a.noise(t + 0.75, { dur: 0.5, vol: 0.26, type: 'highpass', f: 3500, f2: 1800, attack: 0.002 });
     a.notes(t + 0.78, [96, 91, 100, 93, 98], 0.05, { type: 'triangle', dur: 0.6, vol: 0.06 });
   },
-  thornmaw_death: (a, t) => { // a long creak sinking into the earth, the roots letting go
+  thornmaw_death: (a, t) => { // a long creak sinking into the earth, the roots letting go, the flower wilting
     a.tone(t, { type: 'sawtooth', f: 140, f2: 40, dur: 1.6, vol: 0.12, lp: 700, lp2: 150, attack: 0.05 });
     a.noise(t, { dur: 1.5, vol: 0.12, f: 900, f2: 160, q: 1.4, attack: 0.1 });
     [0.3, 0.7, 1.1].forEach((d, i) => a.noise(t + d, { dur: 0.05, vol: 0.14 - i * 0.03, type: 'highpass', f: 1500 }));
+    a.tone(t + 0.4, { type: 'triangle', f: 660, f2: 220, dur: 1.1, vol: 0.04, attack: 0.1 });
+    a.noise(t + 0.5, { dur: 1.0, vol: 0.05, type: 'highpass', f: 3500, f2: 2200, attack: 0.3 });
     a.notes(t + 0.9, [62, 69], 0.2, { type: 'triangle', dur: 1.2, vol: 0.05 });
+    a.tone(t + 1.45, { f: 80, f2: 38, dur: 0.4, vol: 0.25 });
   },
   cinder_death: (a, t) => { // the fire gutters out with a hiss, and the armor sighs empty
     a.noise(t, { dur: 1.6, vol: 0.18, type: 'highpass', f: 5000, f2: 1200, attack: 0.05 });

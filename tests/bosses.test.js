@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sandbox, recorder } from './helpers/sandbox.js';
+import { sandbox, recorder, sfxDuringFight } from './helpers/sandbox.js';
 import { WARDEN_MOVES, createBoss, viewFrom } from '../src/game/bosses.js';
 import { Enemy } from '../src/game/enemies.js';
 import { Bomb, Projectile } from '../src/game/entities.js';
@@ -34,7 +34,7 @@ test('painters take a palette', () => {
 // Repainted with every palette colour swapped, no colour the painter uses may stay the same.
 test('a palette reaches every colour its painter uses', () => {
   const swap = (pal) => JSON.parse(JSON.stringify(pal).replace(/#[0-9a-f]{6}/gi, '#010203').replace(/\d+,\d+,\d+/g, '1,2,3'));
-  const states = ['intro', 'stalk', 'wind', 'charge', 'stunned', 'thorns', 'volley', 'vent', 'fadeout', 'orbit', 'dash', 'skid', 'rain', 'dying'];
+  const states = ['intro', 'stalk', 'wind', 'charge', 'stunned', 'thorns', 'roots', 'spores', 'lash', 'transform', 'volley', 'vent', 'fadeout', 'orbit', 'dash', 'skid', 'rain', 'dying'];
   const colours = (kind, paint, pal) => {
     const rec = recorder(), L = [];
     rec.g.getTransform = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
@@ -267,6 +267,65 @@ test('each warden has its own phase and death sounds, and the fight a second the
   for (const n of names) { assert.ok(SFX_NAMES.includes(n), n); assert.ok(recipe(n).length > 2, `${n} makes no sound`); }
   assert.equal(new Set(names.map(recipe)).size, names.length);
   assert.ok(MUSIC_KEYS.includes('boss2'));
+});
+
+// ---------------------------------------------------------------- Thornmaw's Bloom
+test('Thornmaw blooms: phase 2 uses new attacks', async () => {
+  const s = await sandbox();
+  const b = s.spawn(createBoss('thornmaw', s.center.x, s.center.y - 50)); b.phase = 2; b.state = WARDEN_MOVES.thornmaw.first;
+  const seen = new Set(); for (let t = 0; t < 30; t += 1 / 60) { s.step(1 / 60); seen.add(b.state); s.game.state.player.hp = 99; }
+  for (const st of ['roots', 'spores', 'lash']) assert.ok(seen.has(st), st);
+});
+test('Thornmaw has its own voice', async () => {
+  const names = await sfxDuringFight('thornmaw', 40);   // sandbox helper: spies game.audio.sfx over a fight
+  assert.ok(names.filter((n) => n.startsWith('thornmaw_')).length >= 4);
+  assert.ok(!names.includes('boss'));
+});
+test('Thornmaw front and back views differ from the side', () => {
+  const draw = (view) => { const r = recorder(); paintThornmaw(r.g, { ...portraitPose('thornmaw', 1), view }, []); return JSON.stringify(r.calls); };
+  assert.notEqual(draw('front'), draw('side')); assert.notEqual(draw('back'), draw('side')); assert.notEqual(draw('front'), draw('back'));
+});
+// Each Bloom attack is the stalk's next move by turns; the charge comes between them.
+test('the Bloom attacks put down the zones they promise, each in its own voice', async () => {
+  const cast = async (turn, near) => {
+    const s = await sandbox(), p = s.game.player, heard = [];
+    s.app.audio.sfx = (name) => heard.push(name);
+    const b = s.spawn(createBoss('thornmaw', p.x, p.y - (near ? 40 : 90)));
+    Object.assign(b, { phase: 2, state: 'stalk', timer: 0, turn });
+    s.step(1 / 60);
+    return { b, p, heard, zones: s.area.zones.filter((z) => z.owner === b) };
+  };
+  const close = (a, x) => Math.abs(a - x) < 0.05;
+  let { b, p, heard, zones } = await cast(0, false);
+  assert.equal(b.state, 'roots');
+  assert.equal(zones.length, 3);
+  assert.deepEqual(zones.map((z) => [z.shape, z.w]), [['segment', 14], ['segment', 14], ['segment', 14]]);
+  [0.7, 0.9, 1.1].forEach((t, i) => assert.ok(close(zones[i].t, t), `root ${i} strikes at ${zones[i].t}`));
+  assert.ok(zones.every((z) => Math.hypot(z.x1 - b.x, z.y1 - b.y) < 1 && (z.y2 - z.y1) > 0), 'racing from it toward the player');
+  assert.ok(heard.includes('thornmaw_roots'));
+  ({ b, p, heard, zones } = await cast(1, false));
+  assert.equal(b.state, 'wind', 'the charge between');
+  ({ b, p, heard, zones } = await cast(2, false));
+  assert.equal(b.state, 'spores');
+  const [sp] = zones;
+  assert.deepEqual([sp.shape, sp.r, sp.life, sp.dmg, sp.effect, sp.art], ['circle', 40, 2.5, 0, 'snare', 'roots']);
+  assert.ok(close(sp.t, 1) && Math.hypot(sp.x - p.x, sp.y - p.y) < 1);
+  assert.ok(heard.includes('thornmaw_spores'));
+  ({ b, p, heard, zones } = await cast(4, true));
+  assert.equal(b.state, 'lash');
+  const [cone] = zones;
+  assert.deepEqual([cone.shape, cone.spread, cone.r, cone.dmg], ['cone', 1.1, 70, 2]);
+  assert.ok(close(cone.t, 0.6) && close(cone.a, Math.PI / 2), 'swept at the player');
+  assert.ok(heard.includes('thornmaw_lash'));
+});
+test('every Thornmaw sound is its own', () => {
+  const engine = new AudioEngine(), calls = [];
+  engine.ctx = { currentTime: 0 };
+  for (const k of ['tone', 'noise']) engine[k] = (t, o) => calls.push([k, t, o]);
+  const recipe = (name) => { calls.length = 0; engine._last = {}; engine.sfx(name); return JSON.stringify(calls); };
+  const names = ['roar', 'charge', 'slam', 'roots', 'spores', 'lash', 'phase', 'death'].map((k) => `thornmaw_${k}`);
+  for (const n of names) { assert.ok(SFX_NAMES.includes(n), n); assert.ok(recipe(n).length > 2, `${n} makes no sound`); }
+  assert.equal(new Set(names.map(recipe)).size, names.length);
 });
 
 // ---------------------------------------------------------------- zone strikes

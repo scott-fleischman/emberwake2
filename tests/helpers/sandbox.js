@@ -27,6 +27,16 @@ export async function sandbox({ cls = 'swordsman', seed = 'sandbox', difficulty 
   return { app, game, area, step, spawn, center };
 }
 
+// A warden left to fight for `seconds` against a player who can't die: every sound it asked for.
+export async function sfxDuringFight(kind, seconds) {
+  const s = await sandbox(), names = [];
+  const { createBoss } = await import('../../src/game/bosses.js');
+  s.game.audio.sfx = (name) => { names.push(name); };
+  s.spawn(createBoss(kind, s.center.x, s.center.y - 50));
+  for (let t = 0; t < seconds; t += 1 / 60) { s.step(1 / 60); s.game.state.player.hp = 99; }
+  return names;
+}
+
 // A 2D context that records instead of drawing: colours assigned to fillStyle and strokeStyle go to
 // `fills`, method calls (and gradient stops) to `calls`. Every call returns a stub gradient, so
 // painters run unchanged; getTransform's stub has no matrix, so lights are skipped unless a test
