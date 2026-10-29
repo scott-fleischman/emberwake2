@@ -367,15 +367,14 @@ function ringHazards(L, tile, density) {
 // Still water pooled in the arena's corners, on the wall ring like its hazards: décor only (the
 // Tidewarden carries its own water), leaving the floor open for its waves and rings.
 function cornerPools(L) {
-  for (const [cx, sx] of [[1, 1], [22, -1]]) {
-    for (const [cy, sy] of [[1, 1], [13, -1]]) {
-      if (!L.r.chance(0.75)) continue;
-      const cells = [{ x: cx, y: cy }];
-      for (let k = 1, n = L.r.int(2, 4); k < n; k++) cells.push({ x: cx + sx * k, y: cy });
-      for (let k = 1, n = L.r.int(2, 3); k < n; k++) cells.push({ x: cx, y: cy + sy * k });
-      L.stamp(cells, T.DWATER);
-    }
-  }
+  const corners = [[1, 1, 1, 1], [1, 1, 13, -1], [22, -1, 1, 1], [22, -1, 13, -1]], always = L.r.int(0, 3);
+  corners.forEach(([cx, sx, cy, sy], i) => {
+    if (i !== always && !L.r.chance(0.75)) return; // one corner is never dry
+    const cells = [{ x: cx, y: cy }];
+    for (let k = 1, n = L.r.int(2, 4); k < n; k++) cells.push({ x: cx + sx * k, y: cy });
+    for (let k = 1, n = L.r.int(2, 3); k < n; k++) cells.push({ x: cx, y: cy + sy * k });
+    L.stamp(cells, T.DWATER);
+  });
 }
 
 // Role-specific fixed objects, puzzles and structure.

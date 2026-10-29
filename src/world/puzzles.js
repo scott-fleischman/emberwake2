@@ -127,6 +127,10 @@ function planTide(L, { entryDir, exitDir }) {
   const from = DOOR_TILES[entryDir], to = DOOR_TILES[exitDir];
   if (!crossable(tiles, plan, from, to)) return null;
   for (const start of ['a', 'b']) if (crossable(tiles, { ...plan, start }, from, to, false)) return null;
+  // Nor may anyone be shut in or out: the tide is kept when you leave, so you can come back in at tide
+  // b, or in from the way on at either tide, and must still get across.
+  if (!crossable(tiles, { ...plan, start: 'b' }, from, to)) return null;
+  for (const start of ['a', 'b']) if (!crossable(tiles, { ...plan, start }, to, from)) return null;
   return plan;
 }
 
@@ -156,10 +160,13 @@ function crossable(tiles, { a, b, levers, start }, from, to, toggles = true) {
   return false;
 }
 
-// From the way in at the starting tide, throwing levers as needed, can you reach the way on?
-export function tideSolvable(room) {
+// From the way in at the starting tide, throwing levers as needed, can you reach the way on? `start`
+// sets the tide to come in at, and `back` comes in from the way on and heads for the way in.
+export function tideSolvable(room, { start = room.puzzle.start, back = false } = {}) {
   const dirs = Object.keys(room.doors).filter((d) => room.doors[d].to !== null);
   const entry = dirs.find((d) => room.doors[d].to < room.id);
   const onward = dirs.filter((d) => room.doors[d].to > room.id).sort((p, q) => room.doors[p].to - room.doors[q].to)[0];
-  return !!entry && !!onward && crossable(room.tiles, room.puzzle, DOOR_TILES[entry], DOOR_TILES[onward]);
+  if (!entry || !onward) return false;
+  const [from, to] = back ? [onward, entry] : [entry, onward];
+  return crossable(room.tiles, { ...room.puzzle, start }, DOOR_TILES[from], DOOR_TILES[to]);
 }

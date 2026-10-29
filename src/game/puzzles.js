@@ -1,7 +1,7 @@
 // Tide-lever runtime: the room's tide floods one set of tide tiles and drains the other (see
 // world/puzzles.js), and a lever turns it. The tide a room was left at is kept in progress.tides.
 import { Entity, Particles } from './entities.js';
-import { findFreeSpot } from './physics.js';
+import { findFreeSpot, rectSolid } from './physics.js';
 import { T, TILE } from '../world/tiles.js';
 import { R } from '../gfx/sprites.js';
 import { drawShadow } from '../gfx/render.js';
@@ -28,8 +28,14 @@ export class Lever extends Entity {
     a.tide = a.tide === 'a' ? 'b' : 'a';
     a.pr.tides[a.key()] = a.tide;
     setTide(a);
-    // A lever never stands by a tide tile, but nothing may be left standing in the water.
-    findFreeSpot(a.map, game.player, 3);
+    // A lever never stands by a tide tile, but a player at the edge of its reach can lap onto one that
+    // floods. Set them down on the tile they stand on (dry, as the lever keeps clear of the tide) rather
+    // than let findFreeSpot snap them to a neighbour.
+    const p = game.player, tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
+    if (rectSolid(a.map, p.x, p.y, p.w, p.h, (x, y) => a.map.isSolid(x, y))) {
+      if (a.map.isSolid(tx, ty)) findFreeSpot(a.map, p, 3);
+      else { p.x = (tx + 0.5) * TILE; p.y = (ty + 0.5) * TILE; }
+    }
     for (const c of a.tide === 'a' ? pz.b : pz.a) a.spawn(new Particles(c.x * TILE + 8, c.y * TILE + 8, { count: 3, color: ['#c8f0e8', '#6ab8b0'], speed: 30, life: 0.5, up: 30, gravity: 90 }));
     this.throwT = 0.25;
     game.audio.sfx('lever');

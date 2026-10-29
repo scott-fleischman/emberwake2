@@ -173,7 +173,7 @@ class Boss extends Actor {
   summon(ctx, archetype, biome, count) {
     for (let k = 0; k < count; k++) {
       const a = Math.random() * TAU;
-      const e = new Enemy(archetype, biome, this.x + Math.cos(a) * 30, this.y + Math.sin(a) * 24, { aggro: true, leash: 999 });
+      const e = new Enemy(archetype, biome, this.x + Math.cos(a) * 30, this.y + Math.sin(a) * 24, { aggro: true, leash: 999, tier: ctx.area.tier });
       if (!findFreeSpot(ctx.map, e, 4)) { e.x = this.x; e.y = this.y; }
       ctx.area.spawnEnemy(e);
     }

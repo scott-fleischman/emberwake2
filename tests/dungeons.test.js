@@ -6,6 +6,7 @@ import { bfsDistances } from '../src/core/grid.js';
 import { tideSolvable } from '../src/world/puzzles.js';
 import { enemyStats } from '../src/data/enemies.js';
 import { SFX_NAMES } from '../src/audio/audio.js';
+import { rectSolid } from '../src/game/physics.js';
 import { sandbox, botDo } from './helpers/sandbox.js';
 
 const IDS = ['verdant', 'ashen', 'frost', 'drowned'];
@@ -257,10 +258,23 @@ function checkTide(r, where) {
     const d = bfsDistances(ROOM_W, ROOM_H, (x, y) => !wet.has(`${x},${y}`) && !lever.has(`${x},${y}`) && dry(x, y), DOOR_TILES[entryOf(r)]);
     assert.ok(DOOR_TILES[onwardOf(r)].every((g) => d[g.y * ROOM_W + g.x] < 0), `${where} crossable at tide ${tide} without a lever`);
   }
+  // Nor is anyone shut in: back in at the way in at tide b (progress keeps the tide), or in from the
+  // way on at either tide, there's still a way across.
+  assert.ok(tideSolvable(r, { start: 'b' }), `${where} entry at tide b`);
+  for (const start of ['a', 'b']) assert.ok(tideSolvable(r, { start, back: true }), `${where} exit at tide ${start}`);
 }
 
 test('Fane tide rooms can always be crossed', () => {
   for (const seed of SEEDS) for (const r of get('drowned', seed).rooms.filter((r) => r.puzzle?.kind === 'tide')) assert.ok(tideSolvable(r), `${seed}/${r.id}`);
+});
+
+test('the tide checks catch a room that traps whoever comes back into it', () => {
+  const room = get('drowned', 1).rooms.find((r) => r.puzzle?.kind === 'tide'), pz = room.puzzle;
+  const without = (i) => ({ ...room, puzzle: { ...pz, levers: pz.levers.filter((_, k) => k !== i) } });
+  // The levers run shore, island, far. With no shore lever, tide b at the way in is a dead end.
+  assert.ok(tideSolvable(without(0)) && !tideSolvable(without(0), { start: 'b' }));
+  // With no far lever, the way on at tide a is.
+  assert.ok(tideSolvable(without(2)) && !tideSolvable(without(2), { start: 'a', back: true }));
 });
 
 test('the Fane is about the size of the Sanctuary and uses swamp hazards', () => {
@@ -270,6 +284,14 @@ test('the Fane is about the size of the Sanctuary and uses swamp hazards', () =>
     assert.ok(d.rooms.some((r) => r.tiles.includes(T.BOG)));
     assert.equal(d.rooms.filter((r) => r.role === 'tide').length, 2);
     assert.ok(d.rooms[d.bossId].tiles.includes(T.DWATER), `${seed}: pools in the Tidewarden's arena`);
+  }
+});
+
+test('the Tidewarden\'s arena always has a pool in at least one corner', () => {
+  const corners = [[1, 1], [22, 1], [1, 13], [22, 13]];
+  for (let i = 0; i < 600; i++) {
+    const d = generateDungeon('drowned', `pool${i}`), r = d.rooms[d.bossId];
+    assert.ok(corners.some(([x, y]) => at(r, x, y) === T.DWATER), `pool${i}: no corner pool`);
   }
 });
 
@@ -314,6 +336,38 @@ test('a lever turns the tide, and the room remembers it', async () => {
   assert.ok(all(ta, T.DWATER) && all(tb, T.DFLOOR), 'the tide is as it was left');
 });
 
+test('a lever thrown from the edge of its reach sets the player down on the stone they stand on', async () => {
+  // At 22px the hitbox can lap onto a tide stone two tiles from the lever, and the throw may flood it.
+  let found = null;
+  for (const seed of SEEDS) {
+    for (const room of get('drowned', seed).rooms.filter((r) => r.puzzle?.kind === 'tide')) {
+      const { a, b, levers } = room.puzzle;
+      for (const lv of levers) {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const at2 = (set) => set.some((c) => c.x === lv.x + dx * 2 && c.y === lv.y + dy * 2);
+          if (!found && (at2(a) || at2(b))) found = { seed, room, lv, dx, dy, tide: at2(a) ? 'a' : 'b' };
+        }
+      }
+    }
+  }
+  assert.ok(found, 'a lever with a tide stone two tiles off');
+  const { seed, room, lv, dx, dy, tide } = found;
+  const s = await sandbox({ seed }); s.game.enterDungeon('drowned');
+  const a = s.game.area, p = s.game.player;
+  s.game.state.progress.tides[`drowned:${room.id}`] = tide;
+  a.enterRoom(room.id, OPP[entryOf(room)]);
+  assert.equal(a.tide, tide);
+  p.x = lv.x * 16 + 8 + dx * 21.5; p.y = lv.y * 16 + 8 + dy * 21.5;
+  const solid = (x, y) => a.map.isSolid(x, y), from = { x: p.x, y: p.y }, tile = [Math.floor(p.x / 16), Math.floor(p.y / 16)];
+  assert.ok(!rectSolid(a.map, p.x, p.y, p.w, p.h, solid));
+  assert.ok(rectSolid(a.map, p.x, p.y, p.w, p.h, (x, y) => x === lv.x + dx * 2 && y === lv.y + dy * 2), 'over the stone that will flood');
+  assert.ok(a.interact());
+  assert.notEqual(a.tide, tide);
+  assert.ok(!rectSolid(a.map, p.x, p.y, p.w, p.h, solid), 'not left in the water');
+  assert.deepEqual([Math.floor(p.x / 16), Math.floor(p.y / 16)], tile, 'still on the same tile');
+  assert.ok(Math.hypot(p.x - from.x, p.y - from.y) < 8, 'nudged, not snapped a tile away');
+});
+
 test('bog mires and mire poisons whoever wades in', async () => {
   const s = await sandbox(); s.game.enterDungeon('drowned');
   const a = s.game.area, p = s.game.player;
@@ -336,6 +390,21 @@ test('the Fane\'s monsters are swamp kin as tough as the Sanctuary\'s', async ()
     assert.equal(e.biome, 1);
     assert.equal(e.maxHp, Math.max(1, Math.round(enemyStats(e.archetype, 1, { tier: 1.9 }).hp * s.game.diff.enemyHp)), e.archetype);
   }
+});
+
+test('the Tidewarden\'s leeches fight at the Fane\'s tier', async () => {
+  const s = await sandbox(); s.game.enterDungeon('drowned');
+  s.game.state.quest.flags['intro:tide'] = true;
+  const a = s.game.area, boss = a.dungeon.rooms[a.dungeon.bossId];
+  a.enterRoom(boss.id, OPP[Object.keys(boss.doors)[0]]);
+  const b = a.boss; b.state = 'stalk';
+  b.damage(9999, s.game.player, a.ctx); s.step(2);
+  assert.equal(b.phase, 2);
+  const leeches = a.enemyList.filter((e) => e.archetype === 'lunger' && !e.boss);
+  assert.equal(leeches.length, 2);
+  const tough = enemyStats('lunger', 1, { tier: 1.9 }).hp;
+  assert.notEqual(tough, enemyStats('lunger', 1).hp);
+  for (const e of leeches) assert.equal(e.maxHp, tough);
 });
 
 test('every dungeon can be walked to its warden under the runtime door rules', async () => {
