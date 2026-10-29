@@ -16,7 +16,7 @@ const AW = 28, AH = 16;
 const ARCH = ['brute', 'lunger', 'skirmisher', 'ranged'];
 const BOSSES = ['thornmaw', 'cinder', 'rime'];
 
-class ArenaArea extends Area {
+export class ArenaArea extends Area {
   constructor(game) {
     super(game, 'arena');
     this.map = new TileMap(AW, AH, T.DFLOOR);
