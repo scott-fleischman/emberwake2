@@ -25,9 +25,17 @@ const drop = (ctx, z) => { ctx.area.zones = ctx.area.zones.filter((q) => q !== z
 const puff = (ctx, x, y, color, opts = {}) => ctx.area.spawn(new Particles(x, y, { count: 8, color, speed: 45, life: 0.4, ...opts }));
 
 // A lobbed shot. The ground it will strike is a zone published with it, counting down the flight.
-function lob(ctx, e, kind, x, y, flight, land) {
+function lob(ctx, e, kind, x, y, flight, land, opts = {}) {
   const a = Math.atan2(y - e.y, x - e.x), d = Math.hypot(x - e.x, y - e.y);
-  ctx.area.spawn(new Projectile(kind, e.x, e.y, a, d / flight, 0, 'enemy', { lob: flight, land }));
+  ctx.area.spawn(new Projectile(kind, e.x, e.y, a, d / flight, 0, 'enemy', { lob: flight, land, ...opts }));
+}
+
+// Lobbed to land at (x, y), then rolling on the same way for `len`, its path shown until it lands.
+function bowl(ctx, e, kind, x, y, flight, { len, speed, w, color, effect = null }) {
+  const a = Math.atan2(y - e.y, x - e.x), c = Math.cos(a), s = Math.sin(a);
+  put(ctx, e, 'segment', { x1: x, y1: y, x2: x + c * len, y2: y + s * len, w, t: flight, dmg: 0 });
+  const land = (pr, cx) => { puff(cx, pr.x, pr.y + 3, color, { count: 10, speed: 50 }); cx.game.cam.shake(1, 0.1); };
+  lob(ctx, e, kind, x, y, flight, land, { roll: { speed, time: len / speed, w, dmg: e.dmg, effect, rgb: e.sig.rgb } });
 }
 
 // The aim line a lunge or shot will take, shown for `t` seconds; it warns, it doesn't strike.
@@ -53,14 +61,28 @@ function crouchAt(e, ctx, p, len, wait) {
 }
 
 // A blob that lands as an impact and a puddle, both on the player's spot.
-function splat(e, ctx, p, { kind, flight, r, puddle, art, life, color }) {
+function splat(e, ctx, p, { kind, flight, r, puddle, art, life, color, sound = 'splash' }) {
   const k = size(e), effect = e.sig.effect;
   put(ctx, e, 'circle', { x: p.x, y: p.y, r: r * k, t: flight, life: 0.1, dmg: e.dmg, effect });
   put(ctx, e, 'circle', { x: p.x, y: p.y, r: puddle * k, t: flight, life, dmg: 0, effect, art });
-  lob(ctx, e, kind, p.x, p.y, flight, (pr, c) => { puff(c, pr.x, pr.y, color, { count: 12, speed: 60 }); c.game.audio.sfx('splash', { pitch: 0.7, volume: 0.6 }); });
+  lob(ctx, e, kind, p.x, p.y, flight, (pr, c) => { puff(c, pr.x, pr.y, color, { count: 12, speed: 60 }); c.game.audio.sfx(sound, { pitch: 0.7, volume: 0.6 }); });
 }
 
-const move = (effect, def) => ({ effect, rgb: EFFECTS[effect].rgb, ...def });
+// An arrow down a shown line, carrying the move's effect onto what it hits.
+const arrow = (kind, speed, pitch) => ({
+  start(e, ctx, p) { e.mv.a = toward(e, p); aimLine(ctx, e, e.mv.a, 170, 6, 0.3); e.spose = 'aim'; },
+  update(e, dt, ctx) {
+    if (e.mv.t < 0.3) return false;
+    ctx.area.spawn(new Projectile(kind, e.x, e.y - 3, e.mv.a, speed, e.dmg, 'enemy', { life: 2.2, effect: e.sig.effect }));
+    ctx.game.audio.sfx('arrow', { pitch, volume: 0.5 });
+    return true;
+  },
+});
+
+// Mountain moves hit hard but leave nothing lasting, so they glow the colour of stone.
+const STONE = '226,204,160';
+const move = (effect, def) => ({ effect, rgb: EFFECTS[effect]?.rgb ?? STONE, ...def });
+const KNOCK = { effect: 'knockback', knock: 260 };
 
 export const SPECIALS = {
   forest: {
@@ -103,16 +125,7 @@ export const SPECIALS = {
       update(e) { return e.mv.t >= 0.3; },
     }),
     // A vine-tipped arrow down a shown line; it roots what it hits.
-    ranged: move('snare', {
-      name: 'Vine Arrow', windup: 0.6, range: 170, sfx: 'mv_forest_ranged',
-      start(e, ctx, p) { e.mv.a = toward(e, p); aimLine(ctx, e, e.mv.a, 170, 6, 0.3); e.spose = 'aim'; },
-      update(e, dt, ctx) {
-        if (e.mv.t < 0.3) return false;
-        ctx.area.spawn(new Projectile('vine', e.x, e.y - 3, e.mv.a, 150, e.dmg, 'enemy', { life: 2.2, effect: 'snare' }));
-        ctx.game.audio.sfx('arrow', { pitch: 0.7, volume: 0.5 });
-        return true;
-      },
-    }),
+    ranged: move('snare', { name: 'Vine Arrow', windup: 0.6, range: 170, sfx: 'mv_forest_ranged', ...arrow('vine', 150, 0.7) }),
   },
   swamp: {
     brute: move('mud', {
@@ -238,6 +251,192 @@ export const SPECIALS = {
         lob(ctx, e, 'sand', p.x, p.y, flight, (pr, c) => { puff(c, pr.x, pr.y, ['#c8a868', '#e8d0a0', '#f0e0b8'], { count: 18, speed: 70, life: 0.7 }); c.game.audio.sfx('poof', { volume: 0.6 }); });
         e.spose = 'aim';
       },
+      update(e) { return e.mv.t >= 0.3; },
+    }),
+  },
+  mountain: {
+    // The stomp shakes four rocks loose around the ogre, a quarter-turn apart starting over the
+    // player, landing one after another.
+    brute: move('rockfall', {
+      name: 'Rockfall', windup: 0.8, range: 70, sfx: 'mv_mountain_brute',
+      start(e, ctx, p) {
+        const k = size(e), a = toward(e, p), d = clamp(Math.hypot(p.x - e.x, p.y - e.y), 22 * k, 56 * k);
+        e.mv.rocks = [0, 1, 2, 3].map((i) => {
+          const b = a + (i * Math.PI) / 2, x = e.x + Math.cos(b) * d, y = e.y + Math.sin(b) * d, t = 0.9 + i / 6;
+          put(ctx, e, 'circle', { x, y, r: 13 * k, t, life: 0.1, dmg: e.dmg });
+          return { x, y, t };
+        });
+        e.mv.fell = 0; e.spose = 'slam';
+        puff(ctx, e.x, e.y + 5, ['#8a8a90', '#c0b8a8'], { count: 12, speed: 55 });
+        ctx.game.cam.shake(3, 0.25);
+      },
+      // Each rock is seen falling for its last 0.4 s, timed on the move's clock.
+      update(e, dt, ctx) {
+        const m = e.mv;
+        for (; m.fell < 4 && m.t >= m.rocks[m.fell].t - 0.4; m.fell++) {
+          const r = m.rocks[m.fell];
+          const land = (pr, c) => { puff(c, pr.x, pr.y + 3, ['#6a625a', '#9a928a', '#c0b8a8'], { count: 12, speed: 55 }); c.game.cam.shake(1.2, 0.1); c.game.audio.sfx('hit', { pitch: 0.5, volume: 0.5 }); };
+          ctx.area.spawn(new Projectile('boulder', r.x, r.y, 0, 0, 0, 'enemy', { lob: Math.max(0.05, r.t - m.t), arc: 0, height: 110, land }));
+        }
+        return m.t >= 1.45;
+      },
+    }),
+    // A head-down charge along a shown line; what it hits is thrown.
+    lunger: move('knockback', {
+      name: 'Headbutt Charge', windup: 0.7, range: 100, sfx: 'mv_mountain_lunger',
+      start(e, ctx, p) { crouchAt(e, ctx, p, 120, 0.35); },
+      update(e, dt, ctx) {
+        const m = e.mv, done = lunge(e, dt, ctx, 0.35, 290, 0.4, { dmg: e.dmg, blockable: true, ...KNOCK });
+        if (m.z && (m.dust = (m.dust ?? 0) - dt) <= 0) { m.dust = 0.05; puff(ctx, e.x, e.y + 4, ['#a09a90', '#d0c8b8'], { count: 2, speed: 20, life: 0.3 }); }
+        return done;
+      },
+    }),
+    // Up out of reach, across above its shadow on the ground, then straight down onto it.
+    skirmisher: move('knockback', {
+      name: 'Dive Bomb', windup: 0.55, range: 120, sfx: 'mv_mountain_skirmisher',
+      start(e, ctx, p) {
+        e.untargetable = true;
+        e.mv.z = put(ctx, e, 'circle', { x: p.x, y: p.y, r: 15 * size(e), t: 0.9, life: 0.15, dmg: e.dmg, ...KNOCK, rgb: '28,20,34' }); // its shadow, darkening as it drops
+      },
+      update(e, dt, ctx) {
+        const m = e.mv, z = m.z;
+        if (m.t < 0.9) {
+          e.lift = 80 * clamp(m.t / 0.35, 0, 1) * (1 - clamp((m.t - 0.75) / 0.15, 0, 1));
+          e.spose = m.t > 0.75 ? 'dart' : null;
+          const dx = z.x - e.x, dy = z.y - e.y, d = Math.hypot(dx, dy);
+          if (m.t > 0.25 && d > 0.5) { const s = Math.min(d, (d / Math.max(0.75 - m.t, dt)) * dt); moveActor(ctx.map, e, (dx / d) * s, (dy / d) * s, { solid: e.solidFn(ctx.map) }); }
+          return false;
+        }
+        if (!m.down) {
+          // A wall in its way overhead can't stop it coming down on the mark.
+          m.down = true; e.lift = 0; e.untargetable = false; e.x = z.x; e.y = z.y;
+          puff(ctx, e.x, e.y + 3, ['#a07a5a', '#d0c0a8', '#f0e0c0'], { count: 14, speed: 65 });
+          ctx.game.cam.shake(2, 0.2);
+        }
+        return m.t >= 1.05;
+      },
+    }),
+    // A boulder lobbed onto the player that rolls on past.
+    ranged: move('rockfall', {
+      name: 'Rolling Boulder', windup: 0.7, range: 170, sfx: 'mv_mountain_ranged',
+      start(e, ctx, p) {
+        const k = size(e), flight = 0.8;
+        put(ctx, e, 'circle', { x: p.x, y: p.y, r: 11 * k, t: flight, life: 0.1, dmg: e.dmg });
+        bowl(ctx, e, 'boulder', p.x, p.y, flight, { len: 120, speed: 110, w: 12 * k, color: ['#6a625a', '#9a928a'] });
+        e.spose = 'aim';
+      },
+      update(e) { return e.mv.t >= 0.35; },
+    }),
+  },
+  snow: {
+    // A big snowball hurled down short of the player, rolling on through them and beyond.
+    brute: move('freeze', {
+      name: 'Rolling Snowball', windup: 0.8, range: 120, sfx: 'mv_snow_brute',
+      start(e, ctx, p) {
+        const k = size(e), a = toward(e, p), near = clamp(Math.hypot(p.x - e.x, p.y - e.y) * 0.4, 14, 40) * k;
+        bowl(ctx, e, 'snowball', e.x + Math.cos(a) * near, e.y + Math.sin(a) * near, 0.45, { len: 190, speed: 125, w: 16 * k, color: ['#ffffff', '#c8dcf0'], effect: 'freeze' });
+        e.spose = 'slam';
+      },
+      update(e) { return e.mv.t >= 0.4; },
+    }),
+    // A cone of frost breath in front of it.
+    lunger: move('chill', {
+      name: 'Frost Breath', windup: 0.6, range: 64, sfx: 'mv_snow_lunger',
+      start(e, ctx, p) {
+        const a = toward(e, p);
+        e.mv.z = put(ctx, e, 'cone', { x: e.x, y: e.y, a, spread: 0.45, r: 68 * size(e), t: 0.4, life: 0.6, dmg: 0, effect: 'chill' });
+        e.facing = Math.cos(a) < 0 ? 'left' : 'right'; e.spose = 'crouch';
+      },
+      update(e, dt, ctx) {
+        const m = e.mv, z = m.z;
+        if (m.t < 0.4) return false;
+        e.spose = 'lunge'; // jaws wide
+        if ((m.puff = (m.puff ?? 0) - dt) <= 0) {
+          m.puff = 0.04;
+          puff(ctx, z.x + Math.cos(z.a) * 6, z.y + Math.sin(z.a) * 6 - 2, ['#ffffff', '#c8ecff', '#8cd0ff'], { count: 3, speed: 120, angle: z.a, spread: z.spread * 1.6, life: 0.45 });
+        }
+        return m.t >= 1;
+      },
+    }),
+    // A dash along a shown line; its touch freezes.
+    skirmisher: move('freeze', {
+      name: 'Freezing Touch', windup: 0.6, range: 100, sfx: 'mv_snow_skirmisher',
+      start(e, ctx, p) { crouchAt(e, ctx, p, 100, 0.35); },
+      update(e, dt, ctx) {
+        const m = e.mv, done = lunge(e, dt, ctx, 0.35, 230, 0.42, { dmg: e.dmg, effect: 'freeze', blockable: true });
+        if (m.z) {
+          e.spose = 'dart';
+          if ((m.glint = (m.glint ?? 0) - dt) <= 0) { m.glint = 0.04; puff(ctx, e.x, e.y - 4, ['#ffffff', '#c8ecff'], { count: 2, speed: 15, life: 0.5 }); }
+        }
+        return done;
+      },
+    }),
+    // An ice arrow down a shown line; it chills what it hits.
+    ranged: move('chill', { name: 'Ice Arrow', windup: 0.6, range: 170, sfx: 'mv_snow_ranged', ...arrow('ice', 170, 1.3) }),
+  },
+  volcanic: {
+    // The slam splits the ground into three lines of lava fanning out toward the player.
+    brute: move('burn', {
+      name: 'Fissure Slam', windup: 0.8, range: 70, sfx: 'mv_volcanic_brute',
+      start(e, ctx, p) {
+        const k = size(e), a0 = toward(e, p), x = e.x + Math.cos(a0) * 12, y = e.y + Math.sin(a0) * 12;
+        for (const da of [-0.6, 0, 0.6]) {
+          const a = a0 + da, line = { x1: x, y1: y, x2: x + Math.cos(a) * 84 * k, y2: y + Math.sin(a) * 84 * k, w: 8 * k, t: 0.55, effect: 'burn' };
+          put(ctx, e, 'segment', { ...line, life: 0.15, dmg: e.dmg });
+          put(ctx, e, 'segment', { ...line, life: 3, dmg: 0, art: 'fissure' });
+        }
+        Object.assign(e.mv, { a: a0, x, y }); e.spose = 'slam';
+        puff(ctx, x, y + 3, ['#4a4040', '#ff7030'], { count: 10, speed: 55 });
+        ctx.game.cam.shake(2.5, 0.2);
+      },
+      update(e, dt, ctx) {
+        const m = e.mv;
+        if (m.t < 0.55) return false;
+        // lava spits up along each crack as it opens
+        for (const da of [-0.6, 0, 0.6]) for (let i = 1; i <= 4; i++) {
+          const a = m.a + da, d = i * 21 * size(e);
+          puff(ctx, m.x + Math.cos(a) * d, m.y + Math.sin(a) * d, ['#ffb040', '#ff6a18', '#3a2020'], { count: 2, speed: 30, up: 25, life: 0.45 });
+        }
+        ctx.game.cam.shake(1.5, 0.15);
+        return true;
+      },
+    }),
+    // A lunge that sets you burning, leaving a line of burning paw prints behind it.
+    lunger: move('burn', {
+      name: 'Molten Lunge', windup: 0.65, range: 90, sfx: 'mv_volcanic_lunger',
+      start(e, ctx, p) { crouchAt(e, ctx, p, 96, 0.3); e.mv.step = 0; },
+      update(e, dt, ctx) {
+        const m = e.mv, done = lunge(e, dt, ctx, 0.3, 260, 0.36, { dmg: e.dmg, effect: 'burn', blockable: true });
+        // Each print smoulders a moment before it catches.
+        if (m.z && (m.step -= dt) <= 0) { m.step = 0.06; put(ctx, e, 'circle', { x: e.x, y: e.y + 3, r: 5 * size(e), t: 0.25, life: 2.5, dmg: 0, effect: 'burn', art: 'fire' }); }
+        return done;
+      },
+    }),
+    // A dart through the player, laying a trail that catches fire just behind it.
+    skirmisher: move('burn', {
+      name: 'Fire Trail', windup: 0.6, range: 100, sfx: 'mv_volcanic_skirmisher',
+      start(e, ctx, p) {
+        const m = e.mv;
+        m.a = toward(e, p); m.len = Math.hypot(p.x - e.x, p.y - e.y) + 40; m.lx = e.x; m.ly = e.y;
+        aimLine(ctx, e, m.a, m.len, 10 * size(e), 0.35);
+      },
+      update(e, dt, ctx) {
+        const m = e.mv;
+        if (m.t < 0.35) return false;
+        e.spose = 'dart';
+        const r = moveActor(ctx.map, e, Math.cos(m.a) * 220 * dt, Math.sin(m.a) * 220 * dt, { solid: e.solidFn(ctx.map) });
+        const done = r.hitX || r.hitY || m.t >= 0.35 + m.len / 220;
+        if (Math.hypot(e.x - m.lx, e.y - m.ly) >= (done ? 1 : 10)) {
+          put(ctx, e, 'segment', { x1: m.lx, y1: m.ly, x2: e.x, y2: e.y, w: 9 * size(e), t: 0.3, life: 3, dmg: 0, effect: 'burn', art: 'fire' });
+          m.lx = e.x; m.ly = e.y;
+        }
+        return done;
+      },
+    }),
+    // A fireball lobbed onto the player that splashes into a fire patch.
+    ranged: move('burn', {
+      name: 'Fireball', windup: 0.6, range: 160, sfx: 'mv_volcanic_ranged',
+      start(e, ctx, p) { splat(e, ctx, p, { kind: 'fireball', flight: 0.75, r: 10, puddle: 20, art: 'fire', life: 4, color: ['#ff6a18', '#ffb040', '#fff0a0'], sound: 'poof' }); e.spose = 'aim'; },
       update(e) { return e.mv.t >= 0.3; },
     }),
   },

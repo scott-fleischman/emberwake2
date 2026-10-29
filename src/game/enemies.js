@@ -3,7 +3,7 @@
 //  - every attack is telegraphed (flash + pose) and followed by a recovery punish window;
 //  - damage comes from attacks, never from merely brushing against a body.
 import { Actor, Particles, Poof, Projectile, flyingSolid, walkerSolid } from './entities.js';
-import { enemyStats } from '../data/enemies.js';
+import { enemyStats, gloamPalette, GLOAM_TIER } from '../data/enemies.js';
 import { moveActor } from './physics.js';
 import { enemySprite, flashOf, tintOf } from '../gfx/sprites.js';
 import { drawShadow } from '../gfx/render.js';
@@ -15,7 +15,8 @@ const RANGED_SHOT = ['arrow', 'shot', 'shot', 'shot', 'ice', 'ember'];
 
 export class Enemy extends Actor {
   constructor(archetype, biome, x, y, opts = {}) {
-    const st = enemyStats(archetype, biome);
+    const st = enemyStats(archetype, biome, opts.gloam ? { tier: GLOAM_TIER } : {});
+    if (opts.gloam) { st.pal = gloamPalette(st.pal); st.name = `Gloam ${st.name}`; }
     super(x, y, st.w, st.h);
     this.archetype = archetype;
     this.biome = biome;
@@ -38,7 +39,7 @@ export class Enemy extends Actor {
     this.wanderT = 0;
     this.spawnId = opts.spawnId || null;
     this.group = opts.group || null;
-    this.key = `${archetype}${biome}`;
+    this.key = `${archetype}${biome}${opts.gloam ? 'g' : ''}`; // keys the sprite cache, so Gloam colours get their own
     this.dirX = 0; this.dirY = 0;
     this.hitDone = false;
     this.sig = SPECIALS[BIOME_KEYS[biome]]?.[archetype] || null; // signature move, see specials.js
@@ -126,6 +127,7 @@ export class Enemy extends Actor {
   endSpecial(ctx) {
     this.state = 'idle'; this.sub = this.spose = null;
     this.untargetable = this.hidden = this.latched = false;
+    this.lift = 0;
     this.specialCool = specialCooldown();
     this.releaseToken(ctx);
   }
@@ -318,7 +320,8 @@ export class Enemy extends Actor {
   draw(g, cam) {
     if (this.hidden) return; // burrowed: its sand ripple zone stands in for it
     const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
-    const bob = this.flying ? Math.sin(this.anim * 6) * 2 - 6 : 0;
+    // `lift`: how high a special has carried it (a harpy's dive); its shadow stays on the ground.
+    const bob = (this.flying ? Math.sin(this.anim * 6) * 2 - 6 : 0) - (this.lift || 0);
     drawShadow(g, x, y + this.h / 2, this.w / 2 + 1, 2, this.flying ? 0.2 : 0.3);
     if (this.state === 'spawn') { g.globalAlpha = 1 - this.timer / 0.35; }
     // Calm ground foes breathe slowly, each on its own beat; once alert they move at full tempo.

@@ -320,7 +320,8 @@ export class GameScene {
 
   // ---------------------------------------------------------------- combat outcomes
   // opts.effect lands only with a hit that connects: a blocked or dodged blow carries nothing.
-  // opts.unblockable skips the shield; zones set it unless they are blockable. opts.knock is unused so far.
+  // opts.unblockable skips the shield; zones set it unless they are blockable. opts.knock is the
+  // knockback's force, for the heavy blows that throw you.
   damagePlayer(dmg, src, opts = {}) {
     const p = this.player, res = this.state.player;
     if (p.mode === 'dead' || this.deathT > 0) return 'ignored';
@@ -346,7 +347,7 @@ export class GameScene {
     p.iframes = 0.9;
     p.flash = 0.15;
     this.player.regenPool = 0;
-    if (src && !opts.noKnock) { const [kx, ky] = knockbackVector(src.x, src.y, p.x, p.y, 190); p.knock(kx, ky, 0.14); }
+    if (src && !opts.noKnock) { const [kx, ky] = knockbackVector(src.x, src.y, p.x, p.y, opts.knock || 190); p.knock(kx, ky, 0.14); }
     this.audio.sfx('hurt');
     if (this.app.options.screenShake) this.cam.shake(2.5, 0.2);
     this.hitstop = 0.06;

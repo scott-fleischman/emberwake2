@@ -10,9 +10,10 @@ import { lockOnTarget, meleeTargets } from '../src/game/combat.js';
 import { BIOME_KEYS } from '../src/world/tiles.js';
 import { AudioEngine, SFX_NAMES } from '../src/audio/audio.js';
 import { Bot } from '../src/bot/bot.js';
+import { ARCHETYPES, enemyStats } from '../src/data/enemies.js';
 
 const ARCH = ['brute', 'lunger', 'skirmisher', 'ranged'];
-const DONE = ['forest', 'swamp', 'desert'];
+const DONE = ['forest', 'swamp', 'desert', 'mountain', 'snow', 'volcanic'];
 test('each of these regions has a move for all four archetypes', () => {
   for (const b of DONE) for (const a of ['brute', 'lunger', 'skirmisher', 'ranged']) {
     const m = SPECIALS[b][a];
@@ -39,6 +40,24 @@ test('a special waits for its first delay, telegraphs, then lands', async () => 
     assert.ok(r.windup, `${b}/${a} telegraph`);
     assert.ok(EFFECTS[m.effect] ? r.effects.includes(m.effect) : r.hpLost > 0, `${b}/${a} landed`);
   }
+});
+test('Gloam-touched monsters are tier 2.2 and violet', () => {
+  const e = new Enemy('brute', 0, 0, 0, { gloam: true });
+  assert.equal(e.maxHp, Math.round(ARCHETYPES.brute.hp * 2.2));
+  assert.match(e.name, /^Gloam /);
+  assert.notDeepEqual(e.st.pal, enemyStats('brute', 0).pal);
+});
+test('Ice Wisps freeze on touch; Frost Archers chill', async () => {
+  assert.ok((await specialHits('skirmisher', 'snow')).effects.includes('freeze'));
+  assert.ok((await specialHits('ranged', 'snow')).effects.includes('chill'));
+});
+test('a tier overrides the region, and Gloam monsters keep their own sprites', () => {
+  assert.equal(enemyStats('lunger', 0, { tier: 2.2 }).hp, Math.round(ARCHETYPES.lunger.hp * 2.2));
+  assert.equal(enemyStats('lunger', 4).hp, Math.round(ARCHETYPES.lunger.hp * 1.9));
+  const g = new Enemy('lunger', 4, 0, 0, { gloam: true }), plain = new Enemy('lunger', 4, 0, 0);
+  assert.equal(g.name, 'Gloam Frost Wolf');
+  assert.notEqual(g.key, plain.key); // the sprite cache is keyed on it
+  assert.equal(g.sig, plain.sig);
 });
 test('normal attacks carry no effect', async () => {
   const s = await sandbox();
@@ -140,6 +159,73 @@ test('a Dune Scorpion burrows out of reach, then erupts where the player stood a
   assert.ok(Math.hypot(e.x - mark.x, e.y - mark.y) < 2);
   assert.ok(p.effects.blind);
 });
+test('a Harpy dives out of reach, its shadow marking the spot 0.9 s before a heavy knockback', async () => {
+  const { s, e } = await special('skirmisher', 'mountain');
+  assert.ok(stepUntil(s, () => e.untargetable));
+  const z = s.area.zones.find((q) => q.owner === e && q.dmg > 0);
+  assert.equal(z.shape, 'circle'); assert.equal(z.t0, 0.9);
+  assert.equal(z.effect, 'knockback'); assert.equal(z.knock, 260);
+  assert.ok(stepUntil(s, () => e.lift > 30, 0.5));
+  assert.ok(stepUntil(s, () => z.t <= 0.02, 1)); assert.ok(e.untargetable);
+  assert.ok(stepUntil(s, () => !e.untargetable, 0.2));
+  assert.ok(Math.hypot(e.x - z.x, e.y - z.y) < 2); assert.ok(!e.lift);
+});
+test('a heavy knockback throws the player further than a plain blow', async () => {
+  const push = async (knock) => {
+    const s = await sandbox(), p = s.game.player, x0 = p.x;
+    s.game.damagePlayer(1, { x: p.x - 10, y: p.y }, { knock });
+    s.step(0.5);
+    return p.x - x0;
+  };
+  const plain = await push(0), heavy = await push(260);
+  assert.ok(plain > 5 && heavy > plain * 1.3, `${plain} -> ${heavy}`);
+});
+test('a Stone Ogre stomp drops four rocks around it, one where the player stands, landing 0.9-1.4 s on', async () => {
+  const { s, e } = await special('brute', 'mountain');
+  assert.ok(stepUntil(s, () => s.area.zones.some((z) => z.owner === e)));
+  const rocks = s.area.zones.filter((z) => z.owner === e && z.shape === 'circle' && z.dmg > 0), p = s.game.player;
+  assert.equal(rocks.length, 4);
+  const ts = rocks.map((z) => z.t0).sort((a, b) => a - b);
+  assert.ok(Math.abs(ts[0] - 0.9) < 1e-9 && Math.abs(ts[3] - 1.4) < 1e-9, ts.join());
+  const r0 = Math.hypot(rocks[0].x - e.x, rocks[0].y - e.y);
+  for (const z of rocks) assert.ok(Math.abs(Math.hypot(z.x - e.x, z.y - e.y) - r0) < 1);
+  assert.ok(rocks.some((z) => Math.hypot(z.x - p.x, z.y - p.y) < 1));
+});
+test('a rolling shot lands, then rolls on along the ground as a moving segment zone until a wall stops it', async () => {
+  const s = await sandbox(), p = s.game.player, hp0 = s.game.state.player.hp;
+  const pr = s.spawn(new Projectile('boulder', p.x - 80, p.y, 0, 80, 1, 'enemy', { lob: 0.5, roll: { speed: 100, time: 4, w: 10, dmg: 1 } }));
+  s.step(0.45);
+  assert.ok(!s.area.zones.length); assert.equal(s.game.state.player.hp, hp0);
+  s.step(0.1);
+  const z = s.area.zones.find((q) => q.shape === 'segment');
+  assert.ok(z && z.t <= 0 && z.vx === 100 && z.vy === 0 && z.w === 10);
+  const x0 = z.x; s.step(0.2);
+  assert.ok(Math.abs(z.x - x0 - 20) < 2); assert.ok(Math.abs(pr.x - z.x) < 3);
+  s.step(0.4);
+  assert.ok(s.game.state.player.hp < hp0);
+  s.step(3);
+  assert.ok(pr.dead); assert.ok(!s.area.zones.includes(z));
+  assert.ok(pr.x < s.area.map.pixelW - 16);
+});
+test('a Yeti snowball rolls through the player and freezes', async () => {
+  const r = await specialHits('brute', 'snow');
+  assert.ok(r.effects.includes('freeze')); assert.ok(r.hpLost > 0);
+});
+test("a Frost Wolf's breath is a cone of chill in front of it", async () => {
+  const { s, e } = await special('lunger', 'snow');
+  assert.ok(stepUntil(s, () => s.area.zones.some((z) => z.owner === e)));
+  const z = s.area.zones.find((q) => q.owner === e);
+  assert.equal(z.shape, 'cone'); assert.equal(z.effect, 'chill');
+  assert.ok(Math.abs(Math.atan2(s.game.player.y - e.y, s.game.player.x - e.x) - z.a) < 0.05);
+});
+test('volcanic moves leave burning ground behind: fissures, paw prints, a fire trail, a fire patch', async () => {
+  for (const [a, shape] of [['brute', 'segment'], ['lunger', 'circle'], ['skirmisher', 'segment'], ['ranged', 'circle']]) {
+    const { s, e } = await special(a, 'volcanic');
+    assert.ok(stepUntil(s, () => s.area.zones.some((z) => z.owner === e && z.effect === 'burn' && z.art && z.life >= 2)), a);
+    const z = s.area.zones.find((q) => q.owner === e && q.art);
+    assert.equal(z.shape, shape, a); assert.ok(['fire', 'fissure'].includes(z.art), a);
+  }
+});
 test('a dust devil steers toward the player at 30 px/s and blinds inside', async () => {
   const s = await sandbox({ seed: 'devil' });
   const e = s.spawn(new Enemy('skirmisher', 2, s.center.x + 70, s.center.y));
@@ -224,6 +310,13 @@ test('the bot does not read a lobbed projectile as a threat on its ground path',
   s.spawn(new Projectile('mud', p.x - 20, p.y, 0, 80, 0, 'enemy', { lob: 1 }));
   assert.equal(new Bot(s.game).danger(p.x, p.y, []).lv, 0);
 });
+test('the bot sees a rolling boulder coming, and knows a shield will not stop it', async () => {
+  const s = await sandbox(), p = s.game.player;
+  s.spawn(new Projectile('boulder', p.x - 60, p.y, 0, 20, 1, 'enemy', { lob: 0.1, roll: { speed: 100, time: 2, w: 10, dmg: 1 } }));
+  s.step(0.35); // rolling, and about to arrive
+  const d = new Bot(s.game).danger(p.x, p.y, []);
+  assert.ok(d.lv >= 2); assert.equal(d.block, false);
+});
 
 // ---------------------------------------------------------------- art and sound
 test('every move has its own sound, named for its region and archetype', () => {
@@ -248,10 +341,14 @@ test('monsters mid-special and the new projectiles draw without randomness', asy
     e.state = 'special'; e.sub = 'windup'; e.anim = 0.01;
     things.push(e);
   }
-  for (const k of ['vine', 'mud', 'poison', 'sand', 'seed']) things.push(new Projectile(k, 40, 40, 0.3, 80, 1, 'enemy', { lob: k === 'vine' ? 0 : 1 }));
+  for (const k of ['vine', 'mud', 'poison', 'sand', 'seed', 'boulder', 'snowball', 'fireball']) things.push(new Projectile(k, 40, 40, 0.3, 80, 1, 'enemy', { lob: k === 'vine' ? 0 : 1 }));
+  things.push(new Projectile('ice', 40, 40, 0.3, 80, 1, 'enemy', { effect: 'chill' }));
+  for (const k of ['boulder', 'snowball']) things.push(Object.assign(new Projectile(k, 40, 40, 0.3, 80, 1, 'enemy', { lob: 1, roll: { speed: 90, time: 1 } }), { lob: 0, rolling: true }));
+  const harpy = new Enemy('skirmisher', 3, 50, 50);
+  harpy.lift = 60; things.push(harpy);
   const { g, calls } = recorder(), rnd = Math.random;
   Math.random = () => { throw new Error('drawing used Math.random'); };
   try { for (const t of things) t.draw(g, cam, s.area.ctx); } finally { Math.random = rnd; }
-  assert.ok(calls.filter((c) => c[0] === 'drawImage').length >= 12);
+  assert.ok(calls.filter((c) => c[0] === 'drawImage').length >= 24);
   assert.ok(calls.some((c) => c[0] === 'arc'));
 });

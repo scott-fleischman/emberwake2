@@ -347,7 +347,8 @@ export class Bot {
     }
     for (const pr of this.g.area.entities) {
       if (pr.team !== 'enemy' || pr.vx === undefined || pr.dead || !pr.hitSet || pr.lob) continue; // a lob's landing is a zone
-      if (segDist(x, y, pr.x, pr.y, pr.x + pr.vx * 0.45, pr.y + pr.vy * 0.45) < 12) bump(2, true);
+      // A rolling boulder hits as a zone a shield can't stop; this sees it coming.
+      if (segDist(x, y, pr.x, pr.y, pr.x + pr.vx * 0.45, pr.y + pr.vy * 0.45) < (pr.rolling ? pr.zone.w / 2 + 8 : 12)) bump(2, !pr.rolling);
     }
     return { lv, block };
   }

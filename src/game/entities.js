@@ -5,6 +5,7 @@ import { humanSprite, npcLook, drawHeld, idleLife, R } from '../gfx/sprites.js';
 import { drawShadow } from '../gfx/render.js';
 import { TAU } from '../core/math.js';
 import { hashSeed, tileHash } from '../core/rng.js';
+import { makeZone } from './zones.js';
 
 export class Entity {
   constructor(x, y, w = 8, h = 8) {
@@ -165,7 +166,10 @@ const PROJ_STYLE = {
   arrow: { w: 4, h: 4 }, knife: { w: 4, h: 4 }, firebolt: { w: 6, h: 6 },
   shot: { w: 5, h: 5 }, thorn: { w: 5, h: 5 }, ember: { w: 6, h: 6 }, ice: { w: 5, h: 5 },
   vine: { w: 4, h: 4 }, mud: { w: 7, h: 7 }, poison: { w: 6, h: 6 }, sand: { w: 6, h: 6 }, seed: { w: 5, h: 5 },
+  boulder: { w: 10, h: 10 }, snowball: { w: 12, h: 12 }, fireball: { w: 8, h: 8 },
 };
+
+const ROLL_DUST = { boulder: ['#8a8278', '#5a544c'], snowball: ['#ffffff', '#c8dcf0'] };
 
 export class Projectile extends Entity {
   constructor(kind, x, y, angle, speed, dmg, team, opts = {}) {
@@ -175,9 +179,12 @@ export class Projectile extends Entity {
     this.dmg = dmg; this.team = team; this.life = opts.life ?? 1.6; this.pierce = opts.pierce ?? 0;
     this.hitSet = new Set(); this.t = 0; this.reflected = false;
     this.effect = opts.effect || null; // a status effect it carries onto the player, on a hit only
-    // opts.lob: seconds of flight in an arc that comes down at the aim point, calling opts.land.
+    // opts.lob: seconds of flight in an arc that comes down at the aim point, calling opts.land. It
+    // leaves from opts.height above the ground (a hand's height) and peaks opts.arc above that line.
     this.lob = opts.lob || 0; this.land = opts.land || null;
-    if (this.lob) { this.life = this.lob; this.arc = Math.min(36, 8 + speed * this.lob * 0.2); }
+    if (this.lob) { this.life = this.lob; this.arc = opts.arc ?? Math.min(36, 8 + speed * this.lob * 0.2); this.z0 = opts.height ?? 6; }
+    // opts.roll: { speed, time, ...zone fields }: once down, it rolls on the way it was flying.
+    this.roll = opts.roll || null; this.rolling = false;
   }
   get sortY() { return this.y + (this.lob ? 12 : 6); }
   update(dt, ctx) {
@@ -186,7 +193,22 @@ export class Projectile extends Entity {
     if (this.lob) {
       // Up over walls and heads alike; what it does where it comes down is a zone's job.
       this.x += this.vx * dt; this.y += this.vy * dt;
-      if (this.life <= 0) { this.dead = true; this.land?.(this, ctx); }
+      if (this.life <= 0) {
+        this.land?.(this, ctx);
+        if (this.roll) this.startRoll(ctx); else this.dead = true;
+      }
+      return;
+    }
+    if (this.rolling) {
+      // Along the ground: the zone riding with it does the hitting, so the bot sees it as a hazard.
+      const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
+      if (this.life <= 0 || walkerSolid(ctx.map)(Math.floor(nx / TILE), Math.floor(ny / TILE))) {
+        this.dead = true;
+        ctx.area.zones = ctx.area.zones.filter((z) => z !== this.zone);
+        ctx.area.spawn(new Particles(this.x, this.y, { count: 10, color: ROLL_DUST[this.kind] || '#b0a090', speed: 55, life: 0.4 }));
+        return;
+      }
+      this.x = nx; this.y = ny;
       return;
     }
     if (this.life <= 0) { this.dead = true; return; }
@@ -201,15 +223,23 @@ export class Projectile extends Entity {
     this.x = nx; this.y = ny;
     ctx.area.resolveProjectile(this, ctx);
   }
+  // Its body becomes a moving segment zone, published for the length of the roll.
+  startRoll(ctx) {
+    const { speed, time, ...zone } = this.roll, c = Math.cos(this.angle), s = Math.sin(this.angle);
+    this.lob = 0; this.rolling = true; this.life = time; this.t = 0;
+    this.vx = c * speed; this.vy = s * speed;
+    this.zone = makeZone('segment', { x1: this.x - c * 3, y1: this.y - s * 3, x2: this.x + c * 3, y2: this.y + s * 3, w: this.w, t: 0, life: time, vx: this.vx, vy: this.vy, ...zone });
+    ctx.area.zones.push(this.zone);
+  }
   draw(g, cam) {
     const x = this.x - cam.left, y = this.y - cam.top;
-    if (this.lob) {
-      // Starts at hand height, peaks mid-flight, lands on its shadow.
-      const k = Math.min(1, this.t / this.lob), z = Math.sin(Math.PI * k) * this.arc + (1 - k) * 6;
-      drawShadow(g, x, y + 2, 3, 1.5, 0.25);
+    if (this.lob || this.rolling) {
+      // Starts at hand height, peaks mid-flight, lands on its shadow; a rolling one turns as it goes.
+      const k = this.rolling ? 1 : Math.min(1, this.t / this.lob), z = this.rolling ? 0 : Math.sin(Math.PI * k) * this.arc + (1 - k) * this.z0;
+      drawShadow(g, x, y + 2, Math.max(3, this.w / 2), 1.5, 0.25);
       g.save();
       g.translate(Math.round(x), Math.round(y - z));
-      g.rotate(this.t * 7);
+      g.rotate(this.rolling ? (this.t * Math.hypot(this.vx, this.vy) / (this.w / 2)) * Math.sign(this.vx || 1) : this.t * 7);
       switch (this.kind) {
         case 'mud': g.fillStyle = '#5a4024'; g.beginPath(); g.arc(0, 0, 4, 0, TAU); g.fill(); R(g, -2, -2, 2, 2, '#8a6a44'); R(g, 2, 1, 1, 2, '#3a2814'); break;
         case 'poison':
@@ -217,6 +247,20 @@ export class Projectile extends Entity {
           g.fillStyle = '#5aa030'; g.beginPath(); g.arc(0, 0, 3, 0, TAU); g.fill(); R(g, -1, -2, 2, 1, '#c8f090');
           break;
         case 'sand': R(g, -3, -2, 6, 5, '#c8a868'); R(g, -3, -2, 6, 1, '#e8d0a0'); R(g, -1, -4, 2, 2, '#8a6a3a'); break;
+        case 'boulder':
+          g.fillStyle = '#6a625a'; g.beginPath(); g.arc(0, 0, 5, 0, TAU); g.fill();
+          R(g, -3, -3, 3, 2, '#9a928a'); R(g, -1, 0, 4, 1, '#3a342e'); R(g, 2, 1, 1, 3, '#3a342e'); R(g, -4, 2, 2, 1, '#4a443e');
+          break;
+        case 'snowball':
+          g.fillStyle = '#b8c8dc'; g.beginPath(); g.arc(0, 0, 6, 0, TAU); g.fill();
+          g.fillStyle = '#eef4fa'; g.beginPath(); g.arc(-1, -1, 4.5, 0, TAU); g.fill();
+          R(g, -3, -3, 2, 2, '#ffffff'); R(g, 2, 1, 2, 1, '#d0dcea'); R(g, -2, 3, 2, 1, '#d0dcea');
+          break;
+        case 'fireball':
+          g.fillStyle = 'rgba(255,140,40,0.4)'; g.beginPath(); g.arc(0, 0, 6, 0, TAU); g.fill();
+          g.fillStyle = '#ff6a18'; g.beginPath(); g.arc(0, 0, 4, 0, TAU); g.fill();
+          R(g, -2, -2, 3, 3, '#ffb040'); R(g, -1, -1, 1, 1, '#fff0b0');
+          break;
         default: g.fillStyle = '#7a5a30'; g.beginPath(); g.ellipse(0, 0, 2.5, 3.5, 0, 0, TAU); g.fill(); R(g, -1, -4, 2, 2, '#7ab048');
       }
       g.restore();
@@ -235,7 +279,9 @@ export class Projectile extends Entity {
         R(g, -8, -1, 4, 2, 'rgba(255,120,40,0.6)');
         break;
       case 'thorn': g.fillStyle = '#6ab040'; g.beginPath(); g.moveTo(5, 0); g.lineTo(-3, -3); g.lineTo(-3, 3); g.closePath(); g.fill(); break;
-      case 'ice': g.fillStyle = '#c8f0ff'; g.beginPath(); g.moveTo(6, 0); g.lineTo(-3, -2.5); g.lineTo(-3, 2.5); g.closePath(); g.fill(); R(g, -1, -1, 3, 1, '#fff'); break;
+      case 'ice':
+        if (this.effect) { g.fillStyle = 'rgba(140,208,255,0.45)'; g.beginPath(); g.arc(1, 0, 5, 0, TAU); g.fill(); } // a frost arrow's glow
+        g.fillStyle = '#c8f0ff'; g.beginPath(); g.moveTo(6, 0); g.lineTo(-3, -2.5); g.lineTo(-3, 2.5); g.closePath(); g.fill(); R(g, -1, -1, 3, 1, '#fff'); break;
       case 'vine': R(g, -6, -0.5, 10, 1, '#5a7a30'); R(g, 3, -1.5, 3, 3, '#8ac050'); R(g, -2, -2, 2, 1, '#7ab048'); R(g, 0, 1, 2, 1, '#7ab048'); R(g, -7, -1.5, 2, 3, '#4a6a2a'); break;
       default:
         g.fillStyle = this.team === 'player' ? '#a0e0ff' : '#ff5a6a';

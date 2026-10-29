@@ -33,9 +33,10 @@ export const FAMILIES = [
 
 export const DUNGEON_FAMILY = { verdant: 0, ashen: 5, frost: 4 };
 
-export function enemyStats(archetype, biome) {
+// opts.tier overrides the region's, as for the Gloam-touched.
+export function enemyStats(archetype, biome, opts = {}) {
   const a = ARCHETYPES[archetype];
-  const tier = BIOME_TIER[biome] ?? 1;
+  const tier = opts.tier ?? BIOME_TIER[biome] ?? 1;
   return {
     ...a,
     hp: Math.round(a.hp * tier),
@@ -44,4 +45,14 @@ export function enemyStats(archetype, biome) {
     name: FAMILIES[biome].names[archetype],
     pal: FAMILIES[biome].pal[archetype],
   };
+}
+
+// The Spire's Gloam-touched: a ward region's family a tier above every region, steeped in violet.
+export const GLOAM_TIER = 2.2;
+const GLOAM = [[96, 52, 150], [52, 26, 92], [214, 150, 255]]; // what main, dark and accent steep toward
+export function gloamPalette(pal) {
+  return pal.map((c, i) => {
+    const n = parseInt(c.slice(1), 16), to = GLOAM[i] ?? GLOAM[0];
+    return `#${[n >> 16, (n >> 8) & 255, n & 255].map((v, j) => Math.round(v * 0.5 + to[j] * 0.5).toString(16).padStart(2, '0')).join('')}`;
+  });
 }

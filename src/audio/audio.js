@@ -376,6 +376,55 @@ const SFX = {
     [0, 0.1, 0.2].forEach((d) => a.noise(t + d, { dur: 0.08, vol: 0.1, f: 900, f2: 1500, q: 3 }));
     a.tone(t + 0.28, { type: 'triangle', f: 500, f2: 250, dur: 0.08, vol: 0.1 });
   },
+  mv_mountain_brute: (a, t) => { // a stomp, then rocks rattling loose overhead
+    a.tone(t, { f: 80, f2: 32, dur: 0.4, vol: 0.4 });
+    [0.15, 0.27, 0.36, 0.48].forEach((d, i) => a.noise(t + d, { dur: 0.07, vol: 0.13, type: 'lowpass', f: 900 - i * 120 }));
+  },
+  mv_mountain_lunger: (a, t) => { // a snort, then claws scraping stone
+    a.noise(t, { dur: 0.12, vol: 0.14, f: 700, f2: 300, q: 1.5 });
+    a.tone(t + 0.12, { type: 'sawtooth', f: 90, f2: 70, dur: 0.25, vol: 0.08, lp: 400 });
+    a.noise(t + 0.14, { dur: 0.2, vol: 0.1, type: 'highpass', f: 2800, f2: 1800 });
+  },
+  mv_mountain_skirmisher: (a, t) => { // a shriek, then wingbeats climbing away
+    a.tone(t, { type: 'sawtooth', f: 1300, f2: 900, dur: 0.22, vol: 0.05, lp: 3000, q: 3 });
+    [0.2, 0.32, 0.44].forEach((d) => a.noise(t + d, { dur: 0.06, vol: 0.1, type: 'lowpass', f: 600 }));
+  },
+  mv_mountain_ranged: (a, t) => { // a grunt and the grind of a boulder hefted
+    a.tone(t, { type: 'sawtooth', f: 120, f2: 95, dur: 0.18, vol: 0.08, lp: 500 });
+    a.noise(t + 0.08, { dur: 0.3, vol: 0.12, type: 'lowpass', f: 300, f2: 500, q: 2 });
+  },
+  mv_snow_brute: (a, t) => { // a roar, and snow packed with a crunch
+    a.tone(t, { type: 'sawtooth', f: 140, f2: 90, dur: 0.4, vol: 0.1, lp: 600, attack: 0.05 });
+    [0.32, 0.38].forEach((d) => a.noise(t + d, { dur: 0.06, vol: 0.14, f: 1800, q: 1.2 }));
+  },
+  mv_snow_lunger: (a, t) => { // a long icy exhale
+    a.noise(t, { dur: 0.7, vol: 0.15, type: 'highpass', f: 1800, f2: 4200, attack: 0.15 });
+    a.tone(t, { f: 2600, f2: 2100, dur: 0.6, vol: 0.02, attack: 0.2 });
+  },
+  mv_snow_skirmisher: (a, t) => { // a falling glassy chime
+    a.notes(t, [100, 96, 91, 88], 0.05, { dur: 0.3, vol: 0.05 });
+  },
+  mv_snow_ranged: (a, t) => { // a crystalline draw and a ringing release
+    a.tone(t, { f: 1500, f2: 2400, dur: 0.25, vol: 0.03, attack: 0.15 });
+    a.tone(t + 0.25, { type: 'triangle', f: 1800, f2: 900, dur: 0.12, vol: 0.08 });
+  },
+  mv_volcanic_brute: (a, t) => { // a slam, then a hiss as the ground splits
+    a.tone(t, { f: 70, f2: 28, dur: 0.45, vol: 0.4 });
+    a.noise(t + 0.08, { dur: 0.6, vol: 0.12, type: 'highpass', f: 3000, f2: 1500, attack: 0.1 });
+  },
+  mv_volcanic_lunger: (a, t) => { // a snarl over crackling embers
+    a.tone(t, { type: 'sawtooth', f: 130, f2: 100, dur: 0.3, vol: 0.09, lp: 650, q: 4 });
+    [0.02, 0.09, 0.15, 0.24].forEach((d) => a.noise(t + d, { dur: 0.02, vol: 0.12, f: 3000, q: 4 }));
+  },
+  mv_volcanic_skirmisher: (a, t) => { // a whoosh of flame
+    a.noise(t, { dur: 0.45, vol: 0.18, type: 'lowpass', f: 300, f2: 2600, attack: 0.08 });
+    a.tone(t, { f: 180, f2: 360, dur: 0.35, vol: 0.06 });
+  },
+  mv_volcanic_ranged: (a, t) => { // a hacking cough, then a fiery whomp
+    [0, 0.08].forEach((d) => a.noise(t + d, { dur: 0.06, vol: 0.12, f: 900, q: 2 }));
+    a.noise(t + 0.18, { dur: 0.3, vol: 0.18, type: 'lowpass', f: 1500, f2: 200 });
+    a.tone(t + 0.18, { f: 120, f2: 60, dur: 0.2, vol: 0.2 });
+  },
 };
 
 // Small random pitch drift so repeated combat sounds don't machine-gun.
