@@ -324,6 +324,58 @@ const SFX = {
     [0, 0.02, 0.05, 0.09].forEach((d, i) => a.tone(t + d, { f: 2600 - i * 380, f2: 1800 - i * 300, dur: 0.18, vol: 0.06 }));
     a.tone(t, { type: 'triangle', f: 240, f2: 70, dur: 0.12, vol: 0.2 });
   },
+  // monster signature moves, mv_<region>_<archetype>, played as the move is unleashed
+  mv_forest_brute: (a, t) => { // a slam, then thorns scraping up
+    a.tone(t, { f: 95, f2: 40, dur: 0.3, vol: 0.35 });
+    a.noise(t + 0.05, { dur: 0.45, vol: 0.12, f: 500, f2: 2400, q: 3, attack: 0.12 });
+    a.tone(t + 0.1, { type: 'sawtooth', f: 170, f2: 250, dur: 0.3, vol: 0.05, lp: 900, q: 4 });
+  },
+  mv_forest_lunger: (a, t) => { // a growl that ends in a snap of jaws
+    a.tone(t, { type: 'sawtooth', f: 105, f2: 85, dur: 0.26, vol: 0.09, lp: 520, q: 3 });
+    a.noise(t + 0.24, { dur: 0.05, vol: 0.2, type: 'highpass', f: 2500 });
+    a.tone(t + 0.24, { type: 'triangle', f: 620, f2: 190, dur: 0.06, vol: 0.12 });
+  },
+  mv_forest_skirmisher: (a, t) => { // three pods popping loose in a rustle of leaves
+    [0, 0.08, 0.16].forEach((d, i) => a.tone(t + d, { type: 'triangle', f: 480 + i * 150, f2: 900 + i * 200, dur: 0.06, vol: 0.1 }));
+    a.noise(t, { dur: 0.3, vol: 0.06, type: 'highpass', f: 3200, f2: 2000, attack: 0.04 });
+  },
+  mv_forest_ranged: (a, t) => { // a creaking draw and a woody twang
+    a.noise(t, { dur: 0.22, vol: 0.06, f: 1300, f2: 900, q: 6, attack: 0.12 });
+    a.tone(t + 0.22, { type: 'sawtooth', f: 330, f2: 290, dur: 0.18, vol: 0.06, lp: 1500 });
+    a.tone(t + 0.22, { f: 165, f2: 110, dur: 0.12, vol: 0.14 });
+  },
+  mv_swamp_brute: (a, t) => { // a wet heave
+    a.noise(t, { dur: 0.32, vol: 0.18, type: 'lowpass', f: 380, f2: 950, attack: 0.08 });
+    a.tone(t, { f: 70, f2: 115, dur: 0.3, vol: 0.25 });
+  },
+  mv_swamp_lunger: (a, t) => { // a slurping suck
+    a.tone(t, { f: 290, f2: 920, dur: 0.18, vol: 0.12, attack: 0.02 });
+    a.noise(t + 0.1, { dur: 0.22, vol: 0.12, type: 'lowpass', f: 1200, f2: 300, q: 4 });
+  },
+  mv_swamp_skirmisher: (a, t) => { // a swelling buzz, two wings beating against each other
+    a.tone(t, { type: 'sawtooth', f: 220, f2: 330, dur: 0.45, vol: 0.06, lp: 1800, attack: 0.08 });
+    a.tone(t, { type: 'sawtooth', f: 233, f2: 347, dur: 0.45, vol: 0.05, lp: 1800, attack: 0.08 });
+  },
+  mv_swamp_ranged: (a, t) => { // a gurgle, then a spit
+    [0, 0.05, 0.1].forEach((d, i) => a.tone(t + d, { f: 180 + i * 45, f2: 120, dur: 0.06, vol: 0.12 }));
+    a.noise(t + 0.15, { dur: 0.12, vol: 0.15, f: 1800, f2: 600, q: 2 });
+  },
+  mv_desert_brute: (a, t) => { // a deep boom and a rush of sand
+    a.tone(t, { f: 62, f2: 30, dur: 0.5, vol: 0.4 });
+    a.noise(t, { dur: 0.6, vol: 0.15, f: 3000, f2: 400, q: 0.7, attack: 0.02 });
+  },
+  mv_desert_lunger: (a, t) => { // claws digging down
+    [0, 0.06, 0.12, 0.18, 0.24].forEach((d, i) => a.noise(t + d, { dur: 0.05, vol: 0.12, f: 1600 - i * 200, q: 2 }));
+    a.tone(t, { f: 140, f2: 60, dur: 0.35, vol: 0.12 });
+  },
+  mv_desert_skirmisher: (a, t) => { // a whirlwind winding up, with a thin whistle
+    a.noise(t, { dur: 0.8, vol: 0.16, f: 400, f2: 2200, q: 2.5, attack: 0.3 });
+    a.tone(t, { f: 700, f2: 1400, dur: 0.6, vol: 0.03, attack: 0.2 });
+  },
+  mv_desert_ranged: (a, t) => { // a sling whirling, then the release
+    [0, 0.1, 0.2].forEach((d) => a.noise(t + d, { dur: 0.08, vol: 0.1, f: 900, f2: 1500, q: 3 }));
+    a.tone(t + 0.28, { type: 'triangle', f: 500, f2: 250, dur: 0.08, vol: 0.1 });
+  },
 };
 
 // Small random pitch drift so repeated combat sounds don't machine-gun.

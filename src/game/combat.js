@@ -20,7 +20,7 @@ export function knockbackVector(fromX, fromY, toX, toY, force) {
 // Targets whose hitbox center lies within reach (plus their radius) and inside the swing arc.
 export function meleeTargets(ox, oy, angle, reach, arc, targets) {
   return targets.filter((t) => {
-    if (t.dead || t.hp <= 0) return false;
+    if (t.dead || t.hp <= 0 || t.untargetable) return false;
     const r = Math.max(t.w, t.h) / 2;
     const d = Math.hypot(t.x - ox, t.y - oy);
     if (d > reach + r) return false;

@@ -5,9 +5,11 @@
 import { Actor, Particles, Poof, Projectile, flyingSolid, walkerSolid } from './entities.js';
 import { enemyStats } from '../data/enemies.js';
 import { moveActor } from './physics.js';
-import { enemySprite, flashOf } from '../gfx/sprites.js';
+import { enemySprite, flashOf, tintOf } from '../gfx/sprites.js';
 import { drawShadow } from '../gfx/render.js';
 import { TAU } from '../core/math.js';
+import { BIOME_KEYS } from '../world/tiles.js';
+import { SPECIALS, firstDelay, specialCooldown } from './specials.js';
 
 const RANGED_SHOT = ['arrow', 'shot', 'shot', 'shot', 'ice', 'ember'];
 
@@ -39,6 +41,8 @@ export class Enemy extends Actor {
     this.key = `${archetype}${biome}`;
     this.dirX = 0; this.dirY = 0;
     this.hitDone = false;
+    this.sig = SPECIALS[BIOME_KEYS[biome]]?.[archetype] || null; // signature move, see specials.js
+    this.specialCool = firstDelay();
   }
 
   get pose() {
@@ -49,6 +53,7 @@ export class Enemy extends Actor {
       case 'lunge': return 'lunge';
       case 'dart': return 'dart';
       case 'aim': return 'aim';
+      case 'special': return this.sub === 'windup' ? 'special' : this.spose || 'idle';
       default: return 'idle';
     }
   }
@@ -83,13 +88,52 @@ export class Enemy extends Actor {
     const alive = p.mode !== 'dead';
     if (!this.aggro && alive && d < this.st.sight) { this.aggro = true; this.alertT = 0.6; }
     const farHome = Math.hypot(this.x - this.home.x, this.y - this.home.y) > this.leash;
-    if (this.aggro && (!alive || d > this.st.sight * 2 || (farHome && d > 90))) { this.aggro = false; this.releaseToken(ctx); this.state = 'idle'; }
+    if (this.aggro && (!alive || d > this.st.sight * 2 || (farHome && d > 90))) {
+      if (this.state === 'special') this.cancelSpecial(ctx);
+      this.aggro = false; this.releaseToken(ctx); this.state = 'idle';
+    }
     if (this.alertT > 0) this.alertT -= dt;
     if (!this.aggro) { this.idle(dt, ctx); return; }
-    if (this.state !== 'lunge' && this.state !== 'dart') this.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
+    if (this.pose !== 'lunge' && this.pose !== 'dart') this.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
     this.aim = Math.atan2(dy, dx);
-    this[this.archetype](dt, ctx, p, dx, dy, d);
+    if (this.state === 'special') this.special(dt, ctx, p);
+    else if (!this.trySpecial(dt, ctx, d)) this[this.archetype](dt, ctx, p, dx, dy, d);
     this.separate(dt, ctx);
+  }
+
+  // ---------------------------------------------------------------- signature move
+  // Off cooldown, the player in reach, no other attack under way, and an attack token free.
+  trySpecial(dt, ctx, d) {
+    if (!this.sig || (this.specialCool -= dt) > 0 || this.state !== 'idle' || d > this.sig.range || !this.requestToken(ctx)) return false;
+    this.state = 'special'; this.sub = 'windup'; this.timer = this.sig.windup;
+    return true;
+  }
+
+  // windup (glowing) -> act (the move's start, then its update until done) -> recover.
+  special(dt, ctx, p) {
+    const m = this.sig;
+    if (this.sub === 'windup') {
+      if ((this.timer -= dt) > 0) return;
+      this.sub = 'act'; this.mv = { t: 0 };
+      ctx.game.audio.sfx(m.sfx);
+      m.start(this, ctx, p);
+    } else if (this.sub === 'act') {
+      this.mv.t += dt;
+      if (m.update(this, dt, ctx, p)) { this.sub = 'recover'; this.timer = 0.6; this.spose = null; }
+    } else if ((this.timer -= dt) <= 0) this.endSpecial(ctx);
+  }
+
+  endSpecial(ctx) {
+    this.state = 'idle'; this.sub = this.spose = null;
+    this.untargetable = this.hidden = this.latched = false;
+    this.specialCool = specialCooldown();
+    this.releaseToken(ctx);
+  }
+
+  // Cut short: its strikes go with it.
+  cancelSpecial(ctx) {
+    ctx.area.zones = ctx.area.zones.filter((z) => z.owner !== this);
+    this.endSpecial(ctx);
   }
 
   idle(dt, ctx) {
@@ -250,7 +294,8 @@ export class Enemy extends Actor {
   }
 
   damage(amount, src, ctx, opts = {}) {
-    if (this.state === 'dying' || this.dead) return false;
+    if (this.state === 'dying' || this.dead || this.untargetable) return false;
+    this.latched = false; // any hit knocks a clinging leech off
     this.hp -= amount;
     this.flash = 0.12;
     this.aggro = true;
@@ -271,6 +316,7 @@ export class Enemy extends Actor {
   }
 
   draw(g, cam) {
+    if (this.hidden) return; // burrowed: its sand ripple zone stands in for it
     const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
     const bob = this.flying ? Math.sin(this.anim * 6) * 2 - 6 : 0;
     drawShadow(g, x, y + this.h / 2, this.w / 2 + 1, 2, this.flying ? 0.2 : 0.3);
@@ -279,8 +325,12 @@ export class Enemy extends Actor {
     const calm = !this.aggro && !this.moving && !this.flying && this.state === 'idle';
     const frame = calm ? Math.floor((this.anim + (this.orbitA || 0)) * 2.2) % 2 : Math.floor(this.anim * 6) % 2;
     const spr = enemySprite(this.archetype, this.st.pal, this.pose, frame, this.key);
-    const telegraph = (this.state === 'windup' || this.state === 'crouch' || this.state === 'aim') && Math.floor(this.anim * 14) % 2 === 0;
-    const img = this.flash > 0 || this.state === 'dying' || telegraph ? flashOf(spr, `${this.key}${this.pose}${frame}${this.archetype}`) : spr;
+    const blink = Math.floor(this.anim * 14) % 2 === 0, glow = this.state === 'special' && this.sub === 'windup';
+    const telegraph = (this.state === 'windup' || this.state === 'crouch' || this.state === 'aim') && blink;
+    const sk = `${this.key}${this.pose}${frame}${this.archetype}`;
+    // A special winds up glowing in its effect's colour, where a plain attack flashes white.
+    if (glow) { g.fillStyle = `rgba(${this.sig.rgb},${0.3 + 0.15 * Math.sin(this.anim * 12)})`; g.beginPath(); g.ellipse(x, y + this.h / 2 + bob - spr.height / 2, spr.width * 0.55, spr.height * 0.6, 0, 0, TAU); g.fill(); }
+    const img = this.flash > 0 || this.state === 'dying' || telegraph ? flashOf(spr, sk) : glow && blink ? tintOf(spr, `rgb(${this.sig.rgb})`, sk) : spr;
     const flip = this.facing === 'left';
     g.save();
     g.translate(x, Math.round(y + this.h / 2 + bob));

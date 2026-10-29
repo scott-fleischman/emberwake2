@@ -75,7 +75,7 @@ export class Player extends Actor {
     }
 
     // Lock-on
-    if (this.lock && (this.lock.dead || this.lock.hp <= 0 || Math.hypot(this.lock.x - this.x, this.lock.y - this.y) > 210)) this.lock = null;
+    if (this.lock && (this.lock.dead || this.lock.hp <= 0 || this.lock.untargetable || Math.hypot(this.lock.x - this.x, this.lock.y - this.y) > 210)) this.lock = null;
     if (input.pressed('lock')) {
       this.lock = this.lock ? null : lockOnTarget(this.x, this.y, ctx.area.targetables(), 150);
       game.audio.sfx(this.lock ? 'select' : 'menu');

@@ -24,15 +24,17 @@ export function cached(key, w, h, draw) {
   return c;
 }
 
-// White silhouette of a sprite, used for hit flashes and telegraphs.
-export function flashOf(sprite, key) {
-  return cached('flash:' + key, sprite.width, sprite.height, (g) => {
+// One-colour silhouette of a sprite: white for hit flashes and telegraphs, an effect's colour for a
+// monster winding up its special.
+export function tintOf(sprite, color, key) {
+  return cached(`tint:${color}:${key}`, sprite.width, sprite.height, (g) => {
     g.drawImage(sprite, 0, 0);
     g.globalCompositeOperation = 'source-in';
-    g.fillStyle = '#ffffff';
+    g.fillStyle = color;
     g.fillRect(0, 0, sprite.width, sprite.height);
   });
 }
+export const flashOf = (sprite, key) => tintOf(sprite, '#ffffff', key);
 
 export const R = (g, x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
 const P = (g, x, y, c) => { g.fillStyle = c; g.fillRect(x, y, 1, 1); };
@@ -678,7 +680,7 @@ export function enemySprite(archetype, pal, pose, frame, key) {
   const [main, dark, accent] = pal;
   switch (archetype) {
     case 'brute': return cached(`brute:${key}:${pose}:${frame}`, 24, 24, (g) => {
-      const raise = pose === 'windup' ? -4 : pose === 'slam' ? 3 : 0;
+      const raise = pose === 'windup' ? -4 : pose === 'slam' ? 3 : pose === 'special' ? -8 : 0;
       const bob = frame % 2;
       R(g, 6, 18, 4, 5, dark); R(g, 14, 18, 4, 5, dark);
       R(g, 4, 8 + bob, 16, 12, main); R(g, 5, 7 + bob, 14, 1, main);
@@ -688,10 +690,12 @@ export function enemySprite(archetype, pal, pose, frame, key) {
       R(g, 8, 15 + bob, 1, 2, '#f0f0e0'); R(g, 15, 15 + bob, 1, 2, '#f0f0e0');
       R(g, 1, 10 + raise, 3, 7, dark); R(g, 20, 10 + raise, 3, 7, dark);
       if (pose === 'windup') { R(g, 0, 2, 4, 9, accent); R(g, 20, 2, 4, 9, accent); }
+      // special: both fists high over the head, eyes blazing
+      if (pose === 'special') { R(g, 1, 0, 4, 3, accent); R(g, 19, 0, 4, 3, accent); R(g, 7, 10 + bob, 2, 2, '#ffffff'); R(g, 15, 10 + bob, 2, 2, '#ffffff'); }
       R(g, 6, 5 + bob, 3, 3, accent); R(g, 15, 5 + bob, 3, 3, accent);
     });
     case 'lunger': return cached(`lunger:${key}:${pose}:${frame}`, 22, 16, (g) => {
-      const crouch = pose === 'crouch' ? 2 : 0, stretch = pose === 'lunge' ? 3 : 0;
+      const crouch = pose === 'crouch' ? 2 : pose === 'special' ? 3 : 0, stretch = pose === 'lunge' ? 3 : 0;
       const leg = frame % 2 ? 1 : 0;
       R(g, 3, 6 + crouch, 13 + stretch, 6 - crouch, main);
       R(g, 3, 6 + crouch, 13 + stretch, 1, shade(main, 0.2));
@@ -699,15 +703,17 @@ export function enemySprite(archetype, pal, pose, frame, key) {
       R(g, 19 + stretch, 6 + crouch, 3, 2, dark);
       P(g, 17 + stretch, 5 + crouch, accent); P(g, 18 + stretch, 5 + crouch, '#200');
       R(g, 15 + stretch, 2 + crouch, 2, 2, dark);
-      R(g, 0, 5 + crouch, 3, 2, dark);
+      if (pose === 'special') { R(g, 0, 2, 2, 5, dark); P(g, 0, 2, accent); P(g, 20, 8 + crouch, '#ffffff'); P(g, 21, 8 + crouch, '#ffffff'); }
+      else R(g, 0, 5 + crouch, 3, 2, dark);
       R(g, 4 + leg, 12, 2, 3 - crouch / 2, dark); R(g, 8 - leg, 12, 2, 3, dark);
       R(g, 11 + leg + stretch, 12, 2, 3, dark); R(g, 14 - leg + stretch, 12, 2, 3, dark);
     });
     case 'skirmisher': return cached(`skirm:${key}:${pose}:${frame}`, 16, 16, (g) => {
       const flap = frame % 2;
-      g.globalAlpha = 0.35; circle(g, 8, 8, 7, accent); g.globalAlpha = 1;
-      R(g, 1, 5 - flap * 2, 4, 3 + flap, shade(main, 0.3)); R(g, 11, 5 - flap * 2, 4, 3 + flap, shade(main, 0.3));
-      circle(g, 8, 8, 4, main); circle(g, 7, 7, 2, shade(main, 0.35));
+      g.globalAlpha = pose === 'special' ? 0.6 : 0.35; circle(g, 8, 8, 7, accent); g.globalAlpha = 1;
+      if (pose === 'special') { R(g, 0, 1, 4, 5, shade(main, 0.3)); R(g, 12, 1, 4, 5, shade(main, 0.3)); }
+      else { R(g, 1, 5 - flap * 2, 4, 3 + flap, shade(main, 0.3)); R(g, 11, 5 - flap * 2, 4, 3 + flap, shade(main, 0.3)); }
+      circle(g, 8, 8, 4, main); circle(g, 7, 7, 2, shade(main, pose === 'special' ? 0.6 : 0.35));
       P(g, 6, 8, dark); P(g, 9, 8, dark);
       if (pose === 'dart') R(g, 7, 12, 2, 3, accent);
     });
@@ -717,7 +723,9 @@ export function enemySprite(archetype, pal, pose, frame, key) {
       R(g, 4, 8, 8, 8, main); R(g, 4, 8, 8, 1, shade(main, 0.25));
       R(g, 4, 2, 8, 7, dark); R(g, 5, 4, 6, 4, '#1a1410');
       P(g, 6, 6, '#ff5040'); P(g, 9, 6, '#ff5040');
-      R(g, 12, 6, 1, 10, accent); R(g, 13, 7, 1, 8, '#e0e0d0');
+      // special: the weapon held high, eyes blazing
+      if (pose === 'special') { R(g, 12, 0, 1, 10, accent); R(g, 13, 1, 1, 8, '#e0e0d0'); R(g, 11, 6, 2, 2, main); P(g, 6, 6, '#ffffff'); P(g, 9, 6, '#ffffff'); }
+      else { R(g, 12, 6, 1, 10, accent); R(g, 13, 7, 1, 8, '#e0e0d0'); }
       if (pose === 'aim') { R(g, 13, 10, 3, 1, '#f0f0f0'); }
     });
   }

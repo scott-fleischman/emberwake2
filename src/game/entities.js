@@ -164,6 +164,7 @@ export class Explosion extends Entity {
 const PROJ_STYLE = {
   arrow: { w: 4, h: 4 }, knife: { w: 4, h: 4 }, firebolt: { w: 6, h: 6 },
   shot: { w: 5, h: 5 }, thorn: { w: 5, h: 5 }, ember: { w: 6, h: 6 }, ice: { w: 5, h: 5 },
+  vine: { w: 4, h: 4 }, mud: { w: 7, h: 7 }, poison: { w: 6, h: 6 }, sand: { w: 6, h: 6 }, seed: { w: 5, h: 5 },
 };
 
 export class Projectile extends Entity {
@@ -173,11 +174,21 @@ export class Projectile extends Entity {
     this.kind = kind; this.angle = angle; this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
     this.dmg = dmg; this.team = team; this.life = opts.life ?? 1.6; this.pierce = opts.pierce ?? 0;
     this.hitSet = new Set(); this.t = 0; this.reflected = false;
+    this.effect = opts.effect || null; // a status effect it carries onto the player, on a hit only
+    // opts.lob: seconds of flight in an arc that comes down at the aim point, calling opts.land.
+    this.lob = opts.lob || 0; this.land = opts.land || null;
+    if (this.lob) { this.life = this.lob; this.arc = Math.min(36, 8 + speed * this.lob * 0.2); }
   }
-  get sortY() { return this.y + 6; }
+  get sortY() { return this.y + (this.lob ? 12 : 6); }
   update(dt, ctx) {
     this.t += dt;
     this.life -= dt;
+    if (this.lob) {
+      // Up over walls and heads alike; what it does where it comes down is a zone's job.
+      this.x += this.vx * dt; this.y += this.vy * dt;
+      if (this.life <= 0) { this.dead = true; this.land?.(this, ctx); }
+      return;
+    }
     if (this.life <= 0) { this.dead = true; return; }
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
     const solid = flyingSolid(ctx.map);
@@ -192,6 +203,25 @@ export class Projectile extends Entity {
   }
   draw(g, cam) {
     const x = this.x - cam.left, y = this.y - cam.top;
+    if (this.lob) {
+      // Starts at hand height, peaks mid-flight, lands on its shadow.
+      const k = Math.min(1, this.t / this.lob), z = Math.sin(Math.PI * k) * this.arc + (1 - k) * 6;
+      drawShadow(g, x, y + 2, 3, 1.5, 0.25);
+      g.save();
+      g.translate(Math.round(x), Math.round(y - z));
+      g.rotate(this.t * 7);
+      switch (this.kind) {
+        case 'mud': g.fillStyle = '#5a4024'; g.beginPath(); g.arc(0, 0, 4, 0, TAU); g.fill(); R(g, -2, -2, 2, 2, '#8a6a44'); R(g, 2, 1, 1, 2, '#3a2814'); break;
+        case 'poison':
+          g.fillStyle = 'rgba(130,210,70,0.35)'; g.beginPath(); g.arc(0, 0, 5, 0, TAU); g.fill();
+          g.fillStyle = '#5aa030'; g.beginPath(); g.arc(0, 0, 3, 0, TAU); g.fill(); R(g, -1, -2, 2, 1, '#c8f090');
+          break;
+        case 'sand': R(g, -3, -2, 6, 5, '#c8a868'); R(g, -3, -2, 6, 1, '#e8d0a0'); R(g, -1, -4, 2, 2, '#8a6a3a'); break;
+        default: g.fillStyle = '#7a5a30'; g.beginPath(); g.ellipse(0, 0, 2.5, 3.5, 0, 0, TAU); g.fill(); R(g, -1, -4, 2, 2, '#7ab048');
+      }
+      g.restore();
+      return;
+    }
     g.save();
     g.translate(Math.round(x), Math.round(y));
     g.rotate(this.angle);
@@ -206,6 +236,7 @@ export class Projectile extends Entity {
         break;
       case 'thorn': g.fillStyle = '#6ab040'; g.beginPath(); g.moveTo(5, 0); g.lineTo(-3, -3); g.lineTo(-3, 3); g.closePath(); g.fill(); break;
       case 'ice': g.fillStyle = '#c8f0ff'; g.beginPath(); g.moveTo(6, 0); g.lineTo(-3, -2.5); g.lineTo(-3, 2.5); g.closePath(); g.fill(); R(g, -1, -1, 3, 1, '#fff'); break;
+      case 'vine': R(g, -6, -0.5, 10, 1, '#5a7a30'); R(g, 3, -1.5, 3, 3, '#8ac050'); R(g, -2, -2, 2, 1, '#7ab048'); R(g, 0, 1, 2, 1, '#7ab048'); R(g, -7, -1.5, 2, 3, '#4a6a2a'); break;
       default:
         g.fillStyle = this.team === 'player' ? '#a0e0ff' : '#ff5a6a';
         g.beginPath(); g.arc(0, 0, 3, 0, TAU); g.fill();

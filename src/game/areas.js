@@ -122,7 +122,7 @@ export class Area {
     } else {
       const pl = ctx.player;
       if (pl.mode !== 'dead' && overlap(p, pl, 1)) {
-        const r = this.game.damagePlayer(p.dmg, p, { projectile: true });
+        const r = this.game.damagePlayer(p.dmg, p, { projectile: true, effect: p.effect });
         if (r === 'blocked') {
           // Shields bat projectiles back.
           p.team = 'player'; p.vx *= -1.1; p.vy *= -1.1; p.angle += Math.PI; p.life = 1.2; p.reflected = true;

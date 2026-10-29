@@ -13,7 +13,7 @@ import { zoneDanger, HIT_PAD } from '../game/zones.js';
 import { findPath, reachMap, walkable, tileOf, center, besideTile, standableNear, isBush } from './nav.js';
 
 const K = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', attack: 'KeyJ', item: 'KeyK', shield: 'KeyL', dodge: 'Space', sprint: 'ShiftLeft', interact: 'KeyE', cycle: 'KeyQ', lock: 'KeyR', eat: 'KeyF', confirm: 'Enter', back: 'Escape' };
-const TELEGRAPH = new Set(['windup', 'slam', 'crouch', 'lunge', 'dart']);
+const TELEGRAPH = new Set(['windup', 'slam', 'crouch', 'lunge', 'dart', 'special']);
 const IN_ROOM_PUZZLES = new Set(['switches', 'ordered', 'push']);
 const INNER = { n: { x: 11, y: 1 }, s: { x: 11, y: 13 }, w: { x: 1, y: 7 }, e: { x: 22, y: 7 } };
 const OUT = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
@@ -112,15 +112,21 @@ export class Bot {
   }
 
   // Status effects, after the frame's moves are chosen so a roll can go the way we're already heading:
-  // mash out of a freeze, swing out of a snare, roll out of a fire. Poison needs nothing here: the
-  // eat rules in tidyUp and fight already fire below half health and eating cures it.
+  // mash out of a freeze, swing out of a snare, roll out of a fire or out from under a clinging leech.
+  // Poison needs nothing here: the eat rules in tidyUp and fight already fire below half health and
+  // eating cures it.
   shakeOff() {
     const g = this.g, p = g.player, res = g.state.player, fx = p.effects;
     if (g.uiStack.length || g.deathT > 0 || p.mode === 'dead') return;
     if (fx.freeze || fx.snare) this.tap(K.attack);
-    if (fx.burn && p.mode === 'normal' && !fx.snare && res.stamina >= g.derived.dodgeCost && this.time - this.lastDodge > 0.45) {
+    const leech = g.area.enemyList.some((e) => e.latched);
+    if ((fx.burn || leech) && p.mode === 'normal' && !fx.snare && res.stamina >= g.derived.dodgeCost && this.time - this.lastDodge > 0.45) {
       const ax = (this.want.has(K.right) ? 1 : 0) - (this.want.has(K.left) ? 1 : 0), ay = (this.want.has(K.down) ? 1 : 0) - (this.want.has(K.up) ? 1 : 0);
-      if (this.safeRoll(ax || ay ? [ax, ay] : [Math.cos(p.aim), Math.sin(p.aim)])) { this.tap(K.dodge); this.lastDodge = this.time; }
+      if (this.safeRoll(ax || ay ? [ax, ay] : [Math.cos(p.aim), Math.sin(p.aim)])) {
+        // A swing pressed this frame would win over the roll and swallow it.
+        this.taps = this.taps.filter((c) => c !== K.attack);
+        this.tap(K.dodge); this.lastDodge = this.time;
+      }
     }
   }
 
@@ -293,9 +299,10 @@ export class Bot {
     return true;
   }
 
+  // A special glows as the pose 'special' while it winds up, then takes the pose of what it does.
   attackWindow(e) {
     if (e.boss) return e.vulnerable;
-    return !TELEGRAPH.has(e.state);
+    return !e.untargetable && !TELEGRAPH.has(e.pose ?? e.state);
   }
 
   // Danger at a point: {lv 0..3, block: can a shield stop it}.
@@ -328,6 +335,10 @@ export class Bot {
         case 'aim':
           if (segDist(x, y, e.x, e.y, e.x + Math.cos(e.shotA) * 220, e.y + Math.sin(e.shotA) * 220) < 10) bump(1, true);
           break;
+        // Where a special will land shows as zones once it starts; while it glows, keep off the body.
+        case 'special':
+          if (e.sub === 'windup' && Math.hypot(x - e.x, y - e.y) < 36) bump(1, false);
+          break;
       }
     }
     for (const z of this.g.area.zones) {
@@ -335,7 +346,7 @@ export class Bot {
       if (v) bump(v, z.blockable);
     }
     for (const pr of this.g.area.entities) {
-      if (pr.team !== 'enemy' || pr.vx === undefined || pr.dead || !pr.hitSet) continue;
+      if (pr.team !== 'enemy' || pr.vx === undefined || pr.dead || !pr.hitSet || pr.lob) continue; // a lob's landing is a zone
       if (segDist(x, y, pr.x, pr.y, pr.x + pr.vx * 0.45, pr.y + pr.vy * 0.45) < 12) bump(2, true);
     }
     return { lv, block };
@@ -346,7 +357,7 @@ export class Bot {
     const near = (e) => Math.hypot(e.x - p.x, e.y - p.y);
     const minions = list.filter((e) => !e.boss).sort((x, y) => near(x) - near(y));
     const boss = list.find((e) => e.boss);
-    let target = minions[0];
+    let target = minions.find((e) => !e.untargetable) || minions[0];
     if (boss && (!target || near(target) > 56 || boss.vulnerable)) target = boss;
     this.status = `Fighting ${target.boss ? target.name.split(',')[0] : target.name || target.archetype}`;
     if (!this.ignore) this.ignore = new Map();
