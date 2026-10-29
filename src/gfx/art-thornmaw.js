@@ -27,7 +27,11 @@ export const THORN_PAL = {
   bud: '#4a7a26', budHi: '#86b04a', bloom: '#b81e36', bloomHi: '#e8485a', bloomRim: '#5a0818', wart: '#f8d8c0',
   bloomLip: '#7a1024', bloomThroat: '#1a0206', bloomCore: '#ffb24a', bloomGlow: '255,150,60', stamen: '#c8d870',
   vine: '#3e6c22', vineHi: '#86b44a', vineThorn: '#f0e4bc', vineLeaf: '#5a9a2e', dirt: '#5a4026',
+  // the world: charge streaks and pawed dust, drifting petals, blown spores, the lash's swish, its thorns
+  streak: '230,220,190', dust: '140,120,90', petalFx: '#ff7a80', spore: '#fff0b0', swish: '#f0ffd0', shot: null,
 };
+// Whoever runs its moves wears its world effects in their own palette.
+export const thornPal = (b) => b.thornPal || THORN_PAL;
 
 const TM_SPINE = [[-30, -30, 6], [-26, -37, 8], [-19, -41, 10], [-12, -44, 11], [-4, -48, 13], [3, -50, 12], [10, -48, 10], [16, -43, 7]];
 const TM_BLOOMS = [[-21, -29, 4], [-15, -18, 3.5], [-28, -22, 3], [-2, -20, 3]];
@@ -460,10 +464,10 @@ function paintThornmawFacing(g, b, L, pal, back) {
 
 // Behind / in front of Thornmaw: charge speed lines and dust, stun stars, drifting petals, the
 // spores blown off its flower and the swish of a lash.
-export function thornUnder(g, b, x, y, face) {
+export function thornUnder(g, b, x, y, face, pal = thornPal(b)) {
   const t = b.anim || 0, side = (b.view || 'side') === 'side';
   if (b.state === 'charge') {
-    g.strokeStyle = 'rgba(230,220,190,0.45)'; g.lineWidth = 1;
+    g.strokeStyle = `rgba(${pal.streak},0.45)`; g.lineWidth = 1;
     g.beginPath();
     if (side) for (let k = 0; k < 6; k++) { const yy = y - 6 - k * 8 + Math.sin(t * 30 + k) * 1.5, x0 = x - face * (30 + hash(k, 1) * 10), len = 14 + ((t * 90 + k * 13) % 18); g.moveTo(x0, yy); g.lineTo(x0 - face * len, yy); }
     else { // streaks trailing up the screen (charging down it), or down it
@@ -474,16 +478,16 @@ export function thornUnder(g, b, x, y, face) {
   }
   if (b.state === 'wind') for (let k = 0; k < 5; k++) {
     const p = (t * 2.5 + k / 5) % 1, px = x + (side ? face * (14 + p * 10) : (k % 2 ? 1 : -1) * (12 + p * 8)) + (hash(k) - 0.5) * 8;
-    g.fillStyle = `rgba(140,120,90,${0.45 * (1 - p)})`; g.beginPath(); g.ellipse(px, y + 6 - p * 6, 3 + p * 5, 2 + p * 2, 0, 0, TAU); g.fill();
+    g.fillStyle = `rgba(${pal.dust},${0.45 * (1 - p)})`; g.beginPath(); g.ellipse(px, y + 6 - p * 6, 3 + p * 5, 2 + p * 2, 0, 0, TAU); g.fill();
   }
 }
-export function thornOver(g, b, x, y, face) {
+export function thornOver(g, b, x, y, face, pal = thornPal(b)) {
   const t = b.anim || 0, side = (b.view || 'side') === 'side';
   if (b.state === 'stunned') dizzyStars(g, x + (side ? face * 20 : 0), y - 42, t, 4);
   if ((b.phase || 1) > 1) for (let i = 0; i < 6; i++) {
     const life = 2 + hash(i, 1), p = ((t + hash(i, 2) * life) % life) / life;
     const px = x + (hash(i, 3) - 0.5) * 60 + Math.sin(t * 2 + i) * 6, py = y - 50 + p * 56;
-    g.globalAlpha = Math.sin(p * Math.PI) * 0.9; g.fillStyle = i % 2 ? '#e2404e' : '#ff7a80';
+    g.globalAlpha = Math.sin(p * Math.PI) * 0.9; g.fillStyle = i % 2 ? pal.petalHi : pal.petalFx;
     g.fillRect(Math.round(px), Math.round(py), 2, 1);
   }
   // spores billowing up off the flower, then drifting toward where they'll settle
@@ -492,7 +496,7 @@ export function thornOver(g, b, x, y, face) {
     const fx = x + (side ? face * -5 : 0), fy = y - 44, k = 1 - P.puff;
     for (let i = 0; i < 18; i++) {
       const a = hash(i, 5) * TAU, r = (6 + hash(i, 6) * 22) * (0.3 + k), px = fx + Math.cos(a) * r + (b.cdx || 0) * k * 30, py = fy + Math.sin(a) * r * 0.6 - k * 14 + (b.cdy || 0) * k * 20;
-      g.globalAlpha = (1 - k) * 0.85; g.fillStyle = i % 3 ? '#ffd040' : '#fff0b0';
+      g.globalAlpha = (1 - k) * 0.85; g.fillStyle = i % 3 ? pal.pollen : pal.spore;
       g.fillRect(Math.round(px), Math.round(py), i % 4 ? 1 : 2, i % 4 ? 1 : 2);
     }
   }
@@ -500,7 +504,7 @@ export function thornOver(g, b, x, y, face) {
   const q = b.state === 'lash' ? 1 - (b.timer ?? 0) : -1;
   if (q > 0.6 && q < 0.85) {
     const a0 = Math.atan2(b.cdy || 0, b.cdx || 1), f = (q - 0.6) / 0.25;
-    g.globalAlpha = 1 - f; g.strokeStyle = '#f0ffd0'; g.lineWidth = 2;
+    g.globalAlpha = 1 - f; g.strokeStyle = pal.swish; g.lineWidth = 2;
     for (const r of [34, 46, 58]) { g.beginPath(); g.ellipse(x, y - 8, r, r * 0.75, 0, a0 - 1.1, a0 - 1.1 + 2.2 * easeOut(f * 1.6)); g.stroke(); }
   }
   g.globalAlpha = 1;

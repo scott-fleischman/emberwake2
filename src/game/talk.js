@@ -116,7 +116,8 @@ function mainLines(game, npc, c) {
       bells: 'Bells, sunk in the fens. The Sovereign\'s charm should make short work of the water. Cold is only cruel when it forgets what it is for.',
       bogking: 'Something lives under that wall of water. Keep moving; a still target is a drowned one.',
       fane: 'The Fane is open. The Tidewarden sang for the whole coast once. Listen for the song under the noise.',
-      end: 'Four shards, and the Spire door stands open. Rest a while first. Whatever waits below has waited a thousand years; it can wait for you to eat.',
+      spire: 'Four shards, and the Spire door stands open. Rest a while first. Whatever waits below has waited a thousand years; it can wait for you to eat.',
+      end: 'The Hearth burns, and the cold has gone out of the north wind. Whatever he was at the end, I hope he is warm now. You should rest, child. You have earned it.',
     }[stage];
     return [page(hint)];
   }

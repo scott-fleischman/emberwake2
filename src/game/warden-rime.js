@@ -12,7 +12,7 @@ import { TILE, T } from '../world/tiles.js';
 import { TAU } from '../core/math.js';
 import { drawShadow } from '../gfx/render.js';
 import { stamp } from '../gfx/bossart.js';
-import { paintDecoy, rimePoseTick, drawPillar, GUST, BLOW, PILLARS, RISE, DECOYS, SPENT, PILLAR_LIFE } from '../gfx/art-rime.js';
+import { paintDecoy, rimePoseTick, rimePal, drawPillar, GUST, BLOW, PILLARS, RISE, DECOYS, SPENT, PILLAR_LIFE } from '../gfx/art-rime.js';
 
 const PUSH = 60; // px/s the gust drives the player off
 const DECOY_LIFE = 8, DECOY_SHOT = 1.4;
@@ -37,7 +37,7 @@ function clearWalls(b, ctx) {
 
 // An ice pillar bursting up where a prison struck, standing a moment, then shattering: a sight only.
 class IcePillar extends Entity {
-  constructor(x, y) { super(x, y, 1, 1); this.t = 0; }
+  constructor(x, y, pal) { super(x, y, 1, 1); this.t = 0; this.pal = pal; }
   get sortY() { return this.y + 5; }
   update(dt, ctx) {
     this.t += dt;
@@ -45,7 +45,7 @@ class IcePillar extends Entity {
     this.dead = true;
     ctx.area.spawn(new Particles(this.x, this.y - 12, { count: 12, color: ['#ffffff', '#c8ecff', '#7ab4e0'], speed: 60, life: 0.45, up: 20, gravity: 90 }));
   }
-  draw(g, cam) { drawPillar(g, this.x - cam.left, this.y - cam.top, this.t); }
+  draw(g, cam) { drawPillar(g, this.x - cam.left, this.y - cam.top, this.t, this.pal); }
 }
 
 // One of her decoys: a hollow ice copy of her, smaller, that hovers where it formed, looses a
@@ -111,11 +111,11 @@ function blow(b, dt, ctx, p) {
 
 // The Shatter attacks, each put down whole as it begins; the zones are the telegraph. + dt: this
 // frame's tickZones counts them down too, and must not take a frame off.
-const zone = (ctx, b, shape, fields) => { const z = makeZone(shape, { owner: b, rgb: '160,220,255', ...fields }); ctx.area.zones.push(z); return z; };
+const zone = (ctx, b, shape, fields) => { const z = makeZone(shape, { owner: b, rgb: rimePal(b).zone, ...fields }); ctx.area.zones.push(z); return z; };
 const SHATTER = {
   // Her wings draw back as the gust gathers, then beat a blizzard down the cone at the player.
   gust(b, ctx, { dx, dy }, dt) {
-    b.rimeGust = zone(ctx, b, 'cone', { x: b.x, y: b.y, a: Math.atan2(dy, dx), spread: 0.5, r: 220, t: GUST + dt, life: BLOW, dmg: 0, rgb: '220,240,255', gust: true });
+    b.rimeGust = zone(ctx, b, 'cone', { x: b.x, y: b.y, a: Math.atan2(dy, dx), spread: 0.5, r: 220, t: GUST + dt, life: BLOW, dmg: 0, rgb: rimePal(b).gust, gust: true });
     b.timer = GUST + BLOW;
     ctx.game.audio.sfx('rime_gust');
   },
@@ -152,7 +152,7 @@ function circle(b, dt, ctx, { p, dx, dy }) {
   const l = Math.hypot(tx - b.x, ty - b.y) || 1;
   moveActor(ctx.map, b, ((tx - b.x) / l) * 110 * dt, ((ty - b.y) / l) * 110 * dt);
   b.shotT -= dt;
-  if (b.shotT <= 0) { b.shotT = b.phase > 1 ? 0.5 : 0.8; ctx.area.spawn(new Projectile('ice', b.x, b.y - 6, Math.atan2(dy, dx), 140, 1, 'enemy', { life: 2.2 })); }
+  if (b.shotT <= 0) { b.shotT = b.phase > 1 ? 0.5 : 0.8; ctx.area.spawn(new Projectile('ice', b.x, b.y - 6, Math.atan2(dy, dx), 140, 1, 'enemy', { life: 2.2, rgb: rimePal(b).shot })); }
 }
 // The dash winds up, its lane shown while it does.
 function windUp(b, ctx, { dx, dy, d }) { b.state = 'wind'; b.timer = 0.55; b.cdx = dx / d; b.cdy = dy / d; b.showLane(ctx); }
@@ -167,7 +167,7 @@ export const moves = {
     wind(b, dt, ctx) { if (b.timer <= 0) { b.state = 'dash'; b.timer = 0.6; ctx.game.audio.sfx('rime_dash'); } },
     dash(b, dt, ctx) {
       const r = moveActor(ctx.map, b, b.cdx * 270 * dt, b.cdy * 270 * dt);
-      if (Math.random() < 0.7) ctx.area.spawn(new Particles(b.x, b.y, { count: 1, color: '#e0f8ff', speed: 10, life: 0.5, layer: -1 }));
+      if (Math.random() < 0.7) ctx.area.spawn(new Particles(b.x, b.y, { count: 1, color: rimePal(b).trail, speed: 10, life: 0.5, layer: -1 }));
       b.touchPlayer(ctx, 2);
       if (r.hitX || r.hitY) { ctx.game.cam.shake(3, 0.25); ctx.game.audio.sfx('rime_shard', { pitch: 0.55 }); b.state = 'stunned'; b.timer = 1.8; return; }
       if (b.timer <= 0) { b.state = 'skid'; b.timer = b.phase > 1 ? 0.9 : 1.2; }
@@ -183,7 +183,7 @@ export const moves = {
         const n = b.phase > 1 ? 8 : 5;
         for (let k = 0; k < n; k++) {
           const a = Math.random() * TAU, r = k === 0 ? 0 : 20 + Math.random() * 60;
-          zone(ctx, b, 'circle', { x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r * 0.7, r: 8, t: 0.8 + k * 0.08 + dt, dmg: 1, rgb: '20,40,80', shard: true });
+          zone(ctx, b, 'circle', { x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r * 0.7, r: 8, t: 0.8 + k * 0.08 + dt, dmg: 1, rgb: rimePal(b).rain, shard: true });
         }
         ctx.game.audio.sfx('rime_roar', { volume: 0.6 });
         b.state = 'orbit'; b.timer = 1.8; b.shotT = 1;
@@ -222,11 +222,11 @@ export const moves = {
       }
       if (z.t <= 0 || z.t > dt) continue;
       if (z.shard) {
-        ctx.area.spawn(new Particles(z.x, z.y, { count: 10, color: ['#c8f0ff', '#ffffff'], speed: 60, life: 0.4 }));
+        ctx.area.spawn(new Particles(z.x, z.y, { count: 10, color: rimePal(b).shatter, speed: 60, life: 0.4 }));
         ctx.game.audio.sfx('rime_shard', { volume: 0.4 });
       }
       if (z.pillar) {
-        ctx.area.spawn(new IcePillar(z.x, z.y));
+        ctx.area.spawn(new IcePillar(z.x, z.y, rimePal(b)));
         ctx.area.spawn(new Particles(z.x, z.y - 6, { count: 10, color: ['#ffffff', '#c8ecff', '#7ab4e0'], speed: 70, life: 0.4, up: 30 }));
         ctx.game.cam.shake(1.5, 0.12);
       }

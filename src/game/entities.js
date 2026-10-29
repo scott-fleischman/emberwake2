@@ -164,7 +164,7 @@ export class Explosion extends Entity {
 // ------------------------------------------------------------------ projectiles
 const PROJ_STYLE = {
   arrow: { w: 4, h: 4 }, knife: { w: 4, h: 4 }, firebolt: { w: 6, h: 6 },
-  shot: { w: 5, h: 5 }, thorn: { w: 5, h: 5 }, ember: { w: 6, h: 6 }, ice: { w: 5, h: 5 },
+  shot: { w: 5, h: 5 }, thorn: { w: 5, h: 5 }, ember: { w: 6, h: 6 }, ice: { w: 5, h: 5 }, gloam: { w: 6, h: 6 },
   vine: { w: 4, h: 4 }, mud: { w: 7, h: 7 }, poison: { w: 6, h: 6 }, sand: { w: 6, h: 6 }, seed: { w: 5, h: 5 },
   boulder: { w: 10, h: 10 }, snowball: { w: 12, h: 12 }, fireball: { w: 8, h: 8 }, water: { w: 6, h: 6 },
 };
@@ -180,7 +180,8 @@ export class Projectile extends Entity {
     this.dmg = dmg; this.team = team; this.life = opts.life ?? 1.6; this.pierce = opts.pierce ?? 0;
     this.hitSet = new Set(); this.t = 0; this.reflected = false;
     this.effect = opts.effect || null; // a status effect it carries onto the player, on a hit only
-    this.rgb = opts.rgb || null; // a jet of water takes its warden's colour
+    this.rgb = opts.rgb || null; // a jet of water takes its warden's colour, and a borrowed shot its borrower's
+    this.home = opts.home || 0; // radians a second it turns toward the player while it's theirs to dodge
     this.drop = opts.drop || 0; // spat from this high, it falls to the floor over its first DROP seconds
     // opts.lob: seconds of flight in an arc that comes down at the aim point, calling opts.land. It
     // leaves from opts.height above the ground (a hand's height) and peaks opts.arc above that line.
@@ -215,16 +216,24 @@ export class Projectile extends Entity {
       return;
     }
     if (this.life <= 0) { this.dead = true; return; }
+    if (this.home && this.team === 'enemy') this.steer(dt, ctx.player);
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
     const solid = flyingSolid(ctx.map);
     if (solid(Math.floor(nx / TILE), Math.floor(ny / TILE))) {
       this.dead = true;
-      ctx.area.spawn(new Particles(this.x, this.y, { count: 5, color: this.kind === 'firebolt' || this.kind === 'ember' ? '#ffa040' : this.kind === 'water' ? `rgb(${this.rgb || '140,224,244'})` : '#d0d0d0', speed: 50, life: 0.25 }));
+      ctx.area.spawn(new Particles(this.x, this.y, { count: 5, color: this.rgb ? `rgb(${this.rgb})` : this.kind === 'firebolt' || this.kind === 'ember' ? '#ffa040' : this.kind === 'water' ? 'rgb(140,224,244)' : this.kind === 'gloam' ? '#c8a0ff' : '#d0d0d0', speed: 50, life: 0.25 }));
       ctx.area.onProjectileWall?.(this, Math.floor(nx / TILE), Math.floor(ny / TILE));
       return;
     }
     this.x = nx; this.y = ny;
     ctx.area.resolveProjectile(this, ctx);
+  }
+  // A homing shot bends toward the player, no faster than its turn rate.
+  steer(dt, p) {
+    const sp = Math.hypot(this.vx, this.vy), want = Math.atan2(p.y - this.y, p.x - this.x);
+    const d = Math.atan2(Math.sin(want - this.angle), Math.cos(want - this.angle));
+    this.angle += Math.max(-this.home * dt, Math.min(this.home * dt, d));
+    this.vx = Math.cos(this.angle) * sp; this.vy = Math.sin(this.angle) * sp;
   }
   // Its body becomes a moving segment zone, published for the length of the roll.
   startRoll(ctx) {
@@ -275,16 +284,27 @@ export class Projectile extends Entity {
     switch (this.kind) {
       case 'arrow': R(g, -6, -0.5, 10, 1, '#d8c8a0'); R(g, 3, -1.5, 3, 3, '#e0e0e0'); R(g, -7, -1.5, 2, 3, '#c04040'); break;
       case 'knife': R(g, -3, -1, 7, 2, '#d8dce4'); R(g, -5, -1, 2, 2, '#5a3a20'); break;
-      case 'firebolt': case 'ember':
-        g.fillStyle = 'rgba(255,140,40,0.4)'; g.beginPath(); g.arc(0, 0, 6, 0, TAU); g.fill();
-        g.fillStyle = '#ff8030'; g.beginPath(); g.arc(0, 0, 3.5, 0, TAU); g.fill();
-        g.fillStyle = '#fff0b0'; g.fillRect(-1, -1, 2, 2);
-        R(g, -8, -1, 4, 2, 'rgba(255,120,40,0.6)');
+      case 'firebolt': case 'ember': {
+        const c = this.rgb || '255,128,48';
+        g.fillStyle = `rgba(${this.rgb || '255,140,40'},0.4)`; g.beginPath(); g.arc(0, 0, 6, 0, TAU); g.fill();
+        g.fillStyle = `rgb(${c})`; g.beginPath(); g.arc(0, 0, 3.5, 0, TAU); g.fill();
+        g.fillStyle = this.rgb ? '#ffffff' : '#fff0b0'; g.fillRect(-1, -1, 2, 2);
+        R(g, -8, -1, 4, 2, `rgba(${this.rgb || '255,120,40'},0.6)`);
         break;
-      case 'thorn': g.fillStyle = '#6ab040'; g.beginPath(); g.moveTo(5, 0); g.lineTo(-3, -3); g.lineTo(-3, 3); g.closePath(); g.fill(); break;
+      }
+      case 'thorn': g.fillStyle = this.rgb ? `rgb(${this.rgb})` : '#6ab040'; g.beginPath(); g.moveTo(5, 0); g.lineTo(-3, -3); g.lineTo(-3, 3); g.closePath(); g.fill(); break;
       case 'ice':
-        if (this.effect) { g.fillStyle = 'rgba(140,208,255,0.45)'; g.beginPath(); g.arc(1, 0, 5, 0, TAU); g.fill(); } // a frost arrow's glow
-        g.fillStyle = '#c8f0ff'; g.beginPath(); g.moveTo(6, 0); g.lineTo(-3, -2.5); g.lineTo(-3, 2.5); g.closePath(); g.fill(); R(g, -1, -1, 3, 1, '#fff'); break;
+        if (this.effect || this.rgb) { g.fillStyle = `rgba(${this.rgb || '140,208,255'},0.45)`; g.beginPath(); g.arc(1, 0, 5, 0, TAU); g.fill(); } // a frost arrow's glow
+        g.fillStyle = this.rgb ? `rgb(${this.rgb})` : '#c8f0ff'; g.beginPath(); g.moveTo(6, 0); g.lineTo(-3, -2.5); g.lineTo(-3, 2.5); g.closePath(); g.fill(); R(g, -1, -1, 3, 1, '#fff'); break;
+      case 'gloam': { // a mote of cold violet fire, its tail of shadow streaming behind
+        const f = Math.sin(this.t * 18) * 0.6;
+        g.fillStyle = 'rgba(40,10,60,0.55)'; g.beginPath(); g.ellipse(-4, 0, 7, 3.5, 0, 0, TAU); g.fill();
+        g.fillStyle = 'rgba(200,160,255,0.35)'; g.beginPath(); g.arc(0, 0, 6 + f, 0, TAU); g.fill();
+        g.fillStyle = '#a070e0'; g.beginPath(); g.arc(0, 0, 3.6, 0, TAU); g.fill();
+        g.fillStyle = '#e8d8ff'; g.fillRect(-1, -1, 2, 2);
+        R(g, -10, -0.5, 4, 1, 'rgba(160,110,230,0.6)');
+        break;
+      }
       case 'water': { // a gout of water, its spray trailing behind
         const c = this.rgb || '140,224,244';
         g.fillStyle = `rgba(${c},0.35)`; g.beginPath(); g.ellipse(-2, 0, 7, 4, 0, 0, TAU); g.fill();

@@ -18,14 +18,17 @@ export async function autoplay({ seed = 'ember123', cls = 'swordsman', mode = 'a
   game.saveGame = () => true;
   const bot = new Bot(game, mode);
   let stage = game.state.quest.main, since = 0, lastLog = 0;
+  // Progress, for the stall check: the stage, 100%'s count, and the steps through a dungeon (a long one,
+  // like the Spire, is all one stage and counts nothing toward 100% until its end).
+  const pr = game.state.progress, steps = () => pr.solved.length + pr.cleared.length + Object.values(pr.visited).reduce((a, v) => a + v.length, 0);
   const frames = Math.round((maxMinutes * 60) / dt);
   for (let f = 0; f < frames && !bot.done; f++) {
     simMs += dt * 1000;
     bot.step(dt);
     game.update(dt);
     app.input.endFrame();
-    const mark = mode === 'full' && f % 60 === 0 ? `${game.state.quest.main}/${bot.progress().done}` : game.state.quest.main;
-    if (mark !== stage && (mode !== 'full' || f % 60 === 0)) { stage = mark; since = 0; } else since += dt;
+    const mark = f % 60 === 0 ? `${game.state.quest.main}/${mode === 'full' ? `${bot.progress().done}/` : ''}${steps()}` : stage;
+    if (mark !== stage) { stage = mark; since = 0; } else since += dt;
     if (verbose && bot.time - lastLog > 30) { lastLog = bot.time; console.log(`  ${bot.clock()} ${stage} | ${game.area.kind}${game.area.id ? ':' + game.area.id : ''} | ${bot.status} | hp ${game.state.player.hp.toFixed(1)}`); }
     if (since > 8 * 60) break;
   }

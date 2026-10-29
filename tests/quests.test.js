@@ -199,7 +199,12 @@ test('the fourth ward chain runs from the Hearth to the kindling', () => {
   assert.equal(s.quest.main, 'bogking');
   s.progress.seals.push('drowned'); advanceMain(s, W, { type: 'elite', id: 'bogking' }); assert.equal(s.quest.main, 'fane');
   advanceMain(s, W, { type: 'boss', kind: 'tide' }); assert.equal(s.quest.main, 'kindle');
-  advanceMain(s, W, { type: 'talk', role: 'elder', settlementId: 'home' }); assert.equal(s.quest.main, 'end');
+  advanceMain(s, W, { type: 'boss', kind: 'vesper' }); assert.equal(s.quest.main, 'kindle', 'not before the kindling');
+  advanceMain(s, W, { type: 'talk', role: 'elder', settlementId: 'home' }); assert.equal(s.quest.main, 'spire');
+  advanceMain(s, W, { type: 'talk', role: 'elder', settlementId: 'home' }); assert.equal(s.quest.main, 'spire', 'only Vesper ends it');
+  advanceMain(s, W, { type: 'boss', kind: 'tide' }); assert.equal(s.quest.main, 'spire');
+  advanceMain(s, W, { type: 'boss', kind: 'vesper' }); assert.equal(s.quest.main, 'end');
+  assert.deepEqual(MAIN_STAGES.slice(-3), ['kindle', 'spire', 'end']);
 });
 
 test('bells rung before anyone asks still count', () => {
@@ -293,4 +298,6 @@ test('the elder rekindles the Hearth with three shards and opens the Spire with 
   g.state.quest.main = 'kindle';
   g.questEvent({ type: 'talk', role: 'elder', settlementId: 'home' });
   assert.ok(scene().includes('sockets4') && scene().includes('spireopen'));
+  assert.equal(g.state.quest.main, 'spire');
+  assert.ok(!g.uiStack.some((ui) => ui.title === 'The Ember Rekindled'), 'the ending waits for Vesper');
 });

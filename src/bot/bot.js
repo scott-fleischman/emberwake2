@@ -27,7 +27,8 @@ export const SPLITS = {
   cinderwatch: 'Ridge blasted', vents: 'Cinderwatch', slagheart: 'Vents capped', reliquary: 'Firewall fallen', frostpass: 'Cinder Warden quieted',
   boulder: 'Mountain keeper', rimewatch: 'Boulder lifted', windcrest: 'Rimewatch', beacons: 'Windcrest', frostfang: 'Beacons lit',
   sanctuary: 'Ice wall shattered', hearth: 'Rime Sovereign quieted', fenkeep: 'Hearth rekindled', belfry: 'Swamp keeper',
-  bells: 'Drowned Belfry', bogking: 'Tide Bells rung', fane: 'Tidewall drained', kindle: 'Tidewarden quieted', end: 'Spire opened',
+  bells: 'Drowned Belfry', bogking: 'Tide Bells rung', fane: 'Tidewall drained', kindle: 'Tidewarden quieted', spire: 'Spire opened',
+  end: 'Vesper quieted',
 };
 
 const segDist = (px, py, ax, ay, bx, by) => {
@@ -307,9 +308,11 @@ export class Bot {
     return true;
   }
 
-  // A special glows as the pose 'special' while it winds up, then takes the pose of what it does.
+  // A special glows as the pose 'special' while it winds up, then takes the pose of what it does. A
+  // warden is open in its punish window. Vesper is open whenever a hit can land: his own form never
+  // hurts to touch, and hits are what break a borrowed one.
   attackWindow(e) {
-    if (e.boss) return e.vulnerable;
+    if (e.boss) return e.vulnerable || (e.kind === 'vesper' && !e.untargetable);
     return !e.untargetable && !TELEGRAPH.has(e.pose ?? e.state);
   }
 
@@ -321,7 +324,7 @@ export class Bot {
     for (const e of list) {
       if (e.boss) {
         const de = Math.hypot(x - e.x, y - e.y);
-        if (!e.vulnerable && e.state !== 'intro' && de < 28) bump(1, false);
+        if (!e.vulnerable && e.state !== 'intro' && de < 28 && (e.kind !== 'vesper' || e.borrowed)) bump(1, false);
         if ((e.state === 'wind' || e.state === 'charge' || e.state === 'dash') && e.cdx !== undefined) {
           if (segDist(x, y, e.x, e.y, e.x + e.cdx * 300, e.y + e.cdy * 300) < 24) bump(e.state === 'wind' ? 2 : 3, false);
         }
@@ -376,8 +379,9 @@ export class Bot {
     const minions = list.filter((e) => !e.boss).sort((x, y) => near(x) - near(y));
     const boss = list.find((e) => e.boss);
     let target = minions.find((e) => !e.untargetable) || minions[0];
-    // A decoy breaks at one blow, so it's worth the walk; anything else only when it's close.
-    if (boss && (!target || near(target) > (target.decoy ? 130 : 56) || boss.vulnerable)) target = boss;
+    // A decoy breaks at one blow, so it's worth the walk; anything else only when it's close. Vesper's
+    // borrowed form comes first: breaking it is the way through the fight.
+    if (boss && (!target || near(target) > (target.decoy ? 130 : 56) || boss.vulnerable || boss.borrowed)) target = boss;
     this.status = `Fighting ${target.boss ? target.name.split(',')[0] : target.name || target.archetype}`;
     if (!this.ignore) this.ignore = new Map();
     this.engage(target);
@@ -504,7 +508,7 @@ export class Bot {
     if (it.mana) return g.state.player.mana >= g.derived.fireboltCost + 4;
     const ammo = g.state.player[it.ammo];
     if (ammo <= 0) return false;
-    if (target && target.boss) return target.vulnerable || ammo > 8;
+    if (target && target.boss) return target.vulnerable || !!target.borrowed || ammo > 8;
     const unreachable = target && (target.flying || (this.engaged === target && this.engageT > 3));
     return unreachable || ammo > 18;
   }
@@ -665,7 +669,7 @@ export class Bot {
     const W = this.g.world;
     if (place.kind === 'interior') { const b = W.props.find((q) => q.id === place.id); return b && { tile: { x: b.door.x, y: b.door.y + 1 }, enter: b.door }; }
     if (place.kind === 'cave') { const c = W.pois.caves.find((q) => q.id === place.id); return c && { tile: c.front, enter: { x: c.x, y: c.y } }; }
-    if (place.kind === 'dungeon') { const d = W.pois.dungeons[place.id]; return d && { tile: d.front, enter: d.door }; }
+    if (place.kind === 'dungeon') { const d = W.pois.dungeons[place.id] ?? (place.id === 'spire' ? W.pois.spire : null); return d && { tile: d.front, enter: d.door }; }
     return { tile: { x: place.x, y: place.y }, enter: null };
   }
 

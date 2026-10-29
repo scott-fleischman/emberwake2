@@ -10,7 +10,8 @@ import { paintCinder, CINDER_PAL, cinderHands, cinderPalms, cinderSword, cinderH
 import { paintThornmaw, THORN_PAL } from '../src/gfx/art-thornmaw.js';
 import { paintRime, RIME_PAL, rimePose } from '../src/gfx/art-rime.js';
 import { RimeDecoy } from '../src/game/warden-rime.js';
-import { paintTide, TIDE_PAL, tidePose } from '../src/gfx/art-tide.js';
+import { paintTide, TIDE_PAL, tidePose, drawTideWater } from '../src/gfx/art-tide.js';
+import { paintVesper } from '../src/gfx/art-vesper.js';
 import { portraitPose } from '../src/gfx/bossart.js';
 import { T } from '../src/world/tiles.js';
 import { Bot } from '../src/bot/bot.js';
@@ -902,6 +903,21 @@ test('every pose the Tidewarden takes fits the stamp\'s buffer', () => {
       assert.ok(box[0] > -91 && box[2] < 91 && box[1] > -123, `${state} phase ${phase} ${view}: ${box.map((v) => v.toFixed(1))}`);
     }
   }
+});
+test('every pose Vesper takes fits the stamp\'s buffer', () => {
+  const states = ['drift', 'bolts', 'step', 'scythe', 'recover', 'pillars', 'ring', 'beam', 'eclipse', 'spent', 'call', 'shift', 'stunned', 'rise', 'defeated', 'dying'];
+  for (const state of [...states, 'transform']) for (const phase of state === 'transform' ? [1] : [1, 2]) for (const view of ['side', 'front', 'back']) {
+    for (const roarT of [0, 0.5]) for (let i = 0; i < 8; i++) for (const timer of [0.05, 0.3, 0.6, 1.2]) {
+      const { box } = extent(paintVesper, { anim: i * 0.37, state, phase, phaseT: i < 4 ? i * 0.2 : 9, view, roarT, timer, cdx: 1, cdy: 0, face: 1 });
+      assert.ok(box[0] > -91 && box[2] < 91 && box[1] > -123, `${state} phase ${phase} ${view}: ${box.map((v) => v.toFixed(1))}`);
+    }
+  }
+});
+// A borrower's tidePhase says which look its floor wears: Vesper's borrowed Tidewarden never floods the room.
+test('the Tidewarden\'s floor floods the room in the Wail, but not for a borrower of its first form', () => {
+  const draw = (b) => { const r = recorder(); drawTideWater(r.g, { anim: 1, state: 'jets', phaseT: 9, x: 100, y: 100, ...b }, [], { left: 0, top: 0 }, { pixelW: 384, pixelH: 240 }); return r.calls.filter((c) => c[0] === 'fill').length; };
+  assert.ok(draw({ phase: 2 }) > draw({ phase: 1 }));
+  assert.equal(draw({ phase: 3, tidePhase: 1 }), draw({ phase: 1 }));
 });
 // The pose as drawn, frame after frame, through both phases: nothing snaps between states. The tail's
 // slam and the burst up out of the water are blows, fast on purpose, and are left out.

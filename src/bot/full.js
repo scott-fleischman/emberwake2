@@ -1,6 +1,7 @@
 // The 100% route: repeatedly take the nearest unfinished job the bot can reach right now — side
 // quests, standing stones, books, caves, caches, camps, and main-quest steps (which unlock bombs,
-// gloves and the charm). Dungeons are cleared of every chest. The last talk with the elder comes last.
+// gloves and the charm). Dungeons are cleared of every chest. The kindling and the Spire come last:
+// beating Vesper ends the run.
 import { generateDungeon } from '../world/dungeons.js';
 import { BOOKS, bookFor } from '../data/story.js';
 import { sideStatus } from '../game/quests.js';
@@ -21,7 +22,7 @@ export const fullMethods = {
       [W.pois.caches.length, W.pois.caches.filter((c) => pr.caches.includes(c.id)).length],
       [W.pois.camps.length, W.pois.camps.filter((c) => pr.cleared.includes(c.id)).length],
       [dungeonChests.length, dungeonChests.filter((id) => pr.opened.includes(id)).length],
-      [WARDS.length, pr.bosses.length],
+      [WARDS.length + 1, pr.bosses.length], // and Vesper
     ];
     return { total: parts.reduce((a, p) => a + p[0], 0), done: parts.reduce((a, p) => a + p[1], 0) };
   },
@@ -98,7 +99,7 @@ export const fullMethods = {
       if (this.dungeonChestIds().some((cid) => cid.startsWith(`d:${id}:`) && !pr.opened.includes(cid))) out.push({ label: 'Revisiting a dungeon for its last chest', site: W.pois.dungeons[id].front, run: () => this.runDungeon(id, true) });
     }
     const st = s.quest.main;
-    if (st !== 'end' && st !== 'kindle') out.push({ label: 'Main quest', site: this.mainSite(), run: () => this.mainStep(true), main: true });
+    if (st !== 'end' && st !== 'kindle' && st !== 'spire') out.push({ label: 'Main quest', site: this.mainSite(), run: () => this.mainStep(true), main: true });
     return out;
   },
 
@@ -120,6 +121,7 @@ export const fullMethods = {
       if (!job && !this.secondChance && this.tried && this.tried.size) { this.secondChance = true; this.tried.clear(); this.note('Second pass over skipped jobs'); job = this.pickJob(); }
       if (!job) {
         if (s.quest.main === 'kindle') { this.status = 'Returning to the elder'; yield* this.mainStep(true); continue; }
+        if (s.quest.main === 'spire') { this.status = 'Descending the Spire'; yield* this.mainStep(true); continue; }
         this.status = 'Nothing left in reach'; yield* this.wait(1); continue;
       }
       this.status = job.label;
@@ -152,7 +154,7 @@ export const fullMethods = {
 
   *mainStep(full) {
     const g = this.g, W = g.world, st = g.state.quest.main;
-    if (['vault', 'reliquary', 'sanctuary', 'vents', 'slagheart', 'frostfang', 'bells', 'bogking', 'fane'].includes(st) && g.area.kind !== 'dungeon' && this.needsSupplies()) yield* this.resupply();
+    if (['vault', 'reliquary', 'sanctuary', 'vents', 'slagheart', 'frostfang', 'bells', 'bogking', 'fane', 'spire'].includes(st) && g.area.kind !== 'dungeon' && this.needsSupplies()) yield* this.resupply();
     switch (st) {
       case 'wake': case 'hearth': case 'kindle': yield* this.talkTo(this.npc('home', 'elder').id); break;
       case 'scout': case 'sigil': yield* this.talkTo(this.npc('outpost', 'scout').id); break;
@@ -175,6 +177,7 @@ export const fullMethods = {
       case 'fenkeep': yield* this.talkTo(this.npc('swamp', 'keeper').id); break;
       case 'bogking': yield* this.atSeal('drowned', 'Facing Bogmaw'); break;
       case 'fane': yield* this.runDungeon('drowned', full); break;
+      case 'spire': yield* this.runDungeon('spire', full); break;
     }
   },
 

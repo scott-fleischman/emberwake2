@@ -22,7 +22,14 @@ export const RIME_PAL = {
   icicle: '#f2fcff', icicleShade: '#88c4ec', band: '#9ad2f2', mask: '#f6fdff', maskLine: '#7ab4de',
   socket: '#12304c', daze: '#6ab8e8', eye: '#3cc8ff', eye2: '#d8f8ff', eyeGlow: '110,210,255', brow: '#2a5a8a', beak: '#e4d48a',
   crack: '235,250,255', // light breaking through her as she shatters
+  // the world: the cold glow and mist under her, frost motes and snow, skid shavings and breath, the
+  // zones she puts down and her dark shard rain, the trail of a dash, her prison pillars and her bolts
+  chill: '140,210,255', mist: '210,240,255', frost: '230,248,255', snow: '240,250,255', skid: '220,245,255', breath: '235,248,255',
+  zone: '160,220,255', gust: '220,240,255', rain: '20,40,80', rainHi: '216,244,255', trail: '#e0f8ff', shatter: ['#c8f0ff', '#ffffff'],
+  pillar: ['#7ab4e0', '#c8ecff', '#f4fcff'], pillarInk: '#0a1622', pillarGlow: '170,225,255', shot: null,
 };
+// Whoever runs her moves wears her world effects in their own palette.
+export const rimePal = (b) => b.rimePal || RIME_PAL;
 
 // The fight's clocks, shared with the moveset (warden-rime.js) so the poses keep time with it: the
 // gust gathering and its blast, the pillars' call and their rise, the decoys' casting, the spent
@@ -349,37 +356,37 @@ export function paintDecoy(g, d, L, k = 1, pal = DECOY_PAL) {
 }
 
 // Mist trailing under the gown and a cold glow at her feet.
-export function rimeUnder(g, b, x, y, scale = 1) {
+export function rimeUnder(g, b, x, y, scale = 1, pal = rimePal(b)) {
   const t = b.anim || 0, ph = b.phase || 1, hy = y + rimeHover(b) * scale;
-  glow(g, x, y + 4 * scale, (26 + ph * 6) * scale, '140,210,255', 0.16 + ph * 0.06);
+  glow(g, x, y + 4 * scale, (26 + ph * 6) * scale, pal.chill, 0.16 + ph * 0.06);
   for (let i = 0; i < 7; i++) {
     const p = (t * 0.7 + i / 7) % 1, mx = x + ((hash(i, 1) - 0.5) * 22 - (b.mvx || 0) * 0.08 * p) * scale, my = hy + (-4 + p * 12) * scale;
-    g.fillStyle = `rgba(210,240,255,${0.3 * (1 - p)})`; g.beginPath(); g.ellipse(mx, my, (6 + p * 8) * scale, (2.5 + p * 2) * scale, 0, 0, TAU); g.fill();
+    g.fillStyle = `rgba(${pal.mist},${0.3 * (1 - p)})`; g.beginPath(); g.ellipse(mx, my, (6 + p * 8) * scale, (2.5 + p * 2) * scale, 0, 0, TAU); g.fill();
   }
 }
 // Frost aura (Shattered), snow swirling in as a gust gathers, skid shavings, stun stars, and spent,
 // her breath steaming.
-export function rimeOver(g, b, x, y, scale = 1) {
+export function rimeOver(g, b, x, y, scale = 1, pal = rimePal(b)) {
   const t = b.anim || 0, ph2 = (b.phase || 1) > 1, hy = y + rimeHover(b) * scale, roar = roarK(b), S = sizeOf(b) * scale;
   const n = ph2 ? 8 : roar ? 6 : 0;
   for (let k = 0; k < n; k++) {
     const a = t * 1.4 + (k / n) * TAU, fx = x + Math.cos(a) * 30 * S, fy = hy + (-30 + Math.sin(a) * 12 + Math.sin(t * 3 + k) * 2) * S, r = (1.6 + hash(k) * 1.2) * scale;
-    g.strokeStyle = `rgba(230,248,255,${0.6 + 0.4 * Math.sin(a)})`; g.lineWidth = Math.max(0.7, 0.7 * scale);
+    g.strokeStyle = `rgba(${pal.frost},${0.6 + 0.4 * Math.sin(a)})`; g.lineWidth = Math.max(0.7, 0.7 * scale);
     g.beginPath(); for (let j = 0; j < 3; j++) { const q = a * 2 + (j * Math.PI) / 3; g.moveTo(fx - Math.cos(q) * r, fy - Math.sin(q) * r); g.lineTo(fx + Math.cos(q) * r, fy + Math.sin(q) * r); } g.stroke();
   }
   if (b.state === 'gust' && (b.timer ?? 0) > BLOW) for (let i = 0; i < 16; i++) {
     const p = (t * 1.5 + hash(i, 2)) % 1, a = hash(i, 3) * TAU + t * 3, r = (44 - p * 36) * S;
-    g.fillStyle = `rgba(240,250,255,${0.85 * p})`; g.fillRect(Math.round(x + Math.cos(a) * r), Math.round(hy + (-40 + Math.sin(a) * r * 0.5) * S), Math.max(1, Math.round(scale)), Math.max(1, Math.round(scale)));
+    g.fillStyle = `rgba(${pal.snow},${0.85 * p})`; g.fillRect(Math.round(x + Math.cos(a) * r), Math.round(hy + (-40 + Math.sin(a) * r * 0.5) * S), Math.max(1, Math.round(scale)), Math.max(1, Math.round(scale)));
   }
   if (b.state === 'skid') {
     const d = Math.sign(b.cdx || 1);
-    g.fillStyle = 'rgba(220,245,255,0.6)'; g.fillRect(x - 14 - d * 6, y + 3, 28, 2);
-    for (let k = 0; k < 6; k++) { const p = (t * 3 + k / 6) % 1; g.fillStyle = `rgba(255,255,255,${1 - p})`; g.fillRect(Math.round(x + d * (6 + p * 10) + (hash(k) - 0.5) * 10), Math.round(y + 2 - p * 8 + p * p * 10), 1, 1); }
-    g.fillStyle = '#ffffff'; g.fillRect(x + 9, hy - 56 * S, 2, 3); g.fillRect(x + 9.5, hy - 57 * S, 1, 1);
+    g.fillStyle = `rgba(${pal.skid},0.6)`; g.fillRect(x - 14 - d * 6, y + 3, 28, 2);
+    for (let k = 0; k < 6; k++) { const p = (t * 3 + k / 6) % 1; g.fillStyle = `rgba(${pal.snow},${1 - p})`; g.fillRect(Math.round(x + d * (6 + p * 10) + (hash(k) - 0.5) * 10), Math.round(y + 2 - p * 8 + p * p * 10), 1, 1); }
+    g.fillStyle = `rgb(${pal.snow})`; g.fillRect(x + 9, hy - 56 * S, 2, 3); g.fillRect(x + 9.5, hy - 57 * S, 1, 1);
   }
   if (b.state === 'spent') for (let i = 0; i < 3; i++) {
     const p = (t * 0.9 + i / 3) % 1;
-    g.fillStyle = `rgba(235,248,255,${0.45 * (1 - p)})`; g.beginPath(); g.ellipse(x + (hash(i, 5) - 0.5) * 4 * scale, hy - (54 + p * 14) * S, (1.5 + p * 4) * scale, (1 + p * 2.5) * scale, 0, 0, TAU); g.fill();
+    g.fillStyle = `rgba(${pal.breath},${0.45 * (1 - p)})`; g.beginPath(); g.ellipse(x + (hash(i, 5) - 0.5) * 4 * scale, hy - (54 + p * 14) * S, (1.5 + p * 4) * scale, (1 + p * 2.5) * scale, 0, 0, TAU); g.fill();
   }
   if (b.state === 'stunned') dizzyStars(g, x, hy - 76 * S, t, 4);
 }
@@ -387,7 +394,7 @@ export function rimeOver(g, b, x, y, scale = 1) {
 // ---------------------------------------------------------------- world effects
 // Her gust, down its cone: frost drawn in toward her while it gathers, then the blizzard streaming
 // out along it while it blows.
-export function drawGust(g, b, zones, cam) {
+export function drawGust(g, b, zones, cam, pal = rimePal(b)) {
   for (const z of zones) {
     if (z.owner !== b || !z.gust) continue;
     const x = z.x - cam.left, y = z.y - cam.top - 20, live = z.t <= 0, age = live ? -z.t : z.t0 - z.t;
@@ -395,39 +402,39 @@ export function drawGust(g, b, zones, cam) {
     for (let i = 0; i < (live ? 30 : 16); i++) {
       const a = z.a + (hash(i, 41) - 0.5) * 2 * z.spread * 0.9, q = (age * (live ? 1.4 : 1.1) + hash(i, 42)) % 1;
       const r0 = live ? 12 + q * z.r : z.r * 0.55 * (1 - q) + 10, len = live ? 10 + hash(i, 43) * 14 : 4;
-      g.strokeStyle = `rgba(240,250,255,${(live ? 0.8 : 0.6) * Math.sin(q * Math.PI)})`;
+      g.strokeStyle = `rgba(${pal.snow},${(live ? 0.8 : 0.6) * Math.sin(q * Math.PI)})`;
       g.beginPath(); g.moveTo(x + Math.cos(a) * r0, y + Math.sin(a) * r0 * 0.8); g.lineTo(x + Math.cos(a) * (r0 + len), y + Math.sin(a) * (r0 + len) * 0.8); g.stroke();
     }
   }
 }
 
 // Frost crazing the floor where a prison will rise, closing in as the strike nears.
-export function drawFrostMarks(g, b, zones, cam) {
+export function drawFrostMarks(g, b, zones, cam, pal = rimePal(b)) {
   g.lineWidth = 1;
   for (const z of zones) {
     if (z.owner !== b || !z.pillar || z.t <= 0) continue;
     const x = z.x - cam.left, y = z.y - cam.top, k = 1 - clamp01(z.t / z.t0);
-    g.strokeStyle = `rgba(235,250,255,${0.35 + 0.5 * k})`; g.beginPath();
+    g.strokeStyle = `rgba(${pal.frost},${0.35 + 0.5 * k})`; g.beginPath();
     for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU + hash(i, z.x) * 0.5, r = z.r * (0.4 + 0.6 * k); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r * 0.6); }
     g.stroke();
   }
 }
 
 // An ice pillar where a prison struck: it bursts up, stands, then cracks before it shatters.
-export function drawPillar(g, x, y, age) {
+export function drawPillar(g, x, y, age, pal = RIME_PAL) {
   const up = easeOut(age / 0.1), crack = clamp01((age - (PILLAR_LIFE - 0.3)) / 0.3), h = 28 * up, w = 9;
   if (h < 1) return;
   const X = Math.round(x), Y = Math.round(y) + 3, top = Y - h;
-  g.fillStyle = 'rgba(210,240,255,0.35)'; g.beginPath(); g.ellipse(X, Y, w + 5, 4, 0, 0, TAU); g.fill();
-  g.fillStyle = '#0a1622'; poly(g, [[X - w - 1, Y + 1], [X - w - 1, top + 2], [X, top - 4], [X + w + 1, top + 2], [X + w + 1, Y + 1], [X, Y + 4]]);
-  g.fillStyle = '#7ab4e0'; poly(g, [[X - w, Y], [X - w, top + 2], [X, top + 5], [X, Y + 3]]);
-  g.fillStyle = '#c8ecff'; poly(g, [[X, Y + 3], [X, top + 5], [X + w, top + 2], [X + w, Y]]);
-  g.fillStyle = '#f4fcff'; poly(g, [[X - w, top + 2], [X, top - 3], [X + w, top + 2], [X, top + 5]]);
-  g.fillStyle = 'rgba(255,255,255,0.6)'; g.fillRect(X + 2, top + 7, 1, h - 10);
+  g.fillStyle = `rgba(${pal.mist},0.35)`; g.beginPath(); g.ellipse(X, Y, w + 5, 4, 0, 0, TAU); g.fill();
+  g.fillStyle = pal.pillarInk; poly(g, [[X - w - 1, Y + 1], [X - w - 1, top + 2], [X, top - 4], [X + w + 1, top + 2], [X + w + 1, Y + 1], [X, Y + 4]]);
+  g.fillStyle = pal.pillar[0]; poly(g, [[X - w, Y], [X - w, top + 2], [X, top + 5], [X, Y + 3]]);
+  g.fillStyle = pal.pillar[1]; poly(g, [[X, Y + 3], [X, top + 5], [X + w, top + 2], [X + w, Y]]);
+  g.fillStyle = pal.pillar[2]; poly(g, [[X - w, top + 2], [X, top - 3], [X + w, top + 2], [X, top + 5]]);
+  g.fillStyle = `rgba(${pal.snow},0.6)`; g.fillRect(X + 2, top + 7, 1, h - 10);
   if (crack > 0) {
-    g.strokeStyle = `rgba(255,255,255,${0.5 + crack * 0.5})`; g.lineWidth = 1;
+    g.strokeStyle = `rgba(${pal.snow},${0.5 + crack * 0.5})`; g.lineWidth = 1;
     line(g, [[X - 4, top + 6], [X - 1, top + 6 + h * 0.3 * crack], [X - 5, top + 6 + h * 0.6 * crack]]);
     line(g, [[X + 5, top + 4], [X + 2, top + 4 + h * 0.4 * crack], [X + 6, top + 4 + h * 0.7 * crack]]);
   }
-  glow(g, X, top + h * 0.4, 16, '170,225,255', 0.25 * (1 - crack));
+  glow(g, X, top + h * 0.4, 16, pal.pillarGlow, 0.25 * (1 - crack));
 }

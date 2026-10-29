@@ -7,7 +7,7 @@ import { Particles, Projectile, flyingSolid } from './entities.js';
 import { makeZone } from './zones.js';
 import { TILE } from '../world/tiles.js';
 import { TAU } from '../core/math.js';
-import { cinderPalms, cinderPoseTick, CAST, VENT, SWEEP, STRIKE, METEORS, POOLS } from '../gfx/art-cinder.js';
+import { cinderPalms, cinderPoseTick, cinderPal, CAST, VENT, SWEEP, STRIKE, METEORS, POOLS } from '../gfx/art-cinder.js';
 
 const ANCHORS = [[6, 4], [17, 4], [6, 10], [17, 10]].map(([tx, ty]) => ({ x: tx * TILE + 8, y: ty * TILE + 8 }));
 const FIRST = 0.35; // a salvo's first throw comes quicker than the rest (CAST)
@@ -75,7 +75,7 @@ export const moves = {
       const right = (h1.x - h0.x) * -Math.sin(a) + (h1.y - h0.y) * Math.cos(a) > 0; // h1 lies on the fan's + side
       for (let k = 0; k < n; k++) {
         const o = k - (n - 1) / 2, h = o === 0 ? h1 : (o > 0) === right ? h1 : h0;
-        ctx.area.spawn(new Projectile('ember', b.x + h.x, b.y + h.y, a + o * spread, 120, 1, 'enemy', { life: 2.6 }));
+        ctx.area.spawn(new Projectile('ember', b.x + h.x, b.y + h.y, a + o * spread, 120, 1, 'enemy', { life: 2.6, rgb: cinderPal(b).shot }));
       }
       ctx.game.audio.sfx('cinder_cast');
       b.volleys--;

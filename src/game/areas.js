@@ -14,7 +14,7 @@ import { meleeTargets, knockbackVector, isBehind } from './combat.js';
 import { findFreeSpot, rectSolid } from './physics.js';
 import { makeRng } from '../core/rng.js';
 import { openSeal, freezePool, WARDS } from '../world/wards.js';
-import { stageElite, stageRelics, ELITE_SEAL } from './quests.js';
+import { stageElite, stageRelics, ELITE_SEAL, MAIN_STAGES } from './quests.js';
 import { Elite, SigilLeaf } from './elites.js';
 import { collectWardProps } from '../gfx/wards.js';
 import { tickZones, drawZones } from './zones.js';
@@ -591,7 +591,11 @@ export class OverworldArea extends Area {
       g.message('A great stone door, sealed by a leaf-shaped lock of green bronze. It will not open without the matching sigil.', 'Verdant Vault');
       return false;
     }
-    if (lm.id === 'spire') { g.message(`Four empty sockets ring the Spire door. ${g.state.progress.shards} of them glow faintly. It will open only when all four wards are quieted.`, 'Emberwake Spire'); return false; }
+    // The Spire opens once the Hearth has all four shards (the kindling), and stays open.
+    if (lm.id === 'spire' && MAIN_STAGES.indexOf(g.state.quest.main) < MAIN_STAGES.indexOf('spire')) {
+      g.message(`Four empty sockets ring the Spire door. ${g.state.progress.shards} of them glow faintly. It will open only when all four shards burn in the Hearth.`, 'Emberwake Spire');
+      return false;
+    }
     g.enterDungeon(lm.id);
     return true;
   }

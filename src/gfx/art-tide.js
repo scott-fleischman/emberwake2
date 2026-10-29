@@ -443,8 +443,9 @@ export function tideOver(g, b, x, y, a = 1, scale = 1, pal = TIDE_PAL) {
 // The floor beneath everything that stands: the pool it lies in (and, diving, the pool it left and the
 // ripple it will burst up from), the room's edges flooding in the Wail, the whirlpool, the tidal wave,
 // the song rings and the tail's sweep along its line.
+// The phase it shows is its own, or a borrower's tidePhase (Vesper borrows it as it first fought).
 export function drawTideWater(g, b, zones, cam, map, pal = TIDE_PAL) {
-  const t = b.anim || 0, st = b.state, ph2 = (b.phase || 1) > 1, S = sizeOf(b);
+  const t = b.anim || 0, st = b.state, ph2 = (b.tidePhase ?? b.phase ?? 1) > 1, S = ph2 ? sizeOf(b) : 1;
   if (ph2 && map) flood(g, pal, map, cam, easeOut((b.phaseT ?? 9) / 1.2), t);
   if (st === 'dive') {
     const from = b.tideFrom || b, q = clamp01((DIVE - (b.timer ?? 0)) / (DIVE * 0.8));

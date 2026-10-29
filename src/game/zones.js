@@ -7,7 +7,8 @@ import { shapePath, drawPatch } from '../gfx/effects.js';
 // The player's hitbox is 10x8; this much of it counts as inside a zone.
 export const HIT_PAD = 4;
 
-const DEFAULTS = { t: 0.8, life: 0, dmg: 1, effect: null, knock: 0, rgb: '255,80,60', art: null, owner: null, blockable: false, vx: 0, vy: 0, grow: 0, hit: false, blocked: false, cool: 0 };
+// spin: a segment turning about its first end, radians a second (a sweeping beam).
+const DEFAULTS = { t: 0.8, life: 0, dmg: 1, effect: null, knock: 0, rgb: '255,80,60', art: null, owner: null, blockable: false, vx: 0, vy: 0, grow: 0, spin: 0, hit: false, blocked: false, cool: 0 };
 
 // `t` is seconds until the strike (negative once live); `t0` remembers it for the fill-in.
 export function makeZone(shape, fields) {
@@ -62,21 +63,30 @@ export function inZone(z, x, y, pad = 0) {
 // thick, at the speeds they move), and how soon its arrival counts as about to land.
 const AHEAD = 0.6, LOOK = 0.1, SOON = 0.3;
 
+// A segment's far end turned by a about its near end.
+const turned = (z, a) => {
+  const c = Math.cos(a), s = Math.sin(a), ex = z.x2 - z.x1, ey = z.y2 - z.y1;
+  return [z.x1 + ex * c - ey * s, z.y1 + ex * s + ey * c];
+};
+
 // The zone after k seconds of the motion move() gives it.
 function moved(z, k) {
   const dx = z.vx * k, dy = z.vy * k;
-  if (z.shape === 'segment') return { ...z, x1: z.x1 + dx, y1: z.y1 + dy, x2: z.x2 + dx, y2: z.y2 + dy, w: z.w + z.grow * k * 2 };
+  if (z.shape === 'segment') {
+    const [x2, y2] = z.spin ? turned(z, z.spin * k) : [z.x2, z.y2];
+    return { ...z, x1: z.x1 + dx, y1: z.y1 + dy, x2: x2 + dx, y2: y2 + dy, w: z.w + z.grow * k * 2 };
+  }
   return { ...z, x: z.x + dx, y: z.y + dy, r: z.r + z.grow * k };
 }
 
 // 0 outside, 1 early warning, 2 about to land, 3 live. A live zone that neither hurts nor afflicts
 // (a burrow's ripple) is nothing to avoid; a harmless telegraph still warns while it counts down, of
-// the strike that follows it (an aim line). A wave or a ring on its way is read where it will be: it
-// arrives live, so the sooner it gets here the nearer the strike.
+// the strike that follows it (an aim line). A wave, a ring or a sweeping beam on its way is read where
+// it will be: it arrives live, so the sooner it gets here the nearer the strike.
 export function zoneDanger(z, x, y, pad = 0) {
   const harms = z.dmg || z.effect;
   if (inZone(z, x, y, pad)) return z.t > 0 ? (z.t < 0.9 ? 2 : 1) : harms ? 3 : 0;
-  if (!harms || !(z.vx || z.vy || z.grow)) return 0;
+  if (!harms || !(z.vx || z.vy || z.grow || z.spin)) return 0;
   for (let s = LOOK; s <= AHEAD + 1e-9; s += LOOK) {
     if (s >= z.t + z.life) break; // gone by then
     const k = s - Math.max(0, z.t); // it moves only once live
@@ -87,7 +97,10 @@ export function zoneDanger(z, x, y, pad = 0) {
 
 function move(z, dt) {
   const dx = z.vx * dt, dy = z.vy * dt;
-  if (z.shape === 'segment') { z.x1 += dx; z.x2 += dx; z.y1 += dy; z.y2 += dy; z.w += z.grow * dt * 2; return; }
+  if (z.shape === 'segment') {
+    if (z.spin) [z.x2, z.y2] = turned(z, z.spin * dt);
+    z.x1 += dx; z.x2 += dx; z.y1 += dy; z.y2 += dy; z.w += z.grow * dt * 2; return;
+  }
   z.x += dx; z.y += dy; z.r += z.grow * dt;
 }
 

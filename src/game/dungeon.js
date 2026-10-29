@@ -354,7 +354,7 @@ export class DungeonArea extends Area {
         flags[key] = true;
         g.playCutscene(bossIntroShots(this.boss.kind), { letterbox: true });
       } else {
-        g.audio.sfx(`${this.boss.kind}_roar`);
+        g.audio.sfx(this.boss.roarSfx);
         this.boss.roarT = 0.9;
         g.showBanner(this.boss.name.split(',')[0], this.boss.name.includes(',') ? this.boss.name.split(', ')[1] : 'Warden of the deep');
       }
@@ -667,15 +667,18 @@ export class DungeonArea extends Area {
       const d = g.derived;
       Object.assign(g.state.player, { hp: d.maxHp, mana: d.maxMana });
     }
-    pr.shards = pr.bosses.length;
+    pr.shards = pr.bosses.filter((id) => WARDS.includes(id)).length;
     this.boss = null;
     this.portalActive = true;
     this.shut = false;
     this.applyDoors();
     for (const c of this.entities) if (c instanceof Chest && c.hidden) this.revealChest(c);
     g.audio.playMusic('victory');
+    // Vesper's fall ends the quest only once his ghost has let go.
+    const finale = boss.kind === 'vesper', won = () => g.questEvent({ type: 'boss', kind: boss.kind });
     const celebrate = () => {
-      g.showBanner('Warden Quieted', 'A return seal awakens. Claim the Ember Shard.');
+      if (finale) g.showBanner('The Unkindled Falls', 'The stolen fire is free. A return seal awakens.');
+      else g.showBanner('Warden Quieted', 'A return seal awakens. Claim the Ember Shard.');
       g.toast('Heart vessel gained! Talent point gained!');
     };
     const flags = g.state.quest.flags, key = `outro:${boss.kind}`;
@@ -689,14 +692,16 @@ export class DungeonArea extends Area {
           if (learnLore(g.state, `memory:${boss.kind}`)) g.toast(`Journal: “${MEMORIES[boss.kind].title}”`);
           if (g.area === this) g.audio.playMusic('dungeon');
           celebrate();
+          if (finale) won();
           g.saveGame(true);
         },
       }), 1.3);
     } else {
       celebrate();
+      if (finale) won();
       setTimeout(() => { if (g.area === this) g.audio.playMusic('dungeon'); }, 7000);
     }
-    g.questEvent({ type: 'boss', kind: boss.kind });
+    if (!finale) won();
     g.saveGame(true);
   }
 

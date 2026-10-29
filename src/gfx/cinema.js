@@ -8,6 +8,7 @@ import { paintThornmaw } from './art-thornmaw.js';
 import { paintCinder, fxCinder } from './art-cinder.js';
 import { paintRime, rimeUnder, rimeOver } from './art-rime.js';
 import { paintTide, tideOver } from './art-tide.js';
+import { paintVesper, vesperOver } from './art-vesper.js';
 
 const W = 480, H = 270;
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -578,6 +579,30 @@ export const ART = {
     }
     vignette(g, 0.72, '0,10,16');
   },
+
+  // The Unkindled in the dark beneath the Spire: the broken binding circle, its chains hanging slack.
+  portrait_vesper(g, t) {
+    const grd = g.createRadialGradient(240, 120, 10, 240, 120, 320);
+    grd.addColorStop(0, '#2a1440'); grd.addColorStop(0.5, '#0e0618'); grd.addColorStop(1, '#020104');
+    g.fillStyle = grd; g.fillRect(0, 0, W, H);
+    burstLines(g, 240, 100, t, '200,160,255', 0.05);
+    for (const [ex, ey] of [[0, 30], [480, 30], [0, 250], [480, 250]]) {
+      for (let k = 0; k < 14; k++) {
+        const q = k / 22, x = ex + (240 - ex) * q, y = ey + (150 - ey) * q + Math.sin(q * Math.PI) * 20;
+        R(g, x - 1, y - 1, k % 2 ? 4 : 2, k % 2 ? 2 : 4, '#3a2e4a');
+      }
+    }
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2 + t * 0.2;
+      if (k % 5 === 0) continue; // broken
+      R(g, 240 + Math.cos(a) * 120, 238 + Math.sin(a) * 18, 3, 2, k % 3 ? '#4a3266' : '#9a70d0');
+    }
+    embers(g, t, 50, 0, W, 290, '170,120,230', 18);
+    const pose = { ...portraitPose('vesper', t), view: 'front' }, S = 2.5 + easeOut(t / 2) * 0.2;
+    glow(g, 240, 110, 130, '200,160,255', 0.22 + 0.1 * Math.abs(Math.sin(t * 9)));
+    bigBoss(g, paintVesper, pose, 240, 112 + 64 * S, S, false, (gg) => vesperOver(gg, pose, 0, 0));
+    vignette(g, 0.75, '10,0,20');
+  },
 };
 
 export const ART_IDS = Object.keys(ART);
@@ -586,7 +611,7 @@ export const ART_IDS = Object.keys(ART);
 // Glowing true forms that rise from a defeated warden. Drawn at 1x on the pixel canvas.
 export function drawSpirit(g, kind, x, y, t, alpha = 1) {
   if (alpha <= 0) return;
-  const col = { stag: '168,240,138', phoenix: '255,176,112', owl: '208,244,255', whale: '160,232,255' }[kind] || '255,230,180';
+  const col = { stag: '168,240,138', phoenix: '255,176,112', owl: '208,244,255', whale: '160,232,255', vesperghost: '226,218,244' }[kind] || '255,230,180';
   const bob = Math.sin(t * 2) * 2;
   y += bob;
   glow(g, x, y, 34, col, 0.55 * alpha);
@@ -620,6 +645,18 @@ export function drawSpirit(g, kind, x, y, t, alpha = 1) {
     g.stroke();
     R(g, x + 9, y - 2, 1, 1, '#203040');
     for (let k = 0; k < 3; k++) { const q = (t * 1.2 + k / 3) % 1; g.globalAlpha = alpha * (1 - q); R(g, x + 5 + (k - 1) * 3 * q, y - 10 - q * 9, 1, 2, hi); }
+  } else if (kind === 'vesperghost') { // the frail old man he was: bowed, thin, his hands opening, no crown
+    const sway = Math.sin(t * 1.3) * 0.8, open = 0.5 + 0.5 * Math.sin(t * 0.8);
+    g.beginPath(); g.moveTo(x - 4, y - 9); g.quadraticCurveTo(x - 7, y + 4, x - 8 + sway, y + 14); // the robe, thinning to nothing at the hem
+    for (let i = 0; i <= 4; i++) g.lineTo(x - 8 + i * 4 + sway, y + 14 - (i % 2 ? 3 : 0));
+    g.quadraticCurveTo(x + 7, y + 4, x + 4, y - 9); g.closePath(); g.fill();
+    g.beginPath(); g.ellipse(x + 0.5, y - 13, 3.2, 3.8, 0, 0, Math.PI * 2); g.fill(); // his head, bowed a little forward
+    g.strokeStyle = c; g.lineWidth = 1.5; g.lineCap = 'round';
+    for (const s of [-1, 1]) { g.beginPath(); g.moveTo(x + s * 4, y - 7); g.quadraticCurveTo(x + s * (6 + open * 2), y - 1, x + s * (5 + open * 4), y + 1 - open * 3); g.stroke(); }
+    g.fillStyle = hi; g.globalAlpha = alpha * 0.9;
+    R(g, x - 3, y - 15, 6, 1, hi); R(g, x - 0.5, y - 10, 1, 5, hi); // white hair and a thin beard
+    for (const s of [-1, 1]) R(g, x + s * (5 + open * 4) - 1, y - open * 3, 2, 2, hi); // open hands
+    R(g, x - 1.5, y - 13.5, 1, 1, '#403050'); R(g, x + 1.5, y - 13.5, 1, 1, '#403050');
   } else {
     g.beginPath(); g.ellipse(x, y, 9, 11, 0, 0, Math.PI * 2); g.fill();
     for (const s of [-1, 1]) { R(g, x + s * 5 - 1, y - 12, 3, 4, c); g.fillStyle = hi; g.beginPath(); g.arc(x + s * 4, y - 4, 3, 0, Math.PI * 2); g.fill(); R(g, x + s * 4, y - 4, 1, 1, '#203040'); g.fillStyle = c; }

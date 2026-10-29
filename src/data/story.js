@@ -178,16 +178,26 @@ export const WARDENS = {
     lines: [
       'The water is quiet... I can hear the tide again.',
       'I sang the sea in and out, a lullaby for the whole coast. When the Hearth dimmed, a cold voice took my song and sang it backward, and the water forgot where to go.',
-      'You carry all four shards now, and still they do not burn you. Every socket on the Spire\'s door is lit. He is waiting behind it.',
+      'You carry all four shards now, and still they do not burn you. Take them home to the Hearth, and the sockets on the Spire\'s door will wake. He is waiting behind it.',
       'Go up, little flame. Sing him the song he never learned: that fire shared is warmer than fire kept.',
     ],
     taunt: { voice: 'unkindled', lines: ['Four. Carry it home, and the last socket will burn.', 'Climb, little ember. I have waited a thousand years to be warm.'] },
+  },
+  // No animal spirit and no taunt: what is left of him is a man (vesperFallShots).
+  vesper: {
+    title: 'Vesper', sub: 'The Unkindled', color: '#c8a0ff',
+    narration: 'The brightest of the Kindlers. He would not share the fire, and the dark has kept him ever since.',
+    omen: 'The sockets on the rim gutter. Shadow crawls in across the floor...',
+    rise: 'Out of the dark beneath the Spire, the Unkindled stands up.',
+    rgb: '200,160,255',
+    voice: 'At last. Four sparks, carried home by the fifth. Come closer, little ember. Let me be warm.',
+    hint: 'Watch the floor: whatever he marks, he strikes. After his scythe, he is open.',
   },
 };
 
 // A quake with the arena empty, the warden's entrance, a roaring close-up, its name slamming
 // down, then its voice and a tip. About twelve seconds; Esc twice skips.
-const IMPACT = { thornmaw: 0.62, cinder: 0.98, rime: 1.58, tide: 0.86 }; // when each entrance lands (s)
+const IMPACT = { thornmaw: 0.62, cinder: 0.98, rime: 1.58, tide: 0.86, vesper: 1.12 }; // when each entrance lands (s)
 export function bossIntroShots(kind) {
   const w = WARDENS[kind];
   if (!w) return [];
@@ -204,6 +214,7 @@ export function bossIntroShots(kind) {
 export function bossOutroShots(kind, focus) {
   const w = WARDENS[kind];
   if (!w) return [];
+  if (kind === 'vesper') return vesperFallShots(focus);
   const S = { speaker: w.spirit.name, color: w.spirit.color, spirit: w.spirit.kind, focus, wait: true };
   const v = VOICE[w.taunt.voice];
   return [
@@ -211,6 +222,29 @@ export function bossOutroShots(kind, focus) {
     ...w.lines.map((text) => ({ ...S, text })),
     { text: 'The spirit melts into a warm, golden light.', spirit: w.spirit.kind, focus, fadeSpirit: true, hold: 1.6 },
     ...w.taunt.lines.map((text) => ({ speaker: v.name, color: v.color, text, gloam: true, wait: true, shakeText: true })),
+  ];
+}
+
+// Vesper at 0, risen on the sockets' light with a full bar: what he has to say about it. In-engine,
+// over his arena; he wears all four wardens before the end.
+export function vesperRiseShots() {
+  const v = VOICE.unkindled, V = { speaker: v.name, color: v.color, wait: true, shakeText: true, spotlight: true };
+  return [
+    { ...V, text: 'Did you think the fire was yours to keep from me? Every spark you carried home came here with you.', roar: '200,160,255' },
+    { ...V, text: 'Four lights. Four wardens. I wore them all before they ever knew my name. Let me show you.' },
+  ];
+}
+
+// He dematerializes, and the frail ghost of the man he was is left standing where he fell. It lets go.
+export function vesperFallShots(focus) {
+  const G = { speaker: 'Vesper', color: '#e8e0f4', spirit: 'vesperghost', focus, wait: true };
+  return [
+    { text: 'The stolen fire pours out of him, and the cold goes with it...', spirit: 'vesperghost', focus, burst: true, hold: 1.8, sfx: [['explode', { pitch: 0.45, volume: 0.6 }], 'shrine'] },
+    { ...G, text: 'Warm... It is warm. A thousand years in the dark, and I had forgotten what warm was.' },
+    { ...G, text: 'I only wanted to keep it. To never be cold again. So I took it, and I have been cold ever since.' },
+    { ...G, text: 'You carried every spark home instead of keeping it. That is the whole of it, isn\'t it? I never learned.' },
+    { ...G, text: 'Keep the fire, little ember. Share it. I am letting go.' },
+    { text: 'The ghost of the Kindler smiled, opened his hands, and was gone.', spirit: 'vesperghost', focus, fadeSpirit: true, hold: 2.2 },
   ];
 }
 

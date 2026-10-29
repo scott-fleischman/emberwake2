@@ -19,8 +19,9 @@ const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 export const mix = (a, b, k) => { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], clamp01(k)))).join(',')})`; };
 export const roarK = (b) => (b.roarT > 0 ? Math.min(1, b.roarT / 0.25) : 0);
 
-// Roar / burst colors: red for the Grove, orange for the Ash, blue for the Rime, sea-green for the Tide.
-export const BOSS_RGB = { thornmaw: '255,70,60', cinder: '255,150,40', rime: '120,200,255', tide: '90,200,220' };
+// Roar / burst colors: red for the Grove, orange for the Ash, blue for the Rime, sea-green for the Tide,
+// the Gloam's violet for Vesper.
+export const BOSS_RGB = { thornmaw: '255,70,60', cinder: '255,150,40', rime: '120,200,255', tide: '90,200,220', vesper: '200,160,255' };
 
 export function glow(g, x, y, r, rgb, a = 0.6) {
   if (!(r > 0) || a <= 0) return;
@@ -41,10 +42,10 @@ export function lit(g, L, x, y, r, rgb, a = 0.6) {
 }
 export const drawLights = (g, L, ox = 0, oy = 0, k = 1) => { for (const l of L) glow(g, ox + l.x, oy + l.y, l.r, l.rgb, l.a * k); };
 
-// A licking flame in three nested tongues: the Cinder Warden's crown, and its entrance.
-export function flameTongue(g, x, y, h, t, k, weak = false) {
+// A licking flame in three nested tongues: the Cinder Warden's crown, and its entrance. cols: its
+// colours, outside in (a weak flame's, or a borrower's).
+export function flameTongue(g, x, y, h, t, k, weak = false, cols = weak ? ['#a03a14', '#e0802c', '#ffeab8'] : ['#ff4a10', '#ffa030', '#fff2b0']) {
   if (h <= 0.5) return;
-  const cols = weak ? ['#a03a14', '#e0802c', '#ffeab8'] : ['#ff4a10', '#ffa030', '#fff2b0'];
   cols.forEach((c, j) => {
     const s = h * (1 - j * 0.28), w = s * 0.3 + 0.6, sway = Math.sin(t * 9 + k * 1.7 + j) * s * 0.18;
     const top = y - s * (1 + Math.sin(t * 13 + k * 2.3) * 0.12);
@@ -150,9 +151,10 @@ export function quakeDebris(g, t, q = 1) {
   }
 }
 
-// Each warden's entrance, drawn around its feet (x,y on screen). p: 0..1 over the shot, t: seconds.
+// Each warden's entrance (and Vesper's), drawn around its feet (x,y on screen). p: 0..1 over the shot, t: seconds.
 export function drawEntrance(g, kind, x, y, p, t) {
-  if (kind === 'thornmaw') riseFx(g, x, y, p, t);
+  if (kind === 'vesper') vesperEntrance(g, x, y, p, t);
+  else if (kind === 'thornmaw') riseFx(g, x, y, p, t);
   else if (kind === 'cinder') igniteFx(g, x, y, p, t);
   else if (kind === 'tide') surgeFx(g, x, y, p, t);
   else descendFx(g, x, y, p, t);
@@ -161,7 +163,8 @@ export function drawEntrance(g, kind, x, y, p, t) {
 // What stirs before a warden shows itself: twitching roots, rising embers, creeping frost, seeping water.
 export function drawOmen(g, kind, x, y, t) {
   const k = clamp01(t / 1.4);
-  if (kind === 'thornmaw') {
+  if (kind === 'vesper') vesperOmen(g, x, y, t);
+  else if (kind === 'thornmaw') {
     g.lineCap = 'round';
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * TAU + 0.4, r = 18 + hash(i, 1) * 22, bx = x + Math.cos(a) * r, by = y + 6 + Math.sin(a) * r * 0.45;
@@ -342,6 +345,7 @@ export function entranceOffset(c) {
   if (c.kind === 'thornmaw') return { sink: (1 - easeOut((c.p - 0.32) / 0.4)) * 76, ground: 9 };
   if (c.kind === 'cinder') return { alpha: clamp01((c.p - 0.48) / 0.2) };
   if (c.kind === 'tide') return { sink: (1 - easeOut((c.p - 0.42) / 0.33)) * 110, ground: 1 };
+  if (c.kind === 'vesper') return { alpha: clamp01((c.p - 0.5) / 0.25), dy: -(1 - easeOut((c.p - 0.5) / 0.35)) * 12 };
   return { dy: -(1 - easeOut((c.p - 0.22) / 0.52)) * 140, alpha: clamp01((c.p - 0.18) / 0.25) };
 }
 
@@ -356,3 +360,4 @@ export { THORN_PAL, thornPose, paintThornmaw, thornUnder, thornOver } from './ar
 export { CINDER_PAL, cinderHover, ventOpen, cinderHands, paintCinder, fxCinder, emberSwirl } from './art-cinder.js';
 export { RIME_PAL, rimeHover, rimePose, paintRime, rimeUnder, rimeOver } from './art-rime.js';
 export { TIDE_PAL, tidePose, paintTide, tideOver } from './art-tide.js';
+import { vesperEntrance, vesperOmen } from './art-vesper.js';

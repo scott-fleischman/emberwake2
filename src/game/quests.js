@@ -5,7 +5,7 @@ import { BIOME_NAMES } from '../world/tiles.js';
 import { isPassable } from '../world/overworld.js';
 import { PETS, HERBS, RIDDLES, FETCH_TEXT, HUNT_TEXT, DELIVER_TEXT, RESCUE_TEXT, fill, cap } from '../data/sidequests.js';
 
-export const MAIN_STAGES = ['wake', 'scout', 'lookout', 'camp', 'sigil', 'leaves', 'thornwall', 'vault', 'smith', 'ashpass', 'ridge', 'cinderwatch', 'vents', 'slagheart', 'reliquary', 'frostpass', 'boulder', 'rimewatch', 'windcrest', 'beacons', 'frostfang', 'sanctuary', 'hearth', 'fenkeep', 'belfry', 'bells', 'bogking', 'fane', 'kindle', 'end'];
+export const MAIN_STAGES = ['wake', 'scout', 'lookout', 'camp', 'sigil', 'leaves', 'thornwall', 'vault', 'smith', 'ashpass', 'ridge', 'cinderwatch', 'vents', 'slagheart', 'reliquary', 'frostpass', 'boulder', 'rimewatch', 'windcrest', 'beacons', 'frostfang', 'sanctuary', 'hearth', 'fenkeep', 'belfry', 'bells', 'bogking', 'fane', 'kindle', 'spire', 'end'];
 
 // The named guardians of the quest chains.
 export const ELITES = {
@@ -84,7 +84,8 @@ export function advanceMain(state, W, ev) {
     case 'bells': if (ev.type === 'relic' && allRelics(state, W, 'bells')) go('bogking', 'The bells ring out across the fens...'); break;
     case 'bogking': if (sealed('drowned')) go('fane'); break;
     case 'fane': if (ev.type === 'boss' && ev.kind === 'tide') go('kindle'); break;
-    case 'kindle': if (talk('elder', 'home')) go('end'); break;
+    case 'kindle': if (talk('elder', 'home')) go('spire'); break;
+    case 'spire': if (ev.type === 'boss' && ev.kind === 'vesper') go('end'); break;
   }
   // Things done out of order (a camp cleared before the scout asked, gates opened early, vents
   // capped before anyone explained them) should not strand the quest.
@@ -170,7 +171,8 @@ export function mainObjective(state, W, here = null) {
     case 'bogking': return { text: 'Defeat Bogmaw, the Drowned King, at the Tidewall.', marker: arena('drowned') };
     case 'fane': return { text: 'Enter the Drowned Fane and defeat the Tidewarden.', marker: D.drowned.front };
     case 'kindle': return { text: `Return to ${n('home', 'elder').name} with all four shards.`, marker: hallDoor(home) };
-    default: return { text: 'All four wards are quiet, and the Spire stands open. Explore freely.', marker: W.pois.spire.front };
+    case 'spire': return { text: 'Descend into the Emberwake Spire and face Vesper, the Unkindled.', marker: W.pois.spire.front };
+    default: return { text: 'The Unkindled has let go of the fire, and the wards are quiet. Explore freely.', marker: W.pois.spire.front };
   }
 }
 
@@ -444,7 +446,7 @@ export function questTitle(q, W) {
 }
 
 // ---------------------------------------------------------------- tracking
-const MAIN_DUNGEON = { vault: 'verdant', reliquary: 'ashen', sanctuary: 'frost', fane: 'drowned' };
+const MAIN_DUNGEON = { vault: 'verdant', reliquary: 'ashen', sanctuary: 'frost', fane: 'drowned', spire: 'spire' };
 
 // Quests the player can track: the main quest plus every accepted, unfinished side quest.
 export function trackableQuests(state, sideQuests) {

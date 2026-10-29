@@ -14,7 +14,7 @@ import { CLASS_ORDER, CLASSES } from '../data/classes.js';
 
 const AW = 28, AH = 16;
 const ARCH = ['brute', 'lunger', 'skirmisher', 'ranged'];
-const BOSSES = ['thornmaw', 'cinder', 'rime', 'tide'];
+const BOSSES = ['thornmaw', 'cinder', 'rime', 'tide', 'vesper'];
 
 export class ArenaArea extends Area {
   constructor(game) {

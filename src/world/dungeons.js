@@ -471,7 +471,7 @@ const SETUP = {
   },
   boss(L, s, density) {
     L.put({ type: 'boss', kind: s.info.boss, x: 12, y: 7 });
-    L.put({ type: 'chest', x: 12, y: 9, contents: 'shard' });
+    if (s.theme !== 'spire') L.put({ type: 'chest', x: 12, y: 9, contents: 'shard' }); // four shards; Vesper keeps none
     L.put({ type: 'portal', x: 12, y: 5 });
     if (s.theme === 'drowned') cornerPools(L);
     if (s.theme === 'spire') for (const [x, y] of RIM_SOCKETS) L.put({ type: 'socket', x, y });

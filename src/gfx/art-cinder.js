@@ -25,7 +25,13 @@ export const CINDER_PAL = {
   cage: '#2e2224', cageHi: '#6e5a5e', hollow: '#120a0b', stub: '#3a2c30', vertebra: '#3e3034',
   hilt: '#1e1416', hiltHi: '#6a5458', guard: '#3a2a2e', guardHi: '#8a6e72', pommel: '#ffb040',
   blade: '#ff6a18', bladeHi: '#ffb84a', bladeCore: '#fff4c8', bladeGlow: '255,140,40', flame: ['#ff4a10', '#ffa030', '#fff2b0'],
+  // the world: smoke under its skirt, the crown's fire and its glow (weak while it vents), rising
+  // embers, heat shimmer, sparks from the back vents, the sweep's arc, the swirl of a blink, its embers
+  flameWeak: ['#a03a14', '#e0802c', '#ffeab8'], smoke: '30,18,20', fire: '255,140,50', swordFire: '255,120,30', embers: ['#ffb040', '#ff6a20'],
+  shimmer: '255,240,200', sparks: ['#ffb040', '#fff0c0'], arc: ['255,240,190', '255,170,60', '255,90,20'], swirl: ['#ff8a30', '#ffe080'], swirlGlow: '255,130,50', shot: null,
 };
+// Whoever runs its moves wears its world effects in their own palette.
+export const cinderPal = (b) => b.cinderPal || CINDER_PAL;
 
 const CW_CRACKS = [
   [[-9, -49], [-7, -45], [-9, -42], [-6, -38]],
@@ -503,57 +509,57 @@ export function paintCinder(g, b, L, pal = CINDER_PAL) {
 // Fire and smoke drawn straight onto the world (never outlined): the crown of living flame (a pillar
 // of fire, Unbound), rising embers, smoke under the skirt, heat shimmer over an open core or vent,
 // flames off the greatsword and the arc of its sweep.
-export function fxCinder(g, b, x, y, a = 1, scale = 1) {
+export function fxCinder(g, b, x, y, a = 1, scale = 1, pal = cinderPal(b)) {
   const t = b.anim || 0, st = b.state, ph2 = (b.phase || 1) > 1, op = ventOpen(b), uk = unboundK(b), hy = y + cinderHover(b) * scale;
   const view = b.view || 'front', f = view === 'side' ? (b.face ?? 1) < 0 ? -1 : 1 : 1, hx = x + (view === 'side' ? f * 1 : 0) * scale;
   if (a <= 0) return;
   g.save(); g.globalAlpha = a;
   for (let i = 0; i < 5; i++) {
     const p = ((t * 0.6 + i / 5) % 1), sx = x + (hash(i, 1) - 0.5) * 22 * scale - (view === 'side' ? f * p * 10 * scale : 0);
-    g.fillStyle = `rgba(30,18,20,${0.35 * (1 - p) * a})`; g.beginPath(); g.ellipse(sx, hy + (2 + p * 10) * scale, (4 + p * 6) * scale, (2 + p * 2) * scale, 0, 0, TAU); g.fill();
+    g.fillStyle = `rgba(${pal.smoke},${0.35 * (1 - p) * a})`; g.beginPath(); g.ellipse(sx, hy + (2 + p * 10) * scale, (4 + p * 6) * scale, (2 + p * 2) * scale, 0, 0, TAU); g.fill();
   }
   const cy = hy - (st === 'vent' ? 64 : 66) * scale;
   if (ph2) { // the pillar: one tall flame with tongues licking up round it and wisps tearing off its top
     const k = clamp01(((b.phaseT ?? 9) - 0.1) / 0.5), weak = st === 'vent', H = (14 + 32 * easeOut(k)) * (weak ? 0.45 : 1) * scale;
-    glow(g, hx, cy - H * 0.5, 10 * scale + H * 0.5, '255,140,50', 0.5);
-    const tongue = (dx, y, h, kk, sq) => { g.save(); g.translate(hx + dx * scale, y); g.scale(sq, 1); flameTongue(g, 0, 0, h, t, kk, weak); g.restore(); };
+    glow(g, hx, cy - H * 0.5, 10 * scale + H * 0.5, pal.fire, 0.5);
+    const tongue = (dx, y, h, kk, sq) => { g.save(); g.translate(hx + dx * scale, y); g.scale(sq, 1); flameTongue(g, 0, 0, h, t, kk, weak, weak ? pal.flameWeak : pal.flame); g.restore(); };
     for (const [dx, f, kk, sq] of [[-6, 0.38, 0, 0.8], [6, 0.44, 1, 0.8], [-3, 0.66, 2, 0.6], [3, 0.6, 3, 0.6], [0, 1, 4, 0.42]]) tongue(dx, cy, H * f, kk, sq);
     for (let i = 0; i < 3; i++) { const p = (t * 1.4 + i / 3) % 1; tongue(Math.sin(t * 3 + i * 2) * 3, cy - H * (0.6 + p * 0.55), H * 0.22 * (1 - p), i + 9, 0.6); }
   } else {
     const fs = (st === 'vent' ? 0.45 : 1 + uk * 2.4) * (1 + roarK(b) * 0.5) * scale;
-    glow(g, hx, cy - 6 * fs, 12 * fs + 8 * scale, '255,140,50', 0.5);
-    for (const [dx, h, k] of [[-5.5, 7, 0], [5.5, 7, 1], [-3, 10, 2], [3, 10, 3], [0, 14, 4]]) flameTongue(g, hx + dx * scale, cy, h * fs, t, k, st === 'vent');
+    glow(g, hx, cy - 6 * fs, 12 * fs + 8 * scale, pal.fire, 0.5);
+    for (const [dx, h, k] of [[-5.5, 7, 0], [5.5, 7, 1], [-3, 10, 2], [3, 10, 3], [0, 14, 4]]) flameTongue(g, hx + dx * scale, cy, h * fs, t, k, st === 'vent', st === 'vent' ? pal.flameWeak : pal.flame);
   }
   for (let i = 0; i < (ph2 ? 26 : 15); i++) {
     const life = 1.2 + hash(i, 3), p = ((t + hash(i, 4) * life) % life) / life;
     const ex = x + ((hash(i, 5) - 0.5) * 34 + Math.sin(t * 2 + i) * 3) * scale, ey = hy + (-2 - p * (30 + hash(i, 6) * 40)) * scale;
     g.globalAlpha = a * Math.sin(p * Math.PI);
-    g.fillStyle = hash(i, 7) < 0.5 ? '#ffb040' : '#ff6a20'; g.fillRect(Math.round(ex), Math.round(ey), Math.max(1, Math.round(scale)), Math.max(1, Math.round(scale)));
+    g.fillStyle = pal.embers[hash(i, 7) < 0.5 ? 0 : 1]; g.fillRect(Math.round(ex), Math.round(ey), Math.max(1, Math.round(scale)), Math.max(1, Math.round(scale)));
   }
   g.globalAlpha = a;
   const vent = Math.max(op, ph2 ? 0.25 : 0);
   if (vent > 0) { // heat shimmer off the open core, or off the vents in its back
-    g.strokeStyle = `rgba(255,240,200,${0.3 * vent})`; g.lineWidth = scale;
+    g.strokeStyle = `rgba(${pal.shimmer},${0.3 * vent})`; g.lineWidth = scale;
     g.beginPath();
     for (let k = 0; k < 3; k++) { const bx = hx + (k - 1) * 5 * scale; g.moveTo(bx, hy - 46 * scale); for (let j = 1; j <= 6; j++) g.lineTo(bx + Math.sin(t * 12 + j + k) * 1.5 * scale, hy - (46 + j * 4) * scale); }
     g.stroke();
   }
   if (op > 0 && view === 'back') for (let i = 0; i < 14; i++) { // sparks blasting out of the back vents
     const p = ((t * 1.8 + hash(i, 11)) % 1), sx = hx + (hash(i, 12) - 0.5) * 18 * scale + (hash(i, 13) - 0.5) * p * 20 * scale, sy = hy - (40 + p * 34) * scale;
-    g.globalAlpha = a * op * (1 - p); g.fillStyle = i % 3 ? '#ffb040' : '#fff0c0'; g.fillRect(Math.round(sx), Math.round(sy), Math.max(1, Math.round(scale)), Math.max(1, Math.round(scale)) + (i % 2));
+    g.globalAlpha = a * op * (1 - p); g.fillStyle = pal.sparks[i % 3 ? 0 : 1]; g.fillRect(Math.round(sx), Math.round(sy), Math.max(1, Math.round(scale)), Math.max(1, Math.round(scale)) + (i % 2));
   }
   g.globalAlpha = a;
   if (ph2) { // the greatsword's flames, and the arc of fire its sweep leaves
     const sw = cinderSword(b), k = easeOut(sw.k);
     if (k > 0) for (let i = 0; i < 4; i++) {
       const u = 5 + sw.len * k * (i + 0.5) / 4, px = x + f * (sw.x + sw.dx * u) * scale, py = hy + (sw.y + sw.dy * u) * scale;
-      flameTongue(g, px + Math.sin(t * 7 + i) * scale, py, (5 + hash(i, 21) * 3) * scale * (1 - op * 0.5), t * 1.3, i + 7, op > 0.5);
+      flameTongue(g, px + Math.sin(t * 7 + i) * scale, py, (5 + hash(i, 21) * 3) * scale * (1 - op * 0.5), t * 1.3, i + 7, op > 0.5, op > 0.5 ? pal.flameWeak : pal.flame);
     }
-    if (k > 0) glow(g, x + f * (sw.x + sw.dx * sw.len * 0.5) * scale, hy + (sw.y + sw.dy * sw.len * 0.5) * scale, (14 + sw.len * 0.4) * scale, '255,120,30', 0.3 * (1 - op * 0.6));
+    if (k > 0) glow(g, x + f * (sw.x + sw.dx * sw.len * 0.5) * scale, hy + (sw.y + sw.dy * sw.len * 0.5) * scale, (14 + sw.len * 0.4) * scale, pal.swordFire, 0.3 * (1 - op * 0.6));
     const q = st === 'sweep' ? 1 - (b.timer ?? 0) / SWEEP - STRIKE / SWEEP : -1;
     if (q > -0.02 && q < 0.3) {
       const a0 = Math.atan2(b.cdy || 0, b.cdx || 1), e = clamp01(q / 0.3);
-      for (const [r, col] of [[30, '255,240,190'], [44, '255,170,60'], [58, '255,90,20']]) {
+      for (const [r, col] of [[30, pal.arc[0]], [44, pal.arc[1]], [58, pal.arc[2]]]) {
         g.globalAlpha = a * (1 - e); g.strokeStyle = `rgb(${col})`; g.lineWidth = 3 * scale;
         g.beginPath(); g.ellipse(x, y - 4 * scale, r * scale, r * 0.7 * scale, 0, a0 - 1, a0 - 1 + 2 * easeOut(clamp01((q + 0.02) / 0.12))); g.stroke();
       }
@@ -578,14 +584,14 @@ export function drawMeteors(g, b, zones, cam) {
 }
 
 // Embers spiralling in or out while the warden fades between anchors.
-export function emberSwirl(g, x, y, k, t) {
+export function emberSwirl(g, x, y, k, t, pal = CINDER_PAL) {
   if (k <= 0) return;
   for (let i = 0; i < 24; i++) {
     const a = hash(i, 1) * TAU + t * (4 + hash(i, 2) * 3), r = 6 + hash(i, 3) * 20 + k * 10;
     g.globalAlpha = k * (0.5 + hash(i, 4) * 0.5);
-    g.fillStyle = i % 3 ? '#ff8a30' : '#ffe080';
+    g.fillStyle = pal.swirl[i % 3 ? 0 : 1];
     g.fillRect(Math.round(x + Math.cos(a) * r), Math.round(y - 30 + Math.sin(a) * r * 0.8 - hash(i, 5) * 10), 1 + (i % 4 === 0), 1 + (i % 4 === 0));
   }
   g.globalAlpha = 1;
-  glow(g, x, y - 30, 20 + k * 14, '255,130,50', 0.35 * k);
+  glow(g, x, y - 30, 20 + k * 14, pal.swirlGlow, 0.35 * k);
 }

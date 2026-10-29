@@ -95,7 +95,7 @@ for (const id of IDS) {
       const boss = d.rooms[d.bossId];
       assert.equal(boss.role, 'boss');
       assert.ok(boss.objects.some((o) => o.type === 'portal'), 'boss portal');
-      assert.ok(boss.objects.some((o) => o.type === 'chest' && o.contents === 'shard'), 'shard chest');
+      assert.equal(boss.objects.some((o) => o.type === 'chest' && o.contents === 'shard'), id !== 'spire', 'a shard chest for each ward, none for Vesper');
       assert.ok(boss.objects.some((o) => o.type === 'boss' && o.kind === DUNGEON_INFO[id].boss));
       assert.equal(Object.values(boss.doors)[0].type, 'boss');
       assert.equal(d.rooms[d.entranceId].role, 'entrance');

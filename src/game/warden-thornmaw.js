@@ -6,6 +6,7 @@ import { Particles, Projectile } from './entities.js';
 import { makeZone } from './zones.js';
 import { moveActor } from './physics.js';
 import { TAU } from '../core/math.js';
+import { thornPal } from '../gfx/art-thornmaw.js';
 
 // The roar that winds up a charge, its lane shown while it does.
 function windUp(b, ctx, { dx, dy, d }) {
@@ -75,7 +76,7 @@ export const moves = {
     thorns(b, dt, ctx) {
       if (b.timer <= 0) {
         const n = b.phase > 1 ? 12 : 8, off = b.bursts % 2 ? 0 : Math.PI / n;
-        for (let k = 0; k < n; k++) ctx.area.spawn(new Projectile('thorn', b.x, b.y - 6, off + (k * TAU) / n, 105, 1, 'enemy', { life: 2.5 }));
+        for (let k = 0; k < n; k++) ctx.area.spawn(new Projectile('thorn', b.x, b.y - 6, off + (k * TAU) / n, 105, 1, 'enemy', { life: 2.5, rgb: thornPal(b).shot }));
         ctx.game.audio.sfx('thornmaw_roar', { volume: 0.8 });
         b.bursts--;
         b.timer = 0.6;

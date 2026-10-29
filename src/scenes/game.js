@@ -94,7 +94,7 @@ export class GameScene {
       } else if (loc.area === 'cave') {
         const c = W.pois.caves.find((q) => q.id === loc.id);
         if (c) return this.enterCave(c, atPos(loc.x, loc.y), true);
-      } else if (loc.area === 'dungeon' && W.pois.dungeons[loc.id]) {
+      } else if (loc.area === 'dungeon' && (W.pois.dungeons[loc.id] || loc.id === 'spire')) { // the Spire stands apart from the wards
         return this.enterDungeon(loc.id, loc.room ?? null, atPos(loc.x, loc.y));
       } else if (loc.area === 'overworld' && loc.x !== null && loc.x !== undefined) {
         return this.exitToOverworld(loc.x, loc.y, true);
@@ -584,8 +584,9 @@ export class GameScene {
       if (scene) {
         const W = this.world, elder = W.npcs.find((n) => n.role === 'elder' && n.settlementId === 'home');
         const town = W.settlements.find((q) => q.id === 'swamp').name;
-        this.playCutscene(scene({ elder: elder.name, town }), { music: 'story', onDone: () => { this.restoreMusic(); if (r.stage === 'end') this.showEnding(); } });
+        this.playCutscene(scene({ elder: elder.name, town }), { music: 'story', onDone: () => this.restoreMusic() });
       }
+      if (r.stage === 'end') this.showEnding();
     }
   }
 
@@ -668,7 +669,7 @@ export class GameScene {
       lines: [
         'Four wardens quieted. Four shards returned to the Hearth.',
         'The woods breathe, the ash and frost have lifted, and the fens drain.',
-        'And far to the north, the Spire door stands open on the dark.',
+        'And beneath the Spire, the Unkindled has let go of the fire at last.',
         '',
         `${CLASSES[s.classId].name} · ${mins} min · ${s.stats.kills} foes defeated · ${s.stats.deaths} falls`,
         'Thank you for playing this prototype of Emberwake.',

@@ -597,6 +597,86 @@ const SFX = {
     [0.4, 0.75, 1.1, 1.5].forEach((d, i) => a.tone(t + d, { f: 500 - i * 60, f2: 700 - i * 70, dur: 0.05, vol: 0.035 }));
     a.tone(t + 1.6, { f: mtof(45), dur: 1.4, vol: 0.06, attack: 0.1 });
   },
+  vesper_laugh: (a, t) => { // a dry, old man's laugh rising out of a low chuckle, echoing as if from far below
+    [0, 0.17, 0.32, 0.46, 0.58, 0.69, 0.8].forEach((d, i) => {
+      a.tone(t + d, { type: 'sawtooth', f: 150 + i * 9, f2: 115 + i * 7, dur: 0.12, vol: 0.06, lp: 900, attack: 0.01 });
+      a.noise(t + d, { dur: 0.1, vol: 0.05, f: 700 + i * 60, f2: 400, q: 2, attack: 0.01 });
+    });
+    a.tone(t + 0.9, { type: 'sawtooth', f: 210, f2: 120, dur: 0.6, vol: 0.05, lp: 800, attack: 0.04 });
+    a.tone(t, { f: 55, f2: 48, dur: 1.5, vol: 0.06, attack: 0.3 });
+  },
+  vesper_bolt: (a, t) => { // a cold mote flung off his fingers, a hollow whistle trailing after
+    a.tone(t, { type: 'triangle', f: 980, f2: 420, dur: 0.22, vol: 0.06 });
+    a.tone(t, { f: 1470, f2: 640, dur: 0.18, vol: 0.03, detune: 12 });
+    a.noise(t, { dur: 0.25, vol: 0.05, f: 2600, f2: 1100, q: 3, attack: 0.02 });
+  },
+  vesper_step: (a, t) => { // a breath sucked into the dark, then nothing, then the shadow rising behind you
+    a.noise(t, { dur: 0.3, vol: 0.12, f: 3000, f2: 300, q: 1.2, attack: 0.02 });
+    a.tone(t, { f: 320, f2: 90, dur: 0.3, vol: 0.08 });
+    a.tone(t + 0.5, { type: 'sawtooth', f: 70, f2: 140, dur: 0.18, vol: 0.06, lp: 500 });
+    a.noise(t + 0.5, { dur: 0.2, vol: 0.1, f: 300, f2: 2400, q: 1, attack: 0.03 });
+  },
+  vesper_pillar: (a, t) => { // a low summoning drone under the floor, the gloam bursting up out of it
+    a.tone(t, { type: 'sawtooth', f: 42, f2: 56, dur: 1, vol: 0.06, lp: 220, attack: 0.5 });
+    a.noise(t, { dur: 1, vol: 0.05, type: 'lowpass', f: 120, f2: 500, attack: 0.8 });
+    a.noise(t + 1, { dur: 0.4, vol: 0.22, f: 400, f2: 3000, q: 0.7, attack: 0.01 });
+    a.tone(t + 1, { f: 140, f2: 50, dur: 0.35, vol: 0.25 });
+    a.tone(t + 1.02, { type: 'triangle', f: 700, f2: 1300, dur: 0.3, vol: 0.04 });
+  },
+  vesper_scythe: (a, t) => { // the cold blade drawn back with a rising ring, then the sweep shearing the air
+    a.tone(t, { type: 'triangle', f: 1200, f2: 2200, dur: 0.5, vol: 0.04, attack: 0.3 });
+    a.tone(t, { f: 1800, f2: 3300, dur: 0.5, vol: 0.02, attack: 0.3, detune: 14 });
+    a.noise(t + 0.5, { dur: 0.22, vol: 0.24, type: 'highpass', f: 1800, f2: 5200, attack: 0.02 });
+    a.noise(t + 0.52, { dur: 0.3, vol: 0.08, f: 900, f2: 300, q: 1 });
+  },
+  vesper_ring: (a, t) => { // a deep gong struck in the dark, its ring spreading and beating as it goes
+    a.tone(t + 0.6, { f: 98, f2: 92, dur: 2, vol: 0.14, attack: 0.005 });
+    a.tone(t + 0.6, { f: 247, f2: 240, dur: 1.6, vol: 0.05, detune: 9 });
+    a.tone(t + 0.6, { type: 'triangle', f: 392, f2: 388, dur: 1.2, vol: 0.03 });
+    a.noise(t, { dur: 0.6, vol: 0.05, type: 'lowpass', f: 200, f2: 700, attack: 0.5 });
+  },
+  vesper_beam: (a, t) => { // the light drawn out of his chest in a rising whine, then the long buzzing sweep
+    a.tone(t, { type: 'sawtooth', f: 110, f2: 440, dur: 0.9, vol: 0.05, lp: 1200, attack: 0.7 });
+    a.tone(t + 0.9, { type: 'sawtooth', f: 440, f2: 330, dur: 2, vol: 0.06, lp: 2000, attack: 0.02 });
+    a.tone(t + 0.9, { type: 'square', f: 221, f2: 166, dur: 2, vol: 0.025, lp: 900, attack: 0.02 });
+    a.noise(t + 0.9, { dur: 2, vol: 0.05, f: 1600, f2: 1200, q: 4, attack: 0.05 });
+  },
+  vesper_eclipse: (a, t) => { // the light going out of the room: a falling hush, a heartbeat in the dark
+    a.noise(t, { dur: 1.2, vol: 0.1, f: 5000, f2: 200, q: 0.6, attack: 0.05 });
+    a.tone(t, { type: 'triangle', f: 660, f2: 110, dur: 1.2, vol: 0.05 });
+    [0.9, 1.15, 1.8, 2.05].forEach((d) => a.tone(t + d, { f: 62, f2: 40, dur: 0.18, vol: 0.2 }));
+  },
+  vesper_shift: (a, t) => { // his shape twisting into another: a grinding, rising smear of voices
+    [0, 0.12, 0.24].forEach((d, i) => a.tone(t + d, { type: 'sawtooth', f: 90 + i * 30, f2: 260 + i * 70, dur: 0.9 - d, vol: 0.04, lp: 1100, attack: 0.2, detune: i * 18 }));
+    a.noise(t, { dur: 1, vol: 0.08, f: 400, f2: 2200, q: 1.5, attack: 0.6 });
+    a.tone(t + 0.95, { f: 180, f2: 60, dur: 0.25, vol: 0.18 });
+  },
+  vesper_break: (a, t) => { // the borrowed shape shattering off him like glass, and his gasp
+    a.noise(t, { dur: 0.08, vol: 0.32, type: 'highpass', f: 3000 });
+    [0, 0.04, 0.09, 0.15, 0.22, 0.3].forEach((d, i) => a.tone(t + d, { type: 'triangle', f: 2400 - i * 180, f2: 1500 - i * 120, dur: 0.12, vol: 0.05 }));
+    a.tone(t, { f: 160, f2: 55, dur: 0.4, vol: 0.28 });
+    a.tone(t + 0.25, { type: 'sawtooth', f: 260, f2: 170, dur: 0.35, vol: 0.05, lp: 1000, attack: 0.03 });
+  },
+  vesper_rise: (a, t) => { // the sockets' fire pulled across the room in a rushing swell, a warm chord at its peak
+    a.noise(t, { dur: 0.8, vol: 0.14, f: 300, f2: 3500, q: 0.8, attack: 0.6 });
+    a.tone(t, { type: 'sawtooth', f: 55, f2: 110, dur: 0.8, vol: 0.06, lp: 600, attack: 0.6 });
+    a.notes(t + 0.8, [57, 64, 69, 72, 76], 0.05, { type: 'triangle', dur: 1.4, vol: 0.06 });
+    a.tone(t + 0.8, { f: 110, dur: 1.5, vol: 0.12, attack: 0.02 });
+  },
+  vesper_phase: (a, t) => { // robes going up in cold fire, then wings of smoke cracking open with a roar
+    a.noise(t, { dur: 1.2, vol: 0.12, f: 600, f2: 2600, q: 0.6, attack: 0.8 });
+    [0.2, 0.4, 0.55, 0.7, 0.82, 0.92].forEach((d, i) => a.noise(t + d, { dur: 0.06, vol: 0.06 + i * 0.01, type: 'highpass', f: 2000 + i * 300 }));
+    a.noise(t + 1.3, { dur: 0.6, vol: 0.26, f: 250, f2: 1400, q: 0.6, attack: 0.02 });
+    a.tone(t + 1.3, { type: 'sawtooth', f: 65, f2: 98, dur: 0.9, vol: 0.12, lp: 700, attack: 0.05 });
+    a.tone(t + 1.3, { type: 'sawtooth', f: 67, f2: 101, dur: 0.9, vol: 0.08, lp: 650, attack: 0.05, detune: 25 });
+  },
+  vesper_death: (a, t) => { // the stolen fire roaring out of him, then a thin old voice of a sigh, and quiet
+    a.noise(t, { dur: 1.4, vol: 0.2, f: 300, f2: 4000, q: 0.5, attack: 0.1 });
+    a.tone(t, { type: 'sawtooth', f: 90, f2: 40, dur: 1.4, vol: 0.1, lp: 900 });
+    a.notes(t + 0.9, [69, 72, 76, 81], 0.12, { type: 'triangle', dur: 1, vol: 0.05 });
+    a.tone(t + 1.5, { type: 'triangle', f: 330, f2: 247, dur: 1.4, vol: 0.05, attack: 0.3 });
+    a.noise(t + 1.5, { dur: 1.2, vol: 0.04, type: 'lowpass', f: 800, f2: 200, attack: 0.4 });
+  },
   thornmaw_death: (a, t) => { // a long creak sinking into the earth, the roots letting go, the flower wilting
     a.tone(t, { type: 'sawtooth', f: 140, f2: 40, dur: 1.6, vol: 0.12, lp: 700, lp2: 150, attack: 0.05 });
     a.noise(t, { dur: 1.5, vol: 0.12, f: 900, f2: 160, q: 1.4, attack: 0.1 });

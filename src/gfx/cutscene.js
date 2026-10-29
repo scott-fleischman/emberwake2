@@ -93,7 +93,7 @@ export class Cutscene {
   quakeAmt(s) {
     if (!s.quake) return 0;
     if (!s.entrance) return s.quake;
-    const p = this.t / ENTRANCE, peak = { thornmaw: 0.35, cinder: 0.5, rime: 0.8, tide: 0.44 }[s.entrance] ?? 0.5;
+    const p = this.t / ENTRANCE, peak = { thornmaw: 0.35, cinder: 0.5, rime: 0.8, tide: 0.44, vesper: 0.56 }[s.entrance] ?? 0.5;
     return s.quake * (0.35 + 0.65 * Math.max(0, 1 - Math.abs(p - peak) / 0.25));
   }
 
