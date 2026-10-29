@@ -124,3 +124,17 @@ test('drawing zones needs no randomness and covers every shape', async () => {
   try { drawZones(g, { left: 0, top: 0 }, zs, 1.3); } finally { Math.random = rnd; }
   assert.equal(calls.filter((c) => c === 'fill').length, 5);
 });
+// The outline once took its phase from the unbounded area clock, so it strobed after a few seconds.
+test('the telegraph pulse is smooth in elapsed telegraph time, whatever the area clock says', () => {
+  const strokes = [];
+  const g = new Proxy({}, { get: (t, k) => (k in t ? t[k] : k === 'stroke' ? () => strokes.push(+/,([\d.]+)\)$/.exec(t.strokeStyle)[1]) : () => {}), set: (t, k, v) => { t[k] = v; return true; } });
+  const z = makeZone('circle', { x: 0, y: 0, r: 10, t: 0.8 });
+  const alphas = (clock) => {
+    strokes.length = 0; z.t = 0.8;
+    for (let i = 0; i < 48; i++) { drawZones(g, { left: 0, top: 0 }, [z], clock + i / 60); z.t -= 1 / 60; }
+    return strokes.slice();
+  };
+  const early = alphas(0.5), late = alphas(5000);
+  assert.deepEqual(late, early);
+  for (const run of [early, late]) for (let i = 1; i < run.length; i++) assert.ok(Math.abs(run[i] - run[i - 1]) < 0.25, `frame ${i} jumped ${run[i - 1]} -> ${run[i]}`);
+});

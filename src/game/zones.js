@@ -131,9 +131,11 @@ export function drawZones(g, cam, zones, time) {
   for (const z of zones) {
     if (z.art && z.t <= 0) { drawPatchFill(g, z, ox, oy, time); continue; }
     const live = z.t <= 0, k = live ? 1 : 1 - clamp(z.t / z.t0, 0, 1);
+    // Pulse phase comes from time spent telegraphing, not the area clock: it would alias into a strobe.
+    const pulse = Math.sin(Math.max(0, z.t0 - z.t) * (8 + 12 * k));
     shapePath(g, z, ox, oy);
     g.fillStyle = `rgba(${z.rgb},${live ? 0.5 : 0.06 + 0.4 * k * k})`; g.fill();
-    g.strokeStyle = `rgba(${z.rgb},${live ? 0.9 : 0.5 + 0.35 * Math.sin(time * (8 + 12 * k))})`; g.lineWidth = 1; g.stroke();
+    g.strokeStyle = `rgba(${z.rgb},${live ? 0.9 : 0.5 + 0.35 * pulse})`; g.lineWidth = 1; g.stroke();
   }
   g.restore();
 }
