@@ -247,7 +247,7 @@ export function drawWorldMap(u, game) {
   const pr = game.state.progress, stage = game.state.quest.main;
   for (const [k, seal] of Object.entries(W.pois.seals || {})) {
     if (pr.seals.includes(k) || !(seen(seal.center.x, seal.center.y) || revealed.has(`dungeon:${k}`))) continue;
-    u.strokeStyle = { verdant: '#7a5a3a', ashen: '#ff6a20', frost: '#b8ecff' }[k]; u.lineWidth = 1.2;
+    u.strokeStyle = { verdant: '#7a5a3a', ashen: '#ff6a20', frost: '#b8ecff', drowned: '#5adcc8' }[k]; u.lineWidth = 1.2;
     u.beginPath(); u.arc(ox + (seal.center.x + 0.5) * scale, oy + (seal.center.y + 0.5) * scale, Math.max(3, seal.r * scale), 0, Math.PI * 2); u.stroke();
   }
   const kind = { leaves: 'leaves', vents: 'vents', beacons: 'beacons' }[stage];

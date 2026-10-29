@@ -8,6 +8,7 @@ export const T = {
   LAVA: 12, PLAZA: 13, TALLGRASS: 14, CRACKED: 15, BOULDER: 16, RIDGE: 17,
   ICE: 18, CAVE: 19, DUNGEON: 20, BUILDING: 21, DOOR: 22,
   SEAL: 23, VENT: 24, // ward barriers; magma vents the bombs cap
+  FLOOD: 25, // a flooded pool: deep water until the Rime Charm freezes it
   // interiors
   FLOOR: 30, WALL: 31, EXIT: 32, RUG: 33, FURNITURE: 34, COUNTER: 35,
   // dungeon rooms & caves
@@ -23,7 +24,7 @@ export const BIOME_MUSIC = ['forest', 'wetland', 'frontier', 'mountain', 'snow',
 export const GROUND = [T.GRASS, T.MUD, T.SAND, T.GRASS, T.SNOW, T.ASH];
 
 // Decoration layer (overworld only)
-export const D = { NONE: 0, TREE: 1, BUSH: 2, ROCK: 3, FLOWER: 4, REED: 5, RUIN: 6, STUMP: 7, TENT: 8, FIRE: 9, SIGN: 10, LORE: 11, FENCE: 12, WELL: 13, SHRINE: 14, LOOKOUT: 15, ALTAR: 16, BEACON: 17 };
+export const D = { NONE: 0, TREE: 1, BUSH: 2, ROCK: 3, FLOWER: 4, REED: 5, RUIN: 6, STUMP: 7, TENT: 8, FIRE: 9, SIGN: 10, LORE: 11, FENCE: 12, WELL: 13, SHRINE: 14, LOOKOUT: 15, ALTAR: 16, BEACON: 17, BELL: 18 };
 
 const info = (solid, extra = {}) => ({ solid, slow: 1, damage: 0, water: false, ...extra });
 
@@ -39,6 +40,7 @@ set(T.CRACKED, info(true));
 set(T.BOULDER, info(true));
 set(T.SEAL, info(true));
 set(T.VENT, info(true));
+set(T.FLOOD, info(true, { water: true }));
 set(T.RIDGE, info(true));
 set(T.BUILDING, info(true));
 set(T.WALL, info(true));
@@ -57,7 +59,7 @@ set(T.MIRE, info(false, { effect: 'poison' }));
 set(T.MUD, info(false, { slow: 0.9 }));
 set(T.TALLGRASS, info(false, { slow: 0.95 }));
 
-export const DECO_SOLID = new Set([D.TREE, D.BUSH, D.ROCK, D.RUIN, D.TENT, D.FIRE, D.SIGN, D.LORE, D.FENCE, D.WELL, D.STUMP, D.SHRINE, D.LOOKOUT, D.BEACON]);
+export const DECO_SOLID = new Set([D.TREE, D.BUSH, D.ROCK, D.RUIN, D.TENT, D.FIRE, D.SIGN, D.LORE, D.FENCE, D.WELL, D.STUMP, D.SHRINE, D.LOOKOUT, D.BEACON, D.BELL]);
 // Decorations a melee weapon can clear.
 export const DECO_CUTTABLE = new Set([D.BUSH]);
 

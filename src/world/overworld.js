@@ -560,6 +560,7 @@ export function isPassable(W, x, y, tools = {}) {
   if (t === T.CRACKED || t === T.VENT) return !!tools.bombs;
   if (t === T.BOULDER) return !!tools.gloves;
   if (t === T.SEAL) return !!tools.seals;
+  if (t === T.FLOOD) return !!tools.charm;
   if (t === T.CAVE) return false; // stepping in takes you into the cave, not across it
   if (TILE_INFO[t].solid) return false;
   const d = W.deco[i];
@@ -568,7 +569,7 @@ export function isPassable(W, x, y, tools = {}) {
 
 // Lava isn't solid, but it burns and throws you back, so it is no path. Anything that can only be
 // reached across lava gets a cooled crust trail: the cheapest route from home, lava turned to ash.
-export function coolLavaPaths(W, tools = { bombs: true, gloves: true, seals: true }) {
+export function coolLavaPaths(W, tools = { bombs: true, gloves: true, seals: true, charm: true }) {
   const safe = (x, y) => isPassable(W, x, y, tools) && W.tiles[at(W, x, y)] !== T.LAVA;
   const sites = [
     ...W.pois.caves.map((c) => c.front), ...W.pois.camps.map((c) => c.entry), ...W.pois.spawns,
@@ -627,7 +628,9 @@ const LORE = STONE_LORE.map((e) => e.text);
 
 export function stageContent(W) {
   const rng = makeRng(W.seed).fork('content');
-  const pass = (x, y) => isPassable(W, x, y, { bombs: true, gloves: true });
+  // Reachability assumes every tool, the Rime Charm included.
+  const pass = (x, y) => isPassable(W, x, y, { bombs: true, gloves: true, charm: true });
+  const dry = (x, y) => isPassable(W, x, y, { bombs: true, gloves: true });
   const reach = bfsDistances(W.w, W.h, pass, [W.pois.home]);
   const roadSrc = [];
   for (let i = 0; i < W.w * W.h; i++) if (W.tiles[i] === T.ROAD || W.tiles[i] === T.STAIRS || W.tiles[i] === T.BRIDGE) roadSrc.push({ x: i % W.w, y: (i / W.w) | 0 });
@@ -673,21 +676,27 @@ export function stageContent(W) {
   }
 
   // Every blocking placement is verified: if it would cut anything off from home, it is reverted.
-  const countReach = () => { let n = 0; const d = bfsDistances(W.w, W.h, pass, [W.pois.home]); for (let i = 0; i < d.length; i++) if (d[i] >= 0) n++; return n; };
-  let reachCount = countReach();
+  // A flooded pool must not cut anything off from someone who hasn't got the charm yet, either. Its
+  // count without the charm is kept only while pools go in one after another.
+  const countReach = (p = pass) => { let n = 0; const d = bfsDistances(W.w, W.h, p, [W.pois.home]); for (let i = 0; i < d.length; i++) if (d[i] >= 0) n++; return n; };
+  let reachCount = countReach(), dryCount = 0;
   const tryPlace = (changes) => {
     const saved = changes.map(([x, y]) => [at(W, x, y), W.tiles[at(W, x, y)], W.deco[at(W, x, y)]]);
+    const flood = changes.some((c) => c[2] === T.FLOOD);
+    if (flood && !dryCount) dryCount = countReach(dry);
     for (const [x, y, tile, deco] of changes) {
       const i = at(W, x, y);
       if (tile !== undefined && tile !== null) W.tiles[i] = tile;
       if (deco !== undefined) W.deco[i] = deco;
     }
-    const n = countReach();
+    const nDry = flood ? countReach(dry) : 0;
+    const n = flood && nDry < dryCount - changes.length ? -1 : countReach();
     if (n < reachCount - changes.length) {
       for (const [i, t, d] of saved) { W.tiles[i] = t; W.deco[i] = d; }
       return false;
     }
     reachCount = n;
+    dryCount = nDry;
     return true;
   };
   const place = (pred, build, tries = 6) => {
@@ -797,14 +806,13 @@ export function stageContent(W) {
   }
   stageWardFeatures(W, { rng, free, tryPlace, randomTile, keepClear, roadDist, nearSettlement });
   coolLavaPaths(W);
-  // Seals go last. Whatever the quest needs before a ward breaks must stay reachable around it.
+  // Seals go last. Whatever the quest needs before a ward breaks must stay reachable around it, and
+  // without the charm, which only the bells in their pools need.
   const beside = (r) => N4.map(([dx, dy]) => ({ x: r.x + dx, y: r.y + dy })).find((q) => pass(q.x, q.y)) || r;
   const needed = () => [...W.settlements.map((s) => s.center), ...[...W.pois.lookouts, ...Object.values(W.pois.relics).flat()].map(beside), ...W.pois.gates];
-  stageSeals(W, pass, (extra) => {
-    const d = bfsDistances(W.w, W.h, pass, [W.pois.home]);
-    return [...needed(), ...extra].every((p) => d[at(W, p.x, p.y)] >= 0 || !pass(p.x, p.y));
-  });
-  coolLavaPaths(W, { bombs: true, gloves: true }); // a seal may have cut the only lava-free way somewhere
+  const reaches = (go, pts) => { const d = bfsDistances(W.w, W.h, go, [W.pois.home]); return pts.every((p) => d[at(W, p.x, p.y)] >= 0 || !go(p.x, p.y)); };
+  stageSeals(W, pass, (extra) => reaches(dry, [...needed(), ...extra]) && reaches(pass, W.pois.relics.bells.map(beside)));
+  coolLavaPaths(W, { bombs: true, gloves: true, charm: true }); // a seal may have cut the only lava-free way somewhere
   // Clear decoration from anything solid it ended up on.
   for (let i = 0; i < W.w * W.h; i++) if (TILE_INFO[W.tiles[i]].solid && W.deco[i]) W.deco[i] = D.NONE;
 }

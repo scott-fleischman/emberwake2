@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateOverworld, reachableFrom } from '../src/world/overworld.js';
-import { T, BIOME, TILE_INFO } from '../src/world/tiles.js';
+import { T, D, BIOME, TILE_INFO } from '../src/world/tiles.js';
 
 const SEEDS = ['ember', 'alpha', 'beta', 'gamma', 1, 2, 3, 42, 'hearth', 'ward', 'spire', 'thorn'];
 const worlds = new Map();
@@ -47,7 +47,6 @@ for (const seed of SEEDS) {
     assert.ok(!reach(all, W.pois.dungeons.verdant.front) || W.pois.seals.verdant.r === 0, 'verdant reachable through its seal');
     assert.ok(reach(open(none), W.pois.dungeons.verdant.front), 'verdant unreachable');
     assert.ok(reach(none, W.pois.seals.verdant.arena), 'thornwall unreachable');
-    assert.ok(reach(none, W.pois.dungeons.drowned.front), 'drowned unreachable');
     assert.ok(reach(none, W.pois.spire.front), 'spire unreachable');
     // Ashen region needs bombs, snow region needs gloves.
     assert.ok(!reach(none, S.volcanic), 'volcanic reachable without bombs');
@@ -58,12 +57,44 @@ for (const seed of SEEDS) {
     assert.ok(reach(all, S.snow), 'snow unreachable with gloves');
     assert.ok(reach(all, W.pois.seals.frost.arena), 'ice wall unreachable');
     assert.ok(reach(open(all), W.pois.dungeons.frost.front), 'frost unreachable');
+    // The Fane sits inside the Tidewall; the Tide Bells stand in flooded pools only the Rime Charm crosses.
+    const charm = { ...all, charm: true };
+    assert.ok(!reach(charm, W.pois.dungeons.drowned.front) || W.pois.seals.drowned.r === 0, 'drowned reachable through its seal');
+    assert.ok(reach(open(charm), W.pois.dungeons.drowned.front), 'drowned unreachable');
+    assert.ok(reach(all, W.pois.seals.drowned.arena), 'Tidewall unreachable');
+    // Lookouts and bells are solid; you stand beside them.
+    const beside = (p) => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: p.x + dx, y: p.y + dy }));
+    const belfry = W.pois.lookouts.find((l) => l.id === 'belfry');
+    assert.ok(belfry && beside(belfry).some((p) => reach(all, p)), 'belfry unreachable');
+    assert.equal(W.pois.relics.bells.length, 3);
+    for (const b of W.pois.relics.bells) {
+      assert.ok(!beside(b).some((p) => reach(all, p)), `bell ${b.id} reachable without the charm`);
+      assert.ok(beside(b).some((p) => reach(charm, p)), `bell ${b.id} unreachable with the charm`);
+    }
     for (const c of W.pois.caves) assert.ok(reach(open(all), c.front), `cave ${c.id} unreachable`);
     for (const c of W.pois.camps) assert.ok(reach(open(all), c.entry), `camp ${c.id} unreachable`);
     const quest = W.pois.camps.find((c) => c.quest);
     assert.ok(reach(none, quest.entry), 'quest camp needs tools');
   });
 }
+
+test('each Tide Bell stands ringed by its pool, which the Rime Charm freezes into a path and back', async () => {
+  const { TileMap } = await import('../src/world/tilemap.js');
+  const { freezePool, thawPool } = await import('../src/world/wards.js');
+  const W = generateOverworld('pools'), map = TileMap.fromWorld(W), all = { bombs: true, gloves: true };
+  const reach = (p) => reachableFrom(W, W.pois.homeDoor, all)[p.y * W.w + p.x] >= 0;
+  for (const b of W.pois.relics.bells) {
+    assert.equal(map.getDeco(b.x, b.y), D.BELL);
+    for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) assert.ok(b.pool.some((p) => p.x === b.x + dx && p.y === b.y + dy), `${b.id} ring has a gap`);
+    assert.ok(b.pool.every((p) => Math.max(Math.abs(p.x - b.x), Math.abs(p.y - b.y)) <= 2 && map.get(p.x, p.y) === T.FLOOD), `${b.id} pool`);
+    assert.ok(!reach({ x: b.x, y: b.y + 1 }), `${b.id} open water is a path`);
+    freezePool(W, map, b.id);
+    assert.ok(b.pool.every((p) => map.get(p.x, p.y) === T.ICE), `${b.id} not frozen`);
+    assert.ok(reach({ x: b.x, y: b.y + 1 }), `${b.id} frozen pool is no path`);
+    thawPool(W, map, b.id);
+    assert.ok(b.pool.every((p) => map.get(p.x, p.y) === T.FLOOD), `${b.id} not thawed`);
+  }
+});
 
 test('gate tiles are cracked walls and boulders on ridges', () => {
   const W = get('ember');

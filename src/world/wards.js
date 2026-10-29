@@ -1,12 +1,13 @@
 // Ward seals and the quest features that break them. Each ward's door sits inside a ring of living
-// barrier (thorns, fire, ice) at BFS distance SEAL_R, so every path in must cross it; the quest chain
-// before each ward places its lookouts, leaf-shrines, vents and beacons out in the region.
+// barrier (thorns, fire, ice, floodwater) at BFS distance SEAL_R, so every path in must cross it; the
+// quest chain before each ward places its lookouts, leaf-shrines, vents, beacons and bells out in the
+// region.
 import { T, D, BIOME } from './tiles.js';
 import { bfsDistances } from '../core/grid.js';
 
 export const SEAL_R = 5;
-export const WARDS = ['verdant', 'ashen', 'frost'];
-export const RELICS = { leaves: 'verdant', vents: 'ashen', beacons: 'frost' };
+export const WARDS = ['verdant', 'ashen', 'frost', 'drowned'];
+export const RELICS = { leaves: 'verdant', vents: 'ashen', beacons: 'frost', bells: 'drowned' };
 
 const at = (W, x, y) => y * W.w + x;
 const far = (p, list, d) => list.every((q) => Math.hypot(q.x - p.x, q.y - p.y) >= d);
@@ -18,7 +19,7 @@ export function stageWardFeatures(W, h) {
   const S = (id) => W.settlements.find((s) => s.id === id);
   const awayFromWards = (x, y, d) => [...Object.values(Dg), W.pois.spire].every((q) => Math.hypot(q.front.x - x, q.front.y - y) >= d);
   W.pois.lookouts = [];
-  W.pois.relics = { leaves: [], vents: [], beacons: [] };
+  W.pois.relics = { leaves: [], vents: [], beacons: [], bells: [] };
 
   // Lookouts: the best-scoring open spot that blocks nothing.
   const lookout = (id, ward, cands) => {
@@ -61,17 +62,18 @@ export function stageWardFeatures(W, h) {
   lookout('windcrest', 'frost', crest);
 
   // Three relics per ward, spread through its region, each a guarded stop of its own.
-  const spread = (kind, biome, anchor, build) => {
+  const spread = (kind, biome, anchor, build, fits = () => true) => {
     const list = W.pois.relics[kind];
     const taken = () => [...list, ...W.pois.lookouts, ...W.pois.camps];
-    for (let relax = 0; relax < 3 && list.length < 3; relax++) {
-      const minGap = [14, 10, 7][relax], maxRoad = [8, 12, 30][relax], maxAnchor = [44, 60, 200][relax];
+    // The last pass forgets the roads, for fens whose only open ground lies far off them.
+    for (let relax = 0; relax < 4 && list.length < 3; relax++) {
+      const minGap = [14, 10, 7, 7][relax], maxRoad = [8, 12, 30, 200][relax], maxAnchor = [44, 60, 200, 200][relax];
       for (let tries = 0; tries < 12 && list.length < 3; tries++) {
         const spot = randomTile((x, y) => {
           const i = at(W, x, y);
           if (W.biome[i] !== biome || roadDist[i] < 1 || roadDist[i] > maxRoad || !free(x, y)) return false;
           if (!awayFromWards(x, y, SEAL_R + 7) || nearSettlement(x, y, 9) || !far({ x, y }, taken(), minGap)) return false;
-          return Math.hypot(x - anchor.x, y - anchor.y) <= maxAnchor && [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => free(x + dx, y + dy)).length >= 3;
+          return Math.hypot(x - anchor.x, y - anchor.y) <= maxAnchor && [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => free(x + dx, y + dy)).length >= 3 && fits(x, y);
         }, 20000);
         if (!spot) break;
         if (!tryPlace(build(spot))) continue;
@@ -83,6 +85,34 @@ export function stageWardFeatures(W, h) {
   spread('leaves', BIOME.FOREST, Dg.verdant.front, (p) => [[p.x, p.y, null, D.ALTAR]]);
   spread('vents', BIOME.VOLCANIC, Dg.ashen.front, (p) => [[p.x, p.y, T.VENT, D.NONE]]);
   spread('beacons', BIOME.SNOW, Dg.frost.front, (p) => [[p.x, p.y, null, D.BEACON]]);
+
+  // The fourth ward comes last so the first three keep their places.
+  // The Drowned Belfry: a half-sunk bell tower out in the fens, by the water where it can be, and beyond
+  // the leash of any warband camp so no camp fight spills around it.
+  const fen = [];
+  const swamp = S('swamp'), fane = Dg.drowned.front;
+  for (let y = 4; y < W.h - 4; y++) for (let x = 4; x < W.w - 4; x++) {
+    const i = at(W, x, y);
+    if (W.biome[i] !== BIOME.SWAMP || roadDist[i] < 1 || roadDist[i] > 9 || !free(x, y) || !free(x, y + 1)) continue;
+    if (!awayFromWards(x, y, SEAL_R + 7) || nearSettlement(x, y, 5)) continue;
+    const dTown = Math.hypot(x - swamp.center.x, y - swamp.center.y), dFane = Math.hypot(x - fane.x, y - fane.y);
+    if (dTown < 12 || dFane < 14 || !far({ x, y }, W.pois.camps, 12)) continue;
+    fen.push({ x, y, sc: -(Math.abs(dTown - 22) + Math.abs(dFane - 22)) * 0.4 - roadDist[i] * 0.3 - Math.min(W.distWater[i], 8) * 0.3 + rng.float(0, 1) });
+  }
+  lookout('belfry', 'drowned', fen);
+
+  // The Tide Bells: each on a one-tile island in a pool one or two tiles wide.
+  const around = (x, y, lo, hi) => {
+    const out = [];
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dy * dy >= lo && dx * dx + dy * dy <= hi) out.push({ x: x + dx, y: y + dy });
+    return out;
+  };
+  spread('bells', BIOME.SWAMP, Dg.drowned.front, (p) => [
+    [p.x, p.y, null, D.BELL],
+    ...around(p.x, p.y, 1, 2).map((q) => [q.x, q.y, T.FLOOD, D.NONE]),
+    ...around(p.x, p.y, 4, 5).filter((q) => free(q.x, q.y) && rng.chance(0.6)).map((q) => [q.x, q.y, T.FLOOD, D.NONE]),
+  ], (x, y) => around(x, y, 1, 2).every((q) => free(q.x, q.y)));
+  for (const b of W.pois.relics.bells) b.pool = around(b.x, b.y, 1, 5).filter((q) => W.tiles[at(W, q.x, q.y)] === T.FLOOD);
 }
 
 // Ring each ward with its seal. Runs last, so nothing placed afterwards can land on the ring.
@@ -140,4 +170,14 @@ export function openSeal(W, map, key) {
 export function closeSeal(W, map, key) {
   const seal = W.pois.seals[key];
   if (seal) for (const s of seal.tiles) { map.set(s.x, s.y, T.SEAL); map.setDeco(s.x, s.y, D.NONE); }
+}
+
+// The Rime Charm freezes a bell's pool into a path of ice; thawing floods it again.
+export const freezePool = (W, map, bellId) => swapPool(W, map, bellId, T.FLOOD, T.ICE);
+export const thawPool = (W, map, bellId) => swapPool(W, map, bellId, T.ICE, T.FLOOD);
+function swapPool(W, map, bellId, from, to) {
+  const bell = W.pois.relics.bells.find((b) => b.id === bellId);
+  if (!bell) return [];
+  for (const p of bell.pool) if (map.get(p.x, p.y) === from) map.set(p.x, p.y, to);
+  return bell.pool;
 }

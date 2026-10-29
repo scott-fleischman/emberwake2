@@ -3,6 +3,7 @@ import { T, D, TILE } from '../world/tiles.js';
 import { tileHash } from '../core/rng.js';
 import { clamp } from '../core/math.js';
 import { drawOverworldTile, decoSprite, buildingSprite, drawShopSign, landmarkSprite, makeCanvas, R, shade } from './sprites.js';
+import { drawFlood, drawPoolIce } from './wards.js';
 
 export const VIEW_W = 480;
 export const VIEW_H = 270;
@@ -42,6 +43,8 @@ export class OverworldRenderer {
     this.chunks = new Map();
     this.cols = Math.ceil(map.w / CHUNK);
     this.props = world.props;
+    this.pools = new Map(); // tile -> its Tide Bell; flooded or frozen, a pool animates over the chunks
+    for (const b of world.pois.relics.bells) for (const p of b.pool) this.pools.set(p.y * map.w + p.x, b);
   }
 
   invalidate(tx, ty) {
@@ -75,12 +78,14 @@ export class OverworldRenderer {
       if (cx < 0 || cy < 0 || cx >= this.cols || cy * CHUNK >= this.map.h) continue;
       g.drawImage(this.chunk(cx, cy), cx * CHUNK * TILE - L, cy * CHUNK * TILE - Tp);
     }
-    // Animated liquid shimmer.
+    // Animated liquid shimmer, and the flooded pools.
     const m = this.map;
     const x0 = Math.max(0, Math.floor(L / TILE)), x1 = Math.min(m.w - 1, Math.floor((L + cam.vw) / TILE));
     const y0 = Math.max(0, Math.floor(Tp / TILE)), y1 = Math.min(m.h - 1, Math.floor((Tp + cam.vh) / TILE));
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const t = m.tiles[y * m.w + x];
+      const t = m.tiles[y * m.w + x], bell = this.pools.get(y * m.w + x);
+      if (bell && t === T.FLOOD) { drawFlood(g, m, x, y, x * TILE - L, y * TILE - Tp, time, (bell.x - x) * TILE, (bell.y - y) * TILE); continue; }
+      if (bell && t === T.ICE) { drawPoolIce(g, m, x, y, x * TILE - L, y * TILE - Tp, time); continue; }
       if (t !== T.WATER && t !== T.LAVA && t !== T.SHALLOW) continue;
       const h = tileHash(x, y, 9);
       const phase = (time * 0.8 + h * 6) % 3;
