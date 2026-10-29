@@ -6,13 +6,14 @@ import { Enemy } from '../src/game/enemies.js';
 import { Bomb, Projectile } from '../src/game/entities.js';
 import { makeZone } from '../src/game/zones.js';
 import { AudioEngine, SFX_NAMES, MUSIC_KEYS } from '../src/audio/audio.js';
-import { paintCinder, CINDER_PAL } from '../src/gfx/art-cinder.js';
+import { paintCinder, CINDER_PAL, cinderHands, cinderPalms } from '../src/gfx/art-cinder.js';
 import { paintThornmaw, THORN_PAL } from '../src/gfx/art-thornmaw.js';
 import { paintRime, RIME_PAL } from '../src/gfx/art-rime.js';
 import { portraitPose } from '../src/gfx/bossart.js';
 import { T } from '../src/world/tiles.js';
 import { Bot } from '../src/bot/bot.js';
 import { reachMap, tileOf } from '../src/bot/nav.js';
+import { rectSolid } from '../src/game/physics.js';
 
 test('every warden has a complete moveset', () => {
   for (const [k, m] of Object.entries(WARDEN_MOVES)) {
@@ -35,7 +36,7 @@ test('painters take a palette', () => {
 // Repainted with every palette colour swapped, no colour the painter uses may stay the same.
 test('a palette reaches every colour its painter uses', () => {
   const swap = (pal) => JSON.parse(JSON.stringify(pal).replace(/#[0-9a-f]{6}/gi, '#010203').replace(/\d+,\d+,\d+/g, '1,2,3'));
-  const states = ['intro', 'stalk', 'wind', 'charge', 'stunned', 'thorns', 'roots', 'spores', 'lash', 'transform', 'volley', 'vent', 'fadeout', 'orbit', 'dash', 'skid', 'rain', 'dying'];
+  const states = ['intro', 'stalk', 'wind', 'charge', 'stunned', 'thorns', 'roots', 'spores', 'lash', 'transform', 'volley', 'vent', 'fadeout', 'ready', 'meteors', 'sweep', 'pools', 'orbit', 'dash', 'skid', 'rain', 'dying'];
   const colours = (kind, paint, pal) => {
     const rec = recorder(), L = [];
     rec.g.getTransform = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
@@ -51,17 +52,18 @@ test('a palette reaches every colour its painter uses', () => {
   }
 });
 
+// The Cinder Warden's meteor rain is its first Unbound attack: 'ready' with nothing done yet.
 test('boss telegraphs are zones', async () => {
   const s = await sandbox();
-  const b = s.spawn(createBoss('cinder', s.center.x, s.center.y - 40)); b.state = 'volley'; b.volleys = 1; b.phase = 2; b.timer = 0;
+  const b = s.spawn(createBoss('cinder', s.center.x, s.center.y - 40)); Object.assign(b, { state: 'ready', turn: 0, phase: 2, timer: 0 });
   s.step(0.1);
   assert.ok(s.area.zones.some((z) => z.owner === b));
 });
 
-test('eruptions and shard drops strike where the player stood', async () => {
-  for (const [kind, state, dmg] of [['cinder', 'volley', 2], ['rime', 'rain', 1]]) {
+test('meteors and shard drops strike where the player stood', async () => {
+  for (const [kind, state, dmg, secs] of [['cinder', 'ready', 2, 1.1], ['rime', 'rain', 1, 1]]) {
     const s = await sandbox(), res = s.game.state.player, p = s.game.player;
-    const b = s.spawn(createBoss(kind, s.center.x, s.center.y - 60)); b.state = state; b.volleys = 1; b.phase = 2; b.timer = 0;
+    const b = s.spawn(createBoss(kind, s.center.x, s.center.y - 60)); Object.assign(b, { state, turn: 0, volleys: 1, phase: 2, timer: 0 });
     s.step(1 / 60);
     const mine = s.area.zones.filter((z) => z.owner === b && z.shape === 'circle');
     assert.ok(mine.length >= 3, `${kind} puts down its circles`);
@@ -70,7 +72,7 @@ test('eruptions and shard drops strike where the player stood', async () => {
     b.state = 'parked';
     for (const e of s.area.entities) if (e !== b && e.team === 'enemy') e.dead = true;
     const hp = res.hp;
-    s.step(1);
+    s.step(secs);
     assert.equal(hp - res.hp, dmg * s.game.diff.damageTaken, `${kind} strike`);
   }
 });
@@ -329,6 +331,167 @@ test('every Thornmaw sound is its own', () => {
   assert.equal(new Set(names.map(recipe)).size, names.length);
 });
 
+// ---------------------------------------------------------------- the Cinder Warden, Unbound
+test('the casting hands never move inward', () => {
+  for (let k = 0; k <= 10; k++) {
+    const b = { ...portraitPose('cinder', 1), state: 'volley', timer: 0.55 * (1 - k / 10), view: 'side' };
+    for (const h of cinderHands(b)) assert.ok(Math.abs(h.x) >= 22, `k=${k} x=${h.x}`);
+  }
+});
+// Without the portrait's roar: the cast draws back and up, then thrusts along the aim, palms open.
+test('the cast draws back and up, then thrusts along the aim in every view, never inward', () => {
+  const pose = (view, q, aim = view === 'front' ? [0, 1] : view === 'back' ? [0, -1] : [1, 0]) =>
+    cinderHands({ ...portraitPose('cinder', 1), roarT: 0, state: 'volley', timer: 0.55 * (1 - q), view, cdx: aim[0], cdy: aim[1] });
+  for (const view of ['side', 'front', 'back']) {
+    let last = null;
+    for (let k = 0; k <= 20; k++) {
+      const hs = pose(view, k / 20);
+      for (const h of hs) assert.ok(Math.abs(h.x) >= 22, `${view} q=${k / 20} x=${h.x}`);
+      if (last && (view !== 'side' || k > 12)) hs.forEach((h, i) => assert.ok(Math.abs(h.x) >= Math.abs(last[i].x) - 1e-9, `${view} moves inward at q=${k / 20}`));
+      last = hs;
+    }
+    const back = pose(view, 0.6), out = pose(view, 1);
+    for (const h of back) assert.ok(Math.abs(h.y + 44) < 1e-6, `${view} drawn up to -44 (${h.y})`);
+    if (view !== 'side') for (const h of back) assert.ok(Math.abs(Math.abs(h.x) - 26) < 1e-6, `${view} drawn back to ±26 (${h.x})`);
+    for (const h of out) assert.equal(h.open, 1, `${view} palms open`);
+    if (view === 'side') for (const h of out) assert.ok(h.x >= 28, `side thrusts forward (${h.x})`);
+    if (view === 'front') for (const h of out) assert.ok(h.y > -40, `front thrusts down at the camera (${h.y})`);
+    if (view === 'back') for (const h of out) assert.ok(h.y < -46, `back thrusts up and away (${h.y})`);
+  }
+});
+test('the embers leave from the palms, along the aim', async () => {
+  for (const [view, px, py] of [['side', 90, -10], ['front', 10, 70], ['back', -10, -90]]) {
+    const s = await sandbox(), p = s.game.player;
+    const b = s.spawn(createBoss('cinder', p.x - px, p.y - py)), l = Math.hypot(px, py);
+    Object.assign(b, { state: 'volley', volleys: 3, timer: 0, view, cdx: px / l, cdy: py / l });
+    const shots = [], spawn = s.area.spawn.bind(s.area);
+    s.area.spawn = (e) => { if (e.kind === 'ember') shots.push({ x: e.x, y: e.y, vx: e.vx, vy: e.vy, palms: cinderPalms(b) }); return spawn(e); };
+    const mid = (e) => [b.x + (e.palms[0].x + e.palms[1].x) / 2, b.y + (e.palms[0].y + e.palms[1].y) / 2];
+    s.step(1 / 60);
+    assert.equal(shots.length, 3, view); assert.equal(b.view, view);
+    for (const e of shots) {
+      assert.ok(e.palms.some((q) => Math.hypot(b.x + q.x - e.x, b.y + q.y - e.y) < 0.5), `${view}: an ember from (${e.x - b.x}, ${e.y - b.y}), palms ${JSON.stringify(e.palms)}`);
+      const [mx, my] = mid(e), ax = p.x - mx, ay = p.y - my, dot = (e.vx * ax + e.vy * ay) / (Math.hypot(e.vx, e.vy) * Math.hypot(ax, ay));
+      assert.ok(dot > 0.95, `${view}: fans out from the palms at the player (${dot.toFixed(2)})`);
+    }
+  }
+});
+// Thrusting up and away under a wall, its palms are in the wall: the embers leave from its body.
+test('a volley thrown under a wall still flies', async () => {
+  const s = await sandbox(), p = s.game.player;
+  p.y = 24;
+  const b = s.spawn(createBoss('cinder', p.x, 56)); Object.assign(b, { state: 'volley', volleys: 3, timer: 0, view: 'back', cdx: 0, cdy: -1 });
+  assert.ok(cinderPalms(b).every((h) => b.y + h.y < 16), 'the palms are up in the wall');
+  s.step(3 / 60);
+  const embers = s.area.entities.filter((e) => e.kind === 'ember' && !e.dead);
+  assert.equal(embers.length, 3, 'none die in the wall'); assert.ok(embers.every((e) => e.vy < 0), 'flying up at the player');
+});
+test('the Cinder Warden comes Unbound: phase 2 uses new attacks', async () => {
+  const s = await sandbox();
+  const b = s.spawn(createBoss('cinder', s.center.x, s.center.y - 50)); b.phase = 2; b.state = WARDEN_MOVES.cinder.first;
+  const seen = new Set(); for (let t = 0; t < 30; t += 1 / 60) { s.step(1 / 60); seen.add(b.state); s.game.state.player.hp = 99; }
+  for (const st of ['meteors', 'sweep', 'pools']) assert.ok(seen.has(st), st);
+});
+test('the Cinder Warden has its own voice', async () => {
+  const names = await sfxDuringFight('cinder', 40);
+  assert.ok(names.filter((n) => n.startsWith('cinder_')).length >= 4);
+  for (const n of ['boss', 'spell', 'gate', 'explode']) assert.ok(!names.includes(n), n);
+});
+test('Cinder front and back views differ from the side, in both forms', () => {
+  for (const o of [{}, { phase: 2, phaseT: 9 }]) {
+    const draw = (view) => { const r = recorder(); paintCinder(r.g, { ...portraitPose('cinder', 1), ...o, view }, []); return JSON.stringify(r.calls); };
+    assert.notEqual(draw('front'), draw('side')); assert.notEqual(draw('back'), draw('side')); assert.notEqual(draw('front'), draw('back'));
+  }
+});
+// The vent is the punish window: from behind, its heat has to show too.
+test('the vent shows from behind', () => {
+  for (const phase of [1, 2]) {
+    const lights = (state) => {
+      const r = recorder(), L = [];
+      r.g.getTransform = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+      paintCinder(r.g, { ...portraitPose('cinder', 1), roarT: 0, phase, phaseT: 9, state, timer: 1, view: 'back' }, L);
+      return L.reduce((a, l) => a + l.r * l.a, 0);
+    };
+    assert.ok(lights('vent') > lights('volley') * 1.3, `phase ${phase}: ${lights('vent')} vs ${lights('volley')}`);
+  }
+});
+// The Unbound attacks come by turns with the volley, each after a blink; 'ready' picks the next.
+test('the Unbound attacks put down the zones they promise, each in its own voice', async () => {
+  const cast = async (turn) => {
+    const s = await sandbox(), p = s.game.player, heard = [];
+    s.app.audio.sfx = (name) => heard.push(name);
+    const b = s.spawn(createBoss('cinder', p.x, p.y - 80));
+    Object.assign(b, { phase: 2, state: 'ready', timer: 0, turn });
+    s.step(1 / 60);
+    return { s, b, p, heard, zones: s.area.zones.filter((z) => z.owner === b) };
+  };
+  const close = (a, x, e = 0.05) => Math.abs(a - x) < e;
+  let { s, b, p, heard, zones } = await cast(0);
+  assert.equal(b.state, 'meteors');
+  assert.equal(zones.length, 5);
+  assert.ok(zones.every((z) => z.shape === 'circle' && z.r === 16 && z.dmg === 2), 'five r-16 circles striking for 2');
+  const ts = zones.map((z) => z.t).sort((x, y) => x - y);
+  assert.ok(close(ts[0], 1) && close(ts[4], 1.6) && ts.every((t, i) => !i || t > ts[i - 1]), `falling from 1.0 to 1.6 s: ${ts}`);
+  assert.ok(zones.some((z) => Math.hypot(z.x - p.x, z.y - p.y) < 1) && zones.every((z) => Math.hypot(z.x - p.x, z.y - p.y) < 60), 'near the player');
+  assert.ok(heard.includes('cinder_meteor'));
+  ({ b, heard } = await cast(1));
+  assert.equal(b.state, 'volley', 'the volley between');
+  ({ s, b, p, heard, zones } = await cast(2));
+  assert.equal(b.state, 'sweep');
+  const cone = zones.find((z) => z.shape === 'cone'), wave = zones.find((z) => z.shape === 'segment');
+  assert.ok(cone && cone.r === 60 && cone.dmg > 0 && close(cone.a, Math.PI / 2), 'the greatsword arc, at the player');
+  assert.ok(close(Math.hypot(wave.vx, wave.vy), 140, 1e-6) && close(wave.vy, 140), 'the wave rolls at the player at 140 px/s');
+  assert.deepEqual([wave.life, wave.art, wave.effect], [1.2, 'fire', 'burn']);
+  assert.ok(close(wave.t, cone.t, 1e-9), 'the wave leaves as the blade strikes');
+  assert.ok(heard.includes('cinder_sweep'));
+  const y0 = wave.y;
+  b.state = 'parked'; s.step(cone.t + 0.5);
+  assert.ok(-wave.t > 0.3 && close(wave.y - y0, -wave.t * 140, 1), `rolled ${wave.y - y0} px in ${-wave.t} s`);
+  assert.ok(p.effects.burn, 'the wave set the player alight beyond the arc');
+  ({ s, b, p, heard, zones } = await cast(4));
+  assert.equal(b.state, 'pools');
+  assert.equal(zones.length, 3);
+  for (const z of zones) assert.deepEqual([z.shape, z.life, z.dmg, z.effect, z.art, z.grow], ['circle', 6, 0, 'burn', 'fire', 4]);
+  assert.ok(zones.some((z) => Math.hypot(z.x - p.x, z.y - p.y) < 1), 'one under the player');
+  assert.ok(heard.includes('cinder_pools'));
+  const r0 = zones.map((z) => z.r);
+  b.state = 'parked'; s.step(Math.max(...zones.map((z) => z.t)) + 2);
+  zones.forEach((z, i) => assert.ok(-z.t > 1.9 && close(z.r - r0[i], -z.t * 4, 0.1), `pool ${i} spread ${z.r - r0[i]} in ${-z.t} s`));
+  assert.ok(p.effects.burn, 'standing in lava burns');
+});
+test('every Cinder sound is its own', () => {
+  const engine = new AudioEngine(), calls = [];
+  engine.ctx = { currentTime: 0 };
+  for (const k of ['tone', 'noise']) engine[k] = (t, o) => calls.push([k, t, o]);
+  const recipe = (name) => { calls.length = 0; engine._last = {}; engine.sfx(name); return JSON.stringify(calls); };
+  const names = ['roar', 'cast', 'blink', 'vent', 'meteor', 'sweep', 'pools', 'phase', 'death'].map((k) => `cinder_${k}`);
+  for (const n of names) { assert.ok(SFX_NAMES.includes(n), n); assert.ok(recipe(n).length > 2, `${n} makes no sound`); }
+  assert.equal(new Set(names.map(recipe)).size, names.length);
+});
+// A warden against a wall summons into open floor, never into the wall (where the bot would chase
+// a foe it can never reach).
+test('a warden\'s summons never stand in a wall', async () => {
+  const s = await sandbox(), map = s.area.map;
+  const b = s.spawn(createBoss('rime', s.center.x, (map.h - 1) * 16 - 8)); b.state = 'parked';
+  b.summon(s.area.ctx, 'skirmisher', 4, 12);
+  const summons = s.area.enemyList.filter((e) => !e.boss);
+  assert.equal(summons.length, 12);
+  for (const e of summons) assert.ok(!rectSolid(map, e.x, e.y, e.w, e.h, (x, y) => map.isSolid(x, y)), `${e.archetype} at ${e.x},${e.y}`);
+});
+// R23: each warden greets the player back with its own roar.
+test('back in a warden\'s room, it roars in its own voice', async () => {
+  for (const [id, kind] of [['verdant', 'thornmaw'], ['ashen', 'cinder'], ['frost', 'rime']]) {
+    assert.ok(SFX_NAMES.includes(`${kind}_roar`), `${kind}_roar`);
+    const s = await sandbox(), heard = [];
+    s.game.enterDungeon(id);
+    const a = s.game.area; s.game.state.quest.flags[`intro:${kind}`] = true;
+    s.app.audio.sfx = (name) => heard.push(name);
+    a.enterRoom(a.dungeon.bossId, 's');
+    assert.ok(heard.includes(`${kind}_roar`), `${kind}: ${heard}`);
+    assert.ok(!heard.includes('boss'), kind);
+  }
+});
+
 // ---------------------------------------------------------------- zone strikes
 // R18: a zone's blow comes from the zone, not from whoever cast it.
 test('a zone strike knocks the player away from the impact, not its owner', async () => {
@@ -341,10 +504,10 @@ test('a zone strike knocks the player away from the impact, not its owner', asyn
   q.step(0.3);
   assert.ok(qp.y < qy - 2, `pushed off the line, not along it (${qp.y - qy})`);
 });
-test('eruptions and shard drops strike on the frame their telegraph promised', async () => {
-  for (const [kind, state, t] of [['cinder', 'volley', 0.9], ['rime', 'rain', 0.8]]) {
+test('meteors and shard drops strike on the frame their telegraph promised', async () => {
+  for (const [kind, state, t] of [['cinder', 'ready', 1], ['rime', 'rain', 0.8]]) {
     const s = await sandbox();
-    const b = s.spawn(createBoss(kind, s.center.x, s.center.y - 60)); b.state = state; b.volleys = 1; b.phase = 2; b.timer = 0;
+    const b = s.spawn(createBoss(kind, s.center.x, s.center.y - 60)); Object.assign(b, { state, turn: 0, volleys: 1, phase: 2, timer: 0 });
     s.step(1 / 60);
     const first = s.area.zones.find((z) => z.owner === b && z.shape === 'circle');
     assert.ok(Math.abs(first.t - t) < 1e-9, `${kind}: ${first.t}`);

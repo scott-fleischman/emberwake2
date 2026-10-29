@@ -3,15 +3,15 @@
 import { Actor, Entity, Particles, Poof } from './entities.js';
 import { Enemy } from './enemies.js';
 import { makeZone } from './zones.js';
+import { findFreeSpot } from './physics.js';
 import { drawShadow } from '../gfx/render.js';
 import { BOSS_RGB, stamp, roarRings, deathRays, entranceOffset } from '../gfx/bossart.js';
 import { paintThornmaw, thornUnder, thornOver } from '../gfx/art-thornmaw.js';
-import { paintCinder, fxCinder, emberSwirl } from '../gfx/art-cinder.js';
+import { paintCinder, fxCinder, emberSwirl, drawMeteors } from '../gfx/art-cinder.js';
 import { paintRime, rimeUnder, rimeOver } from '../gfx/art-rime.js';
 import { moves as thornmaw } from './warden-thornmaw.js';
 import { moves as cinder } from './warden-cinder.js';
 import { moves as rime } from './warden-rime.js';
-import { TILE } from '../world/tiles.js';
 import { TAU } from '../core/math.js';
 
 // view: the way it faces until it first moves, the way its entrance and portrait show it.
@@ -171,7 +171,7 @@ class Boss extends Actor {
     for (let k = 0; k < count; k++) {
       const a = Math.random() * TAU;
       const e = new Enemy(archetype, biome, this.x + Math.cos(a) * 30, this.y + Math.sin(a) * 24, { aggro: true, leash: 999 });
-      if (ctx.map.isSolid(Math.floor(e.x / TILE), Math.floor(e.y / TILE))) { e.x = this.x; e.y = this.y + 20; }
+      if (!findFreeSpot(ctx.map, e, 4)) { e.x = this.x; e.y = this.y; }
       ctx.area.spawnEnemy(e);
     }
   }
@@ -223,10 +223,11 @@ class Thornmaw extends Boss {
   }
 }
 
-// Cinder Warden: teleports, fans of embers, vents (punish), eruptions.
+// Cinder Warden: teleports, fans of embers, vents (punish); Unbound, meteors, a greatsword, lava.
 class CinderWarden extends Boss {
   constructor(x, y, hpMult) { super('cinder', x, y, hpMult); this.w = 18; this.h = 14; }
-  draw(g, cam) {
+  draw(g, cam, ctx) {
+    drawMeteors(g, this, ctx.area.zones, cam);
     const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
     const fade = this.state === 'fadeout' || this.state === 'fadein' ? 1 - this.alpha : 0;
     this.drawBoss(g, cam, (b, L) => paintCinder(b, this, L), {

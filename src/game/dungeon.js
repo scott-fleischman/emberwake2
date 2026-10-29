@@ -299,7 +299,7 @@ export class DungeonArea extends Area {
         flags[key] = true;
         g.playCutscene(bossIntroShots(this.boss.kind), { letterbox: true });
       } else {
-        g.audio.sfx('boss');
+        g.audio.sfx(`${this.boss.kind}_roar`);
         this.boss.roarT = 0.9;
         g.showBanner(this.boss.name.split(',')[0], this.boss.name.includes(',') ? this.boss.name.split(', ')[1] : 'Warden of the deep');
       }

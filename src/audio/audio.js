@@ -379,11 +379,71 @@ const SFX = {
     [50, 57, 61, 64].forEach((m, i) => a.tone(t + 0.8 + i * 0.04, { type: 'triangle', f: mtof(m), dur: 0.9, vol: 0.04, attack: 0.15 }));
     a.noise(t + 0.3, { dur: 1.2, vol: 0.1, f: 2400, f2: 900, q: 0.8, attack: 0.2 });
   },
-  cinder_phase: (a, t) => { // a furnace drawing breath, then a roaring burst of flame
-    a.noise(t, { dur: 0.7, vol: 0.12, type: 'lowpass', f: 300, f2: 2600, attack: 0.6 });
-    a.noise(t + 0.65, { dur: 0.9, vol: 0.3, type: 'lowpass', f: 3500, f2: 200, attack: 0.01 });
-    a.tone(t + 0.65, { f: 120, f2: 38, dur: 0.9, vol: 0.4 });
-    a.tone(t, { type: 'sawtooth', f: 90, f2: 180, dur: 0.7, vol: 0.06, lp: 600, attack: 0.5 });
+  cinder_roar: (a, t) => { // a bellow ringing through the iron helm, a gout of flame, the plates rattling
+    a.tone(t, { type: 'sawtooth', f: 64, f2: 92, dur: 0.8, vol: 0.13, lp: 480, lp2: 1500, attack: 0.08 });
+    a.tone(t, { type: 'sawtooth', f: 66, f2: 88, dur: 0.8, vol: 0.09, lp: 420, lp2: 1200, attack: 0.08, detune: 25 });
+    a.tone(t + 0.05, { type: 'triangle', f: 215, f2: 262, dur: 0.6, vol: 0.04, attack: 0.1 });
+    a.noise(t, { dur: 0.8, vol: 0.14, type: 'lowpass', f: 400, f2: 2200, attack: 0.15 });
+    [0.12, 0.2, 0.27, 0.36].forEach((d, i) => a.noise(t + d, { dur: 0.03, vol: 0.08, type: 'highpass', f: 2400 + i * 300 }));
+  },
+  cinder_cast: (a, t) => { // the palms flare and throw: a whoomph of fire, a thump, embers crackling away
+    a.noise(t, { dur: 0.18, vol: 0.16, f: 600, f2: 3000, q: 1.2, attack: 0.02 });
+    a.tone(t, { f: 180, f2: 90, dur: 0.12, vol: 0.15 });
+    [0.05, 0.1, 0.16].forEach((d) => a.noise(t + d, { dur: 0.015, vol: 0.09, type: 'highpass', f: 4200 }));
+    a.noise(t + 0.06, { dur: 0.3, vol: 0.05, type: 'highpass', f: 5000, f2: 3000, attack: 0.03 });
+  },
+  cinder_blink: (a, t) => { // embers sucked inward as it fades, then the whump of it burning back in elsewhere
+    a.noise(t, { dur: 0.36, vol: 0.12, f: 3500, f2: 500, q: 2, attack: 0.26 });
+    a.tone(t, { type: 'triangle', f: 900, f2: 300, dur: 0.32, vol: 0.03, attack: 0.22 });
+    a.noise(t + 0.4, { dur: 0.25, vol: 0.14, type: 'lowpass', f: 2000, f2: 400 });
+    a.tone(t + 0.4, { f: 140, f2: 260, dur: 0.15, vol: 0.08 });
+  },
+  cinder_vent: (a, t) => { // the plates grind open, steam screams out, the bare core roars low
+    a.tone(t, { type: 'sawtooth', f: 70, f2: 58, dur: 0.4, vol: 0.08, lp: 420 });
+    a.noise(t, { dur: 0.35, vol: 0.1, f: 300, q: 6 });
+    a.tone(t + 0.3, { type: 'triangle', f: 420, f2: 200, dur: 0.1, vol: 0.08 });
+    a.noise(t + 0.2, { dur: 1.5, vol: 0.14, type: 'highpass', f: 4500, f2: 2500, attack: 0.05 });
+    a.noise(t + 0.2, { dur: 1.6, vol: 0.12, type: 'lowpass', f: 250, f2: 500, attack: 0.2 });
+  },
+  cinder_meteor: (a, t) => { // the sky rumbles open, five shrieks falling, then their impacts as each zone lands
+    a.noise(t, { dur: 0.6, vol: 0.1, type: 'lowpass', f: 200, f2: 1200, attack: 0.2 });
+    a.tone(t, { type: 'sawtooth', f: 50, f2: 75, dur: 0.6, vol: 0.06, lp: 300, attack: 0.15 });
+    [0, 1, 2, 3, 4].forEach((i) => {
+      a.tone(t + 0.35 + i * 0.15, { f: 1800 - i * 120, f2: 300, dur: 0.65, vol: 0.025, attack: 0.2 });
+      a.tone(t + 1 + i * 0.15, { f: 110, f2: 34, dur: 0.4, vol: 0.3 });
+      a.noise(t + 1 + i * 0.15, { dur: 0.45, vol: 0.2, type: 'lowpass', f: 2500, f2: 150 });
+      a.noise(t + 1 + i * 0.15, { dur: 0.05, vol: 0.09, type: 'highpass', f: 3200 });
+    });
+  },
+  cinder_sweep: (a, t) => { // the blade's fire swelling as it rises, the whoosh and crack of the swing, the wave rolling off
+    a.noise(t, { dur: 0.7, vol: 0.1, f: 400, f2: 1800, q: 1.2, attack: 0.5 });
+    a.tone(t, { type: 'sawtooth', f: 110, f2: 220, dur: 0.7, vol: 0.05, lp: 900, attack: 0.4 });
+    a.noise(t + 0.6, { dur: 0.12, vol: 0.2, f: 600, f2: 4000, q: 1, attack: 0.05 });
+    a.noise(t + 0.7, { dur: 0.04, vol: 0.3, type: 'highpass', f: 2500 });
+    a.tone(t + 0.7, { f: 160, f2: 50, dur: 0.3, vol: 0.3 });
+    a.noise(t + 0.72, { dur: 1.1, vol: 0.16, type: 'lowpass', f: 1200, f2: 300, attack: 0.05 });
+    a.noise(t + 0.72, { dur: 1, vol: 0.05, type: 'highpass', f: 5000, f2: 3500, attack: 0.1 });
+  },
+  cinder_pools: (a, t) => { // a gurgling heave from the core, three wet spits, the lava hissing where it lands
+    a.tone(t, { type: 'sawtooth', f: 55, f2: 80, dur: 0.35, vol: 0.08, lp: 300, q: 6 });
+    [0.04, 0.12, 0.2, 0.27].forEach((d, i) => a.tone(t + d, { f: 200 + i * 60, f2: 420 + i * 80, dur: 0.06, vol: 0.06 }));
+    [0, 0.08, 0.16].forEach((d) => { a.noise(t + 0.3 + d, { dur: 0.15, vol: 0.16, type: 'lowpass', f: 1400, f2: 300 }); a.tone(t + 0.3 + d, { f: 300, f2: 120, dur: 0.08, vol: 0.1 }); });
+    [0.9, 1, 1.1].forEach((d) => { a.noise(t + d, { dur: 0.5, vol: 0.1, type: 'highpass', f: 4000, f2: 2200 }); a.tone(t + d, { f: 120, f2: 60, dur: 0.15, vol: 0.18 }); });
+  },
+  cinder_phase: (a, t) => { // a furnace drawing breath, plates pinging as they crack, the blast that throws them off, the greatsword catching fire
+    a.noise(t, { dur: 1.3, vol: 0.12, type: 'lowpass', f: 300, f2: 2600, attack: 1 });
+    a.tone(t, { type: 'sawtooth', f: 80, f2: 170, dur: 1.35, vol: 0.06, lp: 600, attack: 0.9 });
+    [0.3, 0.55, 0.75, 0.9, 1.03, 1.14, 1.23, 1.31, 1.38].forEach((d, i) => a.tone(t + d, { type: 'triangle', f: 1800 + (i % 3) * 400, dur: 0.06, vol: 0.035 + i * 0.004 }));
+    a.noise(t + 1.45, { dur: 0.9, vol: 0.3, type: 'lowpass', f: 3500, f2: 200 });
+    a.tone(t + 1.45, { f: 120, f2: 38, dur: 0.9, vol: 0.4 });
+    [[1.5, 520], [1.58, 760], [1.7, 940], [1.84, 610]].forEach(([d, f]) => a.tone(t + d, { type: 'triangle', f, f2: f * 0.8, dur: 0.18, vol: 0.06 }));
+    a.noise(t + 1.6, { dur: 0.5, vol: 0.12, f: 500, f2: 3500, q: 1, attack: 0.3 });
+    a.tone(t + 1.6, { f: 300, f2: 900, dur: 0.5, vol: 0.03, attack: 0.3 });
+  },
+  rime_roar: (a, t) => { // a cold howl with ice grinding under it
+    a.noise(t, { dur: 0.6, vol: 0.12, type: 'highpass', f: 3000, f2: 1800, attack: 0.1 });
+    a.tone(t, { type: 'sawtooth', f: 120, f2: 160, dur: 0.6, vol: 0.07, lp: 900, attack: 0.08 });
+    a.notes(t + 0.1, [91, 96], 0.1, { type: 'triangle', dur: 0.4, vol: 0.03 });
   },
   rime_phase: (a, t) => { // a rising cold shimmer that bursts into ringing shards
     a.tone(t, { f: 700, f2: 2100, dur: 0.8, vol: 0.06, attack: 0.5 });
@@ -400,10 +460,13 @@ const SFX = {
     a.notes(t + 0.9, [62, 69], 0.2, { type: 'triangle', dur: 1.2, vol: 0.05 });
     a.tone(t + 1.45, { f: 80, f2: 38, dur: 0.4, vol: 0.25 });
   },
-  cinder_death: (a, t) => { // the fire gutters out with a hiss, and the armor sighs empty
+  cinder_death: (a, t) => { // the fire gutters out in puffs and a long hiss, the armor sighs empty and clatters, a last ember chimes
     a.noise(t, { dur: 1.6, vol: 0.18, type: 'highpass', f: 5000, f2: 1200, attack: 0.05 });
     a.tone(t, { type: 'sawtooth', f: 110, f2: 30, dur: 1.5, vol: 0.1, lp: 900, lp2: 120 });
+    [0.2, 0.5, 0.85].forEach((d, i) => a.noise(t + d, { dur: 0.18, vol: 0.12 - i * 0.03, type: 'lowpass', f: 900, f2: 200 }));
     a.notes(t + 0.6, [57, 52, 45], 0.25, { type: 'triangle', dur: 0.9, vol: 0.06 });
+    [[0.95, 640], [1.08, 480], [1.18, 820], [1.32, 560]].forEach(([d, f]) => a.tone(t + d, { type: 'triangle', f, f2: f * 0.85, dur: 0.12, vol: 0.05 }));
+    a.tone(t + 1.5, { f: mtof(81), dur: 1, vol: 0.03, attack: 0.02 });
   },
   rime_death: (a, t) => { // a cascade of falling icicles chiming away to a single note
     a.notes(t, [103, 98, 96, 91, 89, 84, 79], 0.12, { type: 'triangle', dur: 0.5, vol: 0.05 });
