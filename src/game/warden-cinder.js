@@ -7,15 +7,18 @@ import { Particles, Projectile, flyingSolid } from './entities.js';
 import { makeZone } from './zones.js';
 import { TILE } from '../world/tiles.js';
 import { TAU } from '../core/math.js';
-import { cinderPalms } from '../gfx/art-cinder.js';
+import { cinderPalms, cinderPoseTick, CAST, VENT, SWEEP, STRIKE, METEORS, POOLS } from '../gfx/art-cinder.js';
 
 const ANCHORS = [[6, 4], [17, 4], [6, 10], [17, 10]].map(([tx, ty]) => ({ x: tx * TILE + 8, y: ty * TILE + 8 }));
+const FIRST = 0.35; // a salvo's first throw comes quicker than the rest (CAST)
 
 // The core overheats after every attack and has to cool: the punish window.
 function vent(b, ctx) {
-  b.state = 'vent'; b.timer = 1.9;
+  b.state = 'vent'; b.timer = VENT;
   ctx.game.audio.sfx('cinder_vent');
 }
+// A throw's windup; the casting pose draws back and thrusts over exactly this long.
+const windup = (b, t) => { b.timer = b.cast = t; };
 const fade = (b) => { b.alpha = 1 - Math.max(0, b.timer / 0.4); };
 
 // The Unbound attacks, each put down whole as it begins; the zones are the telegraph. + dt: this
@@ -28,15 +31,15 @@ const UNBOUND = {
       const a = Math.random() * TAU, r = k ? 24 + Math.random() * 26 : 0;
       zone(ctx, b, 'circle', { x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r * 0.8, r: 16, t: 1 + k * 0.15 + dt, dmg: 2, meteor: true });
     }
-    b.timer = 1.2;
+    b.timer = METEORS;
     ctx.game.audio.sfx('cinder_meteor');
   },
   // The greatsword sweeps the ground before it, and the wave of fire it sends rolls on along the aim.
   sweep(b, ctx, { dx, dy, d }, dt) {
     const ux = dx / d, uy = dy / d, cx = b.x + ux * 30, cy = b.y + uy * 30;
-    zone(ctx, b, 'cone', { x: b.x, y: b.y, a: Math.atan2(uy, ux), spread: 1, r: 60, t: 0.7 + dt, life: 0.12, dmg: 2, blockable: true });
-    zone(ctx, b, 'segment', { x1: cx - uy * 36, y1: cy + ux * 36, x2: cx + uy * 36, y2: cy - ux * 36, w: 14, t: 0.7 + dt, life: 1.2, vx: ux * 140, vy: uy * 140, art: 'fire', effect: 'burn', wave: true });
-    b.timer = 1.2;
+    zone(ctx, b, 'cone', { x: b.x, y: b.y, a: Math.atan2(uy, ux), spread: 1, r: 60, t: STRIKE + dt, life: 0.12, dmg: 2, blockable: true });
+    zone(ctx, b, 'segment', { x1: cx - uy * 36, y1: cy + ux * 36, x2: cx + uy * 36, y2: cy - ux * 36, w: 14, t: STRIKE + dt, life: 1.2, vx: ux * 140, vy: uy * 140, art: 'fire', effect: 'burn', wave: true });
+    b.timer = SWEEP;
     ctx.game.audio.sfx('cinder_sweep');
   },
   // Its core spits three globs of lava, one on the player and one either side; each pool spreads.
@@ -47,7 +50,7 @@ const UNBOUND = {
       ctx.area.spawn(new Projectile('fireball', b.x, b.y, ga, gd / t, 0, 'enemy', { lob: t, height: 42 }));
       zone(ctx, b, 'circle', { x, y, r: 10, t: t + dt, life: 6, dmg: 0, effect: 'burn', art: 'fire', grow: 4, lava: true });
     });
-    b.timer = 1;
+    b.timer = POOLS;
     ctx.game.audio.sfx('cinder_pools');
   },
 };
@@ -58,7 +61,7 @@ export const moves = {
   first: 'volley',
   first2: 'ready',
   aim: ['volley', 'meteors', 'sweep', 'pools'],
-  init(b) { b.anchors = ANCHORS; b.alpha = 1; b.volleys = 3; b.timer = 0.6; b.cdx = 0; b.cdy = 1; b.turn = 0; },
+  init(b) { b.anchors = ANCHORS; b.alpha = 1; b.volleys = 3; windup(b, 0.6); b.cdx = 0; b.cdy = 1; b.turn = 0; },
   phase1: {
     intro(b) { if (b.timer <= 0) { moves.init(b); b.state = 'volley'; } },
     // A fan of embers from its palms at the player, each from the hand on its side of the fan. A palm
@@ -76,7 +79,7 @@ export const moves = {
       }
       ctx.game.audio.sfx('cinder_cast');
       b.volleys--;
-      b.timer = 0.55;
+      windup(b, CAST);
       if (b.volleys <= 0) vent(b, ctx);
     },
     vent(b, dt, ctx) {
@@ -93,7 +96,7 @@ export const moves = {
     },
     fadein(b) {
       fade(b);
-      if (b.timer <= 0) { b.alpha = 1; b.state = 'volley'; b.timer = 0.35; b.volleys = 3; }
+      if (b.timer <= 0) { b.alpha = 1; b.state = 'volley'; windup(b, FIRST); b.volleys = 3; }
     },
   },
   phase2: {
@@ -105,7 +108,7 @@ export const moves = {
     ready(b, dt, ctx, me) {
       if (b.timer > 0) return;
       const next = ++b.turn % 2 ? ORDER[(b.turn >> 1) % ORDER.length] : null;
-      if (!next) { b.state = 'volley'; b.timer = 0.35; b.volleys = 3; return; }
+      if (!next) { b.state = 'volley'; windup(b, FIRST); b.volleys = 3; return; }
       b.state = next; b.cdx = me.dx / me.d; b.cdy = me.dy / me.d;
       UNBOUND[next](b, ctx, me, dt);
     },
@@ -115,8 +118,10 @@ export const moves = {
   },
   vulnerable: (b) => b.state === 'vent',
   untargetable: (b) => b.state === 'fadeout' || b.state === 'fadein',
-  // A meteor's burst the frame it lands, a glob's splash, flames running along the rolling wave.
+  // The pose's bookkeeping; a meteor's burst the frame it lands, a glob's splash, flames running
+  // along the rolling wave.
   tick(b, dt, ctx) {
+    cinderPoseTick(b, dt);
     for (const z of ctx.area.zones) {
       if (z.owner !== b) continue;
       if (z.wave && z.t <= 0 && Math.random() < 0.7) {

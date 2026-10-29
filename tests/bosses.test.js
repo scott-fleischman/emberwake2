@@ -6,7 +6,7 @@ import { Enemy } from '../src/game/enemies.js';
 import { Bomb, Projectile } from '../src/game/entities.js';
 import { makeZone } from '../src/game/zones.js';
 import { AudioEngine, SFX_NAMES, MUSIC_KEYS } from '../src/audio/audio.js';
-import { paintCinder, CINDER_PAL, cinderHands, cinderPalms } from '../src/gfx/art-cinder.js';
+import { paintCinder, CINDER_PAL, cinderHands, cinderPalms, cinderSword, cinderHover } from '../src/gfx/art-cinder.js';
 import { paintThornmaw, THORN_PAL } from '../src/gfx/art-thornmaw.js';
 import { paintRime, RIME_PAL } from '../src/gfx/art-rime.js';
 import { portraitPose } from '../src/gfx/bossart.js';
@@ -357,6 +357,49 @@ test('the cast draws back and up, then thrusts along the aim in every view, neve
     if (view === 'side') for (const h of out) assert.ok(h.x >= 28, `side thrusts forward (${h.x})`);
     if (view === 'front') for (const h of out) assert.ok(h.y > -40, `front thrusts down at the camera (${h.y})`);
     if (view === 'back') for (const h of out) assert.ok(h.y < -46, `back thrusts up and away (${h.y})`);
+  }
+});
+// The hands as drawn, in the world, frame after frame: nothing snaps between poses. The sweep's
+// strike itself is a fast swing and is left out.
+test('the hands move continuously through a salvo, into the vent and into the Unbound attacks', async () => {
+  const world = (b) => cinderHands(b).map((h) => [b.x + (b.view === 'side' && b.face < 0 ? -h.x : h.x), b.y + cinderHover(b) + h.y]);
+  const watch = (s, b, view, seconds, skip = () => false, extra = () => []) => {
+    let last = null, worst = 0, at = '';
+    for (let t = 0; t < seconds; t += 1 / 60) {
+      s.step(1 / 60); s.game.state.player.hp = 99;
+      assert.equal(b.view, view, `stays ${view} (${b.state})`);
+      const now = [...world(b), ...extra(b)];
+      if (last && !skip(b)) now.forEach(([x, y], i) => { const d = Math.hypot(x - last[i][0], y - last[i][1]); if (d > worst) { worst = d; at = `${b.state} t=${b.timer.toFixed(3)} #${i}`; } });
+      last = now;
+    }
+    return { worst, at };
+  };
+  for (const [view, px, py] of [['side', 120, 0], ['front', 0, 100], ['back', 0, -100]]) {
+    const s = await sandbox(), p = s.game.player;
+    const b = s.spawn(createBoss('cinder', p.x - px, p.y - py)), l = Math.hypot(px, py);
+    Object.assign(b, { state: 'fadein', timer: 0.4, alpha: 0, view, cdx: px / l, cdy: py / l, face: 1 });
+    // Never inward while it casts: in front and behind no hand comes in toward the body; side-on both
+    // stay on the side it faces.
+    const seen = new Set(), wide = [0, 0], inward = () => {
+      seen.add(b.state);
+      if (b.state === 'volley') cinderHands(b).forEach((h, i) => {
+        if (view === 'side') assert.ok(h.x > 0, `side: hand ${i} at x ${h.x.toFixed(1)}`);
+        else { assert.ok(Math.abs(h.x) >= wide[i] - 1e-9, `${view}: hand ${i} came in to ${h.x.toFixed(1)}`); wide[i] = Math.abs(h.x); }
+      });
+      return [];
+    };
+    const { worst, at } = watch(s, b, view, 0.4 + 0.35 + 2 * 0.55 + 1.9 + 0.3, () => false, inward);
+    assert.ok(['volley', 'vent', 'fadeout'].every((st) => seen.has(st)), `${view}: ${[...seen]}`);
+    assert.ok(worst <= 4, `${view}: a hand moved ${worst.toFixed(1)} px in a frame (${at})`);
+  }
+  for (const turn of [2, 4]) {
+    const s = await sandbox(), p = s.game.player;
+    const b = s.spawn(createBoss('cinder', p.x, p.y - 100));
+    Object.assign(b, { phase: 2, phaseT: 9, state: 'ready', timer: 0.3, turn, view: 'front', cdx: 0, cdy: 1 });
+    const striking = (b) => b.state === 'sweep' && b.timer < 0.55 && b.timer > 0.3;
+    const grip = (b) => { const w = cinderSword(b); return [[b.x + w.x, b.y + cinderHover(b) + w.y]]; };
+    const { worst, at } = watch(s, b, 'front', 0.3 + 1.2 + 0.6, striking, grip);
+    assert.ok(worst <= 4, `turn ${turn}: moved ${worst.toFixed(1)} px in a frame (${at})`);
   }
 });
 test('the embers leave from the palms, along the aim', async () => {

@@ -39,13 +39,38 @@ const CW_CRACKS = [
   [[-11, -50], [-8, -51], [-6, -48]],
   [[9, -49], [12, -47], [11, -43]],
 ];
-// The moveset's clocks (warden-cinder.js): a throw's windup, the vent, the sweep and its strike,
-// the meteor call and the lava throw.
-const CAST = 0.55, VENT = 1.9, SWEEP = 1.2, STRIKE = 0.7, METEORS = 1.2, POOLS = 1;
+// The fight's clocks, shared with the moveset (warden-cinder.js) so the poses keep time with it: a
+// throw's windup, the vent, the sweep and its strike, the meteor call and the lava throw.
+export const CAST = 0.55, VENT = 1.9, SWEEP = 1.2, STRIKE = 0.7, METEORS = 1.2, POOLS = 1;
 const PALM = [1, 8]; // in a gauntlet's own frame
 
-export const cinderHover = (b) => (b.state === 'vent' ? 2 : -6 + Math.sin((b.anim || 0) * 3) * 2);
 export const ventOpen = (b) => (b.state === 'vent' ? clamp01(Math.min((VENT - (b.timer || 0)) / 0.25, (b.timer || 0) / 0.2)) : 0);
+// It floats, sinking as its core opens to vent and rising again as it closes.
+export const cinderHover = (b) => lerp(-6 + Math.sin((b.anim || 0) * 3) * 2, 2, ventOpen(b));
+const smooth = (v) => v * v * (3 - 2 * v);
+const turn = (a, b, k) => a + ((((b - a) % TAU) + TAU * 1.5) % TAU - Math.PI) * k; // the short way round
+
+// Visual bookkeeping, once a frame from the moveset's tick: when the state changes, the hands and the
+// sword ease from where they were drawn (see blendFrom); a change of view starts the pose afresh.
+export function cinderPoseTick(b, dt) {
+  if (b.view !== b.poseView) { b.poseView = b.view; b.poseState = b.state; b.poseFrom = null; }
+  else if (b.poseState !== b.state) { b.poseState = b.state; b.poseFrom = b.poseNow; b.poseT = 0; }
+  else b.poseT = (b.poseT ?? 9) + dt;
+  b.poseNow = { hands: cinderHands(b), sword: (b.phase || 1) > 1 ? cinderSword(b) : null };
+}
+
+// What a pose eases from, and how far: the pose drawn when the state changed (this very frame if the
+// tick hasn't seen the change yet). A vent holds the release a beat, then settles; a salvo's first
+// throw eases in over its draw-back. A death happens behind a fade, and takes no ticks.
+function blendFrom(b, key) {
+  const st = b.state, fresh = b.poseState !== st;
+  if (st === 'dying' || b.poseView !== b.view) return null;
+  const from = (fresh ? b.poseNow : b.poseFrom)?.[key];
+  if (!from) return null;
+  const [hold, dur] = st === 'vent' ? [0.05, 0.4] : st === 'volley' ? [0, 0.6 * (b.cast ?? CAST)] : st === 'sweep' ? [0, 0.4] : [0, 0.25];
+  const k = smooth(clamp01(((fresh ? 0 : b.poseT ?? 9) - hold) / dur));
+  return k < 1 ? { from, k } : null;
+}
 
 // How far it has come Unbound: the plates crack and rattle through the transform (to 0.45), then
 // blast off as phase 2 begins.
@@ -64,6 +89,12 @@ function moltenLine(g, pal, pts, a = 1, w = 1) {
 // the blade as seen, k how far it has caught fire, behind when it is on the far side of the body.
 // It hovers point-down at its side; a sweep swings it round over the ground, seen at the view's slant.
 export function cinderSword(b) {
+  const s = swordPose(b), bl = blendFrom(b, 'sword');
+  if (!bl) return s;
+  const f = bl.from, k = bl.k, dx = lerp(f.dx, s.dx, k), dy = lerp(f.dy, s.dy, k), dl = Math.hypot(dx, dy) || 1;
+  return { ...s, x: lerp(f.x, s.x, k), y: lerp(f.y, s.y, k), dx: dx / dl, dy: dy / dl, len: lerp(f.len, s.len, k), behind: k < 0.5 ? f.behind : s.behind };
+}
+function swordPose(b) {
   const view = b.view || 'front', t = b.anim || 0, k = clamp01(((b.phaseT ?? 9) - 0.15) / 0.5), sag = ventOpen(b) * 5;
   const bob = Math.sin(t * 2) * 1.5 + sag;
   const hover = view === 'side' ? { x: -21, y: -54 + bob, dx: 0.14, dy: 0.99, len: 40, behind: true }
@@ -117,23 +148,23 @@ export function cinderHands(b) {
   const view = b.view || 'front', side = view === 'side', t = b.anim || 0, st = b.state, roar = roarK(b), ph2 = (b.phase || 1) > 1;
   const aim = side ? [Math.abs(b.cdx ?? 1), b.cdy ?? 0] : [0, view === 'back' ? -1 : 1];
   const sw = ph2 && st === 'sweep' ? cinderSword(b) : null;
-  return [-1, 1].map((s) => {
+  const hands = [-1, 1].map((s) => {
     const at = (x, y, nx, ny, fx, fy) => (side ? (s > 0 ? [nx, ny] : [fx, fy]) : [s * x, y]); // front/back, or side-on near then far
-    const [rx, ry] = at(24, -36, 9, -34, -7, -37);
+    const [rx, ry] = at(24, -36, 9, -34, 4, -37); // side-on the far hand hangs hidden behind the body
     const h = { s, m: side ? 1 : s, x: rx, y: ry + Math.sin(t * 3 + s) * 2, open: 0, glow: 0, rot: side ? 0.15 : s * 0.15, sc: 1, behind: side && s < 0, back: view === 'back' };
     if (st === 'volley') {
       // Drawn back and up over the first 60% of each throw's windup, then thrust along the aim with
       // both palms open; each throw draws back from where the last one ended. Never inward.
-      const q = 1 - clamp01((b.timer ?? 0) / CAST);
+      const q = 1 - clamp01((b.timer ?? 0) / (b.cast ?? CAST)); // the windup this throw actually has
       // Side-on the far hand rides higher, so both show; from behind they thrust up past the shoulders.
       const out = side ? { x: s > 0 ? 33 : 28, y: (s > 0 ? -39 : -45) + aim[1] * 10, rot: Math.atan2(-aim[0], aim[1]), sc: 1 }
         : view === 'front' ? { x: s * 26, y: -28, rot: 0, sc: 1.25 } : { x: s * 26, y: -64, rot: -s * Math.PI, sc: 0.8 };
       const back = side ? { x: s > 0 ? 26 : 22, y: -44, rot: -Math.PI - 0.3, sc: 1 } : { x: s * 26, y: -44, rot: -s * (Math.PI - 0.4), sc: 1 };
-      const w = q < 0.6 ? 1 - easeOut(q / 0.6) : ((q - 0.6) / 0.4) ** 2;
+      const w = q < 0.6 ? 1 - easeOut(q / 0.6) : smooth((q - 0.6) / 0.4);
       Object.assign(h, { x: lerp(back.x, out.x, w), y: lerp(back.y, out.y, w), rot: lerp(back.rot, out.rot, w), sc: lerp(back.sc, out.sc, w), open: lerp(0.35, 1, w), glow: 0.2 + 0.8 * q * q, behind: side ? s < 0 : view === 'back' && w > 0.5 });
     }
-    if (st === 'vent') { const [x, y] = at(21, -16, 6, -14, -7, -17); Object.assign(h, { x, y: y + Math.sin(t * 2 + s), rot: side ? 0.4 : s * 0.5 }); }
-    if (st === 'transform') { const [x, y] = at(25, -44, 10, -42, -6, -44); Object.assign(h, { x: x + Math.sin(t * 50 + s) * 0.8, y, glow: unboundK(b), rot: side ? -0.3 : -s * 0.3 }); }
+    if (st === 'vent') { const [x, y] = at(21, -16, 6, -14, 2, -17); Object.assign(h, { x, y: y + Math.sin(t * 2 + s), rot: side ? 0.4 : s * 0.5 }); }
+    if (st === 'transform') { const [x, y] = at(25, -44, 10, -42, 4, -44); Object.assign(h, { x: x + Math.sin(t * 50 + s) * 0.8, y, glow: unboundK(b), rot: side ? -0.3 : -s * 0.3 }); }
     if (st === 'meteors') { // raised to the sky, palms up and blazing
       const k = easeOut(clamp01((1 - (b.timer ?? 0) / METEORS) / 0.25)), [x, y] = at(21, -72, 6, -70, 0, -72);
       Object.assign(h, { x: lerp(h.x, x, k), y: lerp(h.y, y, k), rot: side ? -Math.PI + 0.2 : -s * (Math.PI - 0.25), open: 1, glow: k });
@@ -147,10 +178,16 @@ export function cinderHands(b) {
       Object.assign(h, { x: sw.x + sw.dx * u, y: sw.y + sw.dy * u, rot: Math.atan2(sw.dy, sw.dx), open: 0, m: 1, behind: sw.behind });
     }
     if (roar && !['volley', 'meteors', 'pools', 'sweep'].includes(st)) {
-      const [x, y] = at(27, -58, 8, -60, 1, -62);
+      const [x, y] = at(27, -58, 8, -60, 4, -62);
       Object.assign(h, { x: lerp(h.x, x, roar), y: lerp(h.y, y, roar), open: Math.max(h.open, roar), glow: Math.max(h.glow, roar * 0.8), rot: lerp(h.rot, side ? -Math.PI + 0.3 : -s * 0.5, roar) });
     }
     return h;
+  });
+  const bl = blendFrom(b, 'hands');
+  if (!bl) return hands;
+  return hands.map((h, i) => {
+    const f = bl.from[i], k = bl.k;
+    return { ...h, x: lerp(f.x, h.x, k), y: lerp(f.y, h.y, k), rot: turn(f.rot, h.rot, k), sc: lerp(f.sc, h.sc, k), open: lerp(f.open, h.open, k), glow: lerp(f.glow, h.glow, k), m: k < 0.5 ? f.m : h.m, behind: k < 0.5 ? f.behind : h.behind };
   });
 }
 
@@ -363,7 +400,7 @@ function stubs(g, pal, t, side) {
 // The horned great helm with its burning T-visor. Unbound it is cracked, and the visor white-hot.
 function helm(g, pal, L, b, view, ph2, uk) {
   const t = b.anim || 0, st = b.state, roar = roarK(b), dim = st === 'vent', vis = dim ? pal.visorDim : ph2 ? pal.visorHot : pal.visor;
-  g.save(); if (dim) { g.translate(0, 2); g.rotate(0.06 * Math.sin(t * 2)); }
+  g.save(); if (dim) { const op = ventOpen(b); g.translate(0, 2 * op); g.rotate(0.06 * op * Math.sin(t * 2)); }
   if (view === 'side') {
     g.lineCap = 'round';
     g.strokeStyle = pal.iron; g.lineWidth = 2.2; g.beginPath(); g.moveTo(-3, -64); g.quadraticCurveTo(-6, -67, -5, -73); g.stroke(); // the far horn
