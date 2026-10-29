@@ -105,3 +105,10 @@ test('the cutscene theater plays every scene through to the end', async () => {
   }
   assert.ok(app.titled, 'the theater should end by returning to the title');
 });
+
+test('the Tidewarden has warden story data and a whale spirit', () => {
+  assert.ok(bossIntroShots('tide').length > 0);
+  const outro = bossOutroShots('tide', { x: 0, y: 0 });
+  assert.ok(outro.length > 0);
+  assert.ok(outro.some((s) => s.spirit === 'whale'));
+});

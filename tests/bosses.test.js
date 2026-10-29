@@ -10,6 +10,7 @@ import { paintCinder, CINDER_PAL, cinderHands, cinderPalms, cinderSword, cinderH
 import { paintThornmaw, THORN_PAL } from '../src/gfx/art-thornmaw.js';
 import { paintRime, RIME_PAL, rimePose } from '../src/gfx/art-rime.js';
 import { RimeDecoy } from '../src/game/warden-rime.js';
+import { paintTide, TIDE_PAL, tidePose } from '../src/gfx/art-tide.js';
 import { portraitPose } from '../src/gfx/bossart.js';
 import { T } from '../src/world/tiles.js';
 import { Bot } from '../src/bot/bot.js';
@@ -37,7 +38,7 @@ test('painters take a palette', () => {
 // Repainted with every palette colour swapped, no colour the painter uses may stay the same.
 test('a palette reaches every colour its painter uses', () => {
   const swap = (pal) => JSON.parse(JSON.stringify(pal).replace(/#[0-9a-f]{6}/gi, '#010203').replace(/\d+,\d+,\d+/g, '1,2,3'));
-  const states = ['intro', 'stalk', 'wind', 'charge', 'stunned', 'thorns', 'roots', 'spores', 'lash', 'transform', 'volley', 'vent', 'fadeout', 'ready', 'meteors', 'sweep', 'pools', 'orbit', 'dash', 'skid', 'rain', 'gust', 'pillars', 'decoys', 'spent', 'defeated', 'dying'];
+  const states = ['intro', 'stalk', 'wind', 'charge', 'stunned', 'thorns', 'roots', 'spores', 'lash', 'transform', 'volley', 'vent', 'fadeout', 'ready', 'meteors', 'sweep', 'pools', 'orbit', 'dash', 'skid', 'rain', 'gust', 'pillars', 'decoys', 'spent', 'jets', 'dive', 'surface', 'wave', 'whirl', 'rings', 'defeated', 'dying'];
   const colours = (kind, paint, pal) => {
     const rec = recorder(), L = [];
     rec.g.getTransform = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
@@ -46,7 +47,7 @@ test('a palette reaches every colour its painter uses', () => {
     }
     return [...rec.fills, ...rec.calls.filter((c) => c[0] === 'addColorStop').map((c) => c[2]), ...L.map((l) => l.rgb)].filter((c) => typeof c === 'string');
   };
-  for (const [kind, paint, pal] of [['thornmaw', paintThornmaw, THORN_PAL], ['cinder', paintCinder, CINDER_PAL], ['rime', paintRime, RIME_PAL]]) {
+  for (const [kind, paint, pal] of [['thornmaw', paintThornmaw, THORN_PAL], ['cinder', paintCinder, CINDER_PAL], ['rime', paintRime, RIME_PAL], ['tide', paintTide, TIDE_PAL]]) {
     const a = colours(kind, paint, pal), b = colours(kind, paint, swap(pal));
     assert.equal(a.length, b.length);
     a.forEach((c, i) => assert.notEqual(c, b[i], `${kind} paints ${c} from outside its palette`));
@@ -129,15 +130,15 @@ test('every warden paints a front and a back view unlike its side, without rando
   const random = Math.random;
   Math.random = () => { throw new Error('painters must not call Math.random'); };
   try {
-    for (const [kind, paint] of [['thornmaw', paintThornmaw], ['cinder', paintCinder], ['rime', paintRime]]) {
+    for (const [kind, paint] of [['thornmaw', paintThornmaw], ['cinder', paintCinder], ['rime', paintRime], ['tide', paintTide]]) {
       const draw = (view, o = {}) => { const r = recorder(); paint(r.g, { ...portraitPose(kind, 1), view, ...o }, []); return JSON.stringify(r.calls); };
       assert.notEqual(draw('front'), draw('side'), kind); assert.notEqual(draw('back'), draw('side'), kind); assert.notEqual(draw('front'), draw('back'), kind);
-      for (const state of ['charge', 'vent', 'dash', 'dying', 'transform']) for (const view of ['side', 'front', 'back']) draw(view, { state, phase: 2, phaseT: 0.4 });
+      for (const state of ['charge', 'vent', 'dash', 'dive', 'surface', 'whirl', 'dying', 'transform']) for (const view of ['side', 'front', 'back']) draw(view, { state, phase: 2, phaseT: 0.4 });
     }
   } finally { Math.random = random; }
 });
 test('a warden entered straight at its first state fights at once (init sets what its intro did)', async () => {
-  for (const kind of ['thornmaw', 'cinder', 'rime']) {
+  for (const kind of ['thornmaw', 'cinder', 'rime', 'tide']) {
     const s = await sandbox(), m = WARDEN_MOVES[kind];
     const b = s.spawn(createBoss(kind, s.center.x, s.center.y - 50)); b.state = m.first;
     const seen = new Set(), shots = () => s.area.entities.filter((e) => e.team === 'enemy' && e.dmg && !e.boss).length;
@@ -267,7 +268,7 @@ test('each warden has its own phase and death sounds, and the fight a second the
   engine.ctx = { currentTime: 0 };
   for (const k of ['tone', 'noise']) engine[k] = (t, o) => calls.push([k, t, o]);
   const recipe = (name) => { calls.length = 0; engine._last = {}; engine.sfx(name); return JSON.stringify(calls); };
-  const names = ['thornmaw', 'cinder', 'rime'].flatMap((k) => [`${k}_phase`, `${k}_death`]);
+  const names = ['thornmaw', 'cinder', 'rime', 'tide'].flatMap((k) => [`${k}_phase`, `${k}_death`]);
   for (const n of names) { assert.ok(SFX_NAMES.includes(n), n); assert.ok(recipe(n).length > 2, `${n} makes no sound`); }
   assert.equal(new Set(names.map(recipe)).size, names.length);
   assert.ok(MUSIC_KEYS.includes('boss2'));
@@ -725,6 +726,226 @@ test('every Rime sound is its own', () => {
   const names = ['roar', 'dash', 'shard', 'gust', 'pillar', 'decoy', 'phase', 'death'].map((k) => `rime_${k}`);
   for (const n of names) { assert.ok(SFX_NAMES.includes(n), n); assert.ok(recipe(n).length > 2, `${n} makes no sound`); }
   assert.equal(new Set(names.map(recipe)).size, names.length);
+});
+
+// ---------------------------------------------------------------- the Tidewarden
+test('the Tidewarden wails: phase 2 uses new attacks', async () => {
+  const s = await sandbox();
+  const b = s.spawn(createBoss('tide', s.center.x, s.center.y - 50)); b.phase = 2; b.state = WARDEN_MOVES.tide.first;
+  const seen = new Set(); for (let t = 0; t < 30; t += 1 / 60) { s.step(1 / 60); seen.add(b.state); s.game.state.player.hp = 99; }
+  for (const st of ['wave', 'whirl', 'rings']) assert.ok(seen.has(st), st);
+});
+test('the Tidewarden has its own voice', async () => {
+  const names = await sfxDuringFight('tide', 40);
+  assert.ok(names.filter((n) => n.startsWith('tide_')).length >= 4);
+  assert.ok(!names.includes('boss'));
+});
+test('Tide front and back views differ from the side, in both forms', () => {
+  for (const o of [{}, { phase: 2, phaseT: 9 }]) {
+    const draw = (view) => { const r = recorder(); paintTide(r.g, { ...portraitPose('tide', 1), ...o, view }, []); return JSON.stringify(r.calls); };
+    assert.notEqual(draw('front'), draw('side')); assert.notEqual(draw('back'), draw('side')); assert.notEqual(draw('front'), draw('back'));
+  }
+});
+test('the Tidewarden is a warden of 180 HP, punished only when it surfaces dazed or is spent after a wave', () => {
+  assert.equal(createBoss('tide', 0, 0).maxHp, 180);
+  assert.equal(createBoss('tide', 0, 0).name, 'The Tidewarden');
+  const m = WARDEN_MOVES.tide;
+  for (const state of ['jets', 'sweep', 'dive', 'surface', 'wave', 'spent', 'whirl', 'rings']) {
+    assert.equal(m.vulnerable({ state }), state === 'surface' || state === 'spent', state);
+    assert.equal(!!m.untargetable?.({ state }), state === 'dive', state);
+  }
+});
+// Its eyes and face show from the front and the side, never from behind; its throat sac is in front.
+test('from behind the Tidewarden shows no face, in either form', () => {
+  for (const o of [{}, { phase: 2, phaseT: 9 }]) {
+    const draw = (view) => { const r = recorder(); paintTide(r.g, { ...portraitPose('tide', 1), ...o, view }, []); return r.fills; };
+    const [side, front, back] = ['side', 'front', 'back'].map(draw);
+    for (const k of ['eye', 'maw', 'teeth', 'sac']) {
+      const c = o.phase ? TIDE_PAL[`${k}2`] ?? TIDE_PAL[k] : TIDE_PAL[k];
+      assert.ok(front.includes(c) && side.includes(c), `phase ${o.phase || 1}: ${k} shows from the front and side`);
+      assert.ok(!back.includes(c), `phase ${o.phase || 1}: no ${k} from behind`);
+    }
+  }
+});
+// Phase 1 by turns: the jets, the tail sweep, then the dive and the dazed surfacing (the punish window).
+test('the Tidewarden spits water, sweeps its tail across the room, dives and surfaces dazed', async () => {
+  const s = await sandbox(), p = s.game.player, heard = [], W = s.area.map.pixelW;
+  s.app.audio.sfx = (name) => heard.push(name);
+  const b = s.spawn(createBoss('tide', p.x - 30, p.y - 70)); b.state = 'jets';
+  const close = (a, x, e = 0.05) => Math.abs(a - x) < e, safe = (secs) => { for (let t = 0; t < secs; t += 1 / 60) { p.iframes = 9; s.step(1 / 60); } };
+  const jets = [], spawn = s.area.spawn.bind(s.area);
+  s.area.spawn = (e) => { if (e.kind === 'water') jets.push(e); return spawn(e); };
+  while (b.state === 'jets') safe(1 / 60);
+  assert.equal(jets.length, 9, 'three salvos of three');
+  assert.ok(jets.every((j) => j.team === 'enemy' && j.dmg === 1 && j.vy > 0), 'at the player');
+  assert.equal(heard.filter((n) => n === 'tide_jet').length, 3);
+
+  assert.equal(b.state, 'sweep');
+  const sweep = s.area.zones.find((z) => z.owner === b && z.shape === 'segment');
+  assert.ok(sweep.x1 <= 17 && sweep.x2 >= W - 17 && sweep.y1 === sweep.y2 && close(sweep.y1, p.y, 1), 'wall to wall, level with the player');
+  assert.ok(sweep.dmg > 0 && heard.includes('tide_sweep'));
+  while (b.state === 'sweep') safe(1 / 60);
+
+  assert.equal(b.state, 'dive');
+  const ripple = s.area.zones.find((z) => z.owner === b && z.shape === 'circle'), at = { x: ripple.x, y: ripple.y };
+  assert.ok(close(ripple.t, 0.9, 1e-9), `the ripple strikes in 0.9 s: ${ripple.t}`);
+  assert.ok(Math.hypot(at.x - p.x, at.y - p.y) < 1, 'where the player stands');
+  assert.ok(heard.includes('tide_dive'));
+  safe(1 / 60);
+  assert.ok(b.untargetable && b.damage(5, p, s.area.ctx) === false, 'under the water no blow lands');
+  let under = 1 / 60;
+  while (b.state === 'dive') { safe(1 / 60); under += 1 / 60; }
+  assert.ok(close(under, 0.9, 0.02), `surfaced after ${under.toFixed(3)} s, as the ripple struck`);
+  assert.deepEqual([b.state, b.x, b.y], ['surface', at.x, at.y]);
+  assert.ok(heard.includes('tide_surface'));
+  safe(1 / 60);
+  assert.ok(b.vulnerable && !b.untargetable, 'dazed: the punish window');
+  let dazed = 1 / 60;
+  while (b.state === 'surface') { safe(1 / 60); dazed += 1 / 60; }
+  assert.ok(close(dazed, 1.4, 0.03), `dazed for ${dazed.toFixed(3)} s`);
+  safe(1 / 60);
+  assert.deepEqual([b.state, b.vulnerable], ['jets', false]);
+});
+test('the ripple bursts up under a player who stays on it', async () => {
+  const s = await sandbox(), p = s.game.player, res = s.game.state.player, hp = res.hp;
+  const b = s.spawn(createBoss('tide', p.x - 30, p.y - 70)); Object.assign(b, { state: 'sweep', timer: 0, tideStep: 2 });
+  s.step(1 / 60);
+  assert.equal(b.state, 'dive');
+  s.step(1);
+  assert.ok(res.hp < hp);
+});
+// Phase 2's rhythm: the jets or the sweep, a Wail attack, the dive. tideStep 1 is the Wail's turn.
+test('the Wail attacks do what they promise, each in its own voice', async () => {
+  const cast = async (tideTurn) => {
+    const s = await sandbox(), p = s.game.player, heard = [];
+    s.app.audio.sfx = (name) => heard.push(name);
+    const b = s.spawn(createBoss('tide', p.x, p.y - 80));
+    Object.assign(b, { phase: 2, phaseT: 9, state: 'surface', timer: 0, tideStep: 1, tideTurn });
+    s.step(1 / 60);
+    return { s, b, p, heard, zones: s.area.zones.filter((z) => z.owner === b) };
+  };
+  const close = (a, x, e = 0.05) => Math.abs(a - x) < e;
+  const fight = (s, secs) => { for (let t = 0; t < secs; t += 1 / 60) { s.game.player.iframes = 9; s.step(1 / 60); } };
+
+  let { s, b, p, heard, zones } = await cast(0);
+  const W = s.area.map.pixelW;
+  assert.equal(b.state, 'wave');
+  assert.equal(zones.length, 2, 'two lengths of wave');
+  const [l, r] = zones.sort((u, v) => u.x1 - v.x1);
+  assert.ok(zones.every((z) => z.shape === 'segment' && z.y1 === z.y2 && z.y1 === l.y1 && z.dmg > 0), 'one line across the room');
+  assert.ok(l.x1 <= 17 && r.x2 >= W - 17, 'wall to wall');
+  assert.ok(close(r.x1 - l.x2, 40, 1e-9), `one gap 40 px wide: ${r.x1 - l.x2}`);
+  assert.ok(l.vy > 0 && l.vy === r.vy && !l.vx && l.y1 < b.y, 'rolling in from behind it, toward the player');
+  assert.ok(heard.includes('tide_wave'));
+  const y0 = l.y1;
+  fight(s, l.t + 1);
+  assert.ok(close(l.y1 - y0, l.vy * -l.t, 1), 'crossing the room');
+  while (b.state === 'wave') fight(s, 1 / 60);
+  assert.ok(!s.area.zones.includes(l), 'gone when it has crossed');
+  assert.equal(b.state, 'spent');
+  fight(s, 1 / 60); assert.ok(b.vulnerable, 'spent after the wave: the punish window');
+
+  ({ s, b, p, heard, zones } = await cast(1));
+  assert.equal(b.state, 'whirl');
+  assert.equal(zones.length, 1);
+  const [eye] = zones;
+  assert.deepEqual([eye.shape, eye.dmg, eye.effect, eye.life], ['circle', 0, 'mud', 3]);
+  assert.ok(Math.hypot(eye.x - b.x, eye.y - b.y) < 1, 'about the warden');
+  assert.ok(heard.includes('tide_whirl'));
+  fight(s, eye.t);
+  const d0 = Math.hypot(p.x - b.x, p.y - b.y);
+  fight(s, 1);
+  assert.ok(close(d0 - Math.hypot(p.x - b.x, p.y - b.y), 45, 3), `drawn ${(d0 - Math.hypot(p.x - b.x, p.y - b.y)).toFixed(1)} px toward it in a second`);
+  fight(s, 2.1);
+  const d1 = Math.hypot(p.x - b.x, p.y - b.y);
+  fight(s, 0.5);
+  assert.ok(close(Math.hypot(p.x - b.x, p.y - b.y), d1, 0.5), 'and let go after 3 s');
+
+  ({ s, b, p, heard, zones } = await cast(2));
+  assert.equal(b.state, 'rings');
+  assert.equal(zones.length, 3, 'three song rings');
+  for (const z of zones) assert.deepEqual([z.shape, z.grow, z.gaps.length, Math.round(z.x), Math.round(z.y)], ['ring', 90, 2, Math.round(b.x), Math.round(b.y)]);
+  assert.ok(new Set(zones.map((z) => z.t.toFixed(3))).size === 3, 'one after another');
+  assert.ok(heard.includes('tide_song'));
+  const [first] = zones.sort((u, v) => u.t - v.t), r0 = first.r;
+  fight(s, first.t + 1);
+  assert.ok(close(first.r - r0, -first.t * 90, 1), `grown ${(first.r - r0).toFixed(1)} px in ${(-first.t).toFixed(2)} s`);
+});
+test('the Tidewarden sheds its coral where it stands and calls Mire Leeches', async () => {
+  const s = await sandbox(), heard = [];
+  s.app.audio.sfx = (name) => heard.push(name);
+  const b = s.spawn(createBoss('tide', s.center.x, s.center.y - 40)); b.state = 'jets';
+  const at = { x: b.x, y: b.y };
+  b.damage(95, s.game.player, s.area.ctx); s.step(0.05);
+  assert.equal(b.state, 'transform'); assert.ok(heard.includes('tide_phase'));
+  s.step(1.5);
+  const leeches = s.area.enemyList.filter((e) => e.archetype === 'lunger' && !e.dead);
+  assert.equal(leeches.length, 2); assert.ok(leeches.every((e) => e.name === 'Mire Leech'), leeches.map((e) => e.name).join());
+  assert.deepEqual([b.phase, b.state, b.x, b.y], [2, 'jets', at.x, at.y]);
+});
+test('every Tide sound is its own', () => {
+  const engine = new AudioEngine(), calls = [];
+  engine.ctx = { currentTime: 0 };
+  for (const k of ['tone', 'noise']) engine[k] = (t, o) => calls.push([k, t, o]);
+  const recipe = (name) => { calls.length = 0; engine._last = {}; engine.sfx(name); return JSON.stringify(calls); };
+  const names = ['roar', 'dive', 'surface', 'jet', 'sweep', 'wave', 'whirl', 'song', 'phase', 'death'].map((k) => `tide_${k}`);
+  for (const n of names) { assert.ok(SFX_NAMES.includes(n), n); assert.ok(recipe(n).length > 2, `${n} makes no sound`); }
+  assert.equal(new Set(names.map(recipe)).size, names.length);
+});
+// stamp() paints into a 184x150 buffer with the feet at (92, 124). It clips itself at the waterline,
+// so nothing below it shows, however far it has sunk.
+test('every pose the Tidewarden takes fits the stamp\'s buffer', () => {
+  const states = ['jets', 'sweep', 'dive', 'surface', 'wave', 'spent', 'whirl', 'rings', 'defeated', 'dying'];
+  for (const state of [...states, 'transform', 'intro']) for (const phase of state === 'transform' ? [1] : [1, 2]) for (const view of ['side', 'front', 'back']) {
+    for (const roarT of phase > 1 ? [0] : [0, 0.5]) for (let i = 0; i < 12; i++) for (const timer of [0.05, 0.5, 1.2, 2.5]) {
+      const { box } = extent(paintTide, { anim: i * 0.29, state, phase, phaseT: i < 4 ? i * 0.2 : 9, view, roarT, timer, tideShotT: i * 0.05, tideJets: i % 4, cdx: 1, cdy: 0, face: 1 });
+      assert.ok(box[0] > -91 && box[2] < 91 && box[1] > -123, `${state} phase ${phase} ${view}: ${box.map((v) => v.toFixed(1))}`);
+    }
+  }
+});
+// The pose as drawn, frame after frame, through both phases: nothing snaps between states. The tail's
+// slam and the burst up out of the water are blows, fast on purpose, and are left out.
+test('the Tidewarden eases between poses through both phases', async () => {
+  for (const phase of [1, 2]) {
+    const s = await sandbox(), p = s.game.player;
+    const b = s.spawn(createBoss('tide', p.x, p.y - 70)); Object.assign(b, { phase, phaseT: 9, state: 'jets' });
+    const seen = new Set(), blow = () => (b.state === 'sweep' && b.timer < 0.5) || (b.state === 'surface' && b.timer > 1.15);
+    let last = null, worst = 0, at = '';
+    for (let t = 0; t < 30; t += 1 / 60) {
+      s.step(1 / 60); s.game.state.player.hp = 99; seen.add(b.state);
+      const w = tidePose(b), now = [w.rear, w.lean, w.jaw, w.tail, w.coil, w.sway, w.sink];
+      if (last && !blow()) now.forEach((v, i) => { const d = Math.abs(v - last[i]); if (d > worst) { worst = d; at = `${b.state} #${i}`; } });
+      last = now;
+    }
+    for (const st of phase > 1 ? ['jets', 'wave', 'spent', 'whirl', 'dive', 'surface'] : ['jets', 'sweep', 'dive', 'surface']) assert.ok(seen.has(st), `phase ${phase} saw ${st}`);
+    assert.ok(worst < 0.3, `phase ${phase}: the pose jumped ${worst.toFixed(2)} in a frame (${at})`);
+  }
+});
+// Killed while dazed and set back at the centre behind the black: through the fade-in it shows its own
+// pose, still swaying, and carries straight on into the dissolve.
+test('killed while dazed, it neither freezes through the fade-in nor jumps into the dissolve', async () => {
+  const s = await sandbox(), p = s.game.player;
+  const b = s.spawn(createBoss('tide', p.x, p.y - 70)); Object.assign(b, { phase: 2, phaseT: 9, state: 'surface', timer: 1.2, view: 'front' });
+  s.step(0.2);
+  b.damage(9999, p, s.area.ctx);
+  const pose = (q) => { const w = tidePose(q); return [w.rear, w.lean + w.sway, w.jaw, w.sink]; };
+  const fadein = [];
+  let last = null, lastStep = null, boundary = null;
+  for (let t = 0; t < 2.2 && s.game.bossDeath; t += 1 / 60) {
+    s.step(1 / 60);
+    const step = s.game.bossDeath?.step, now = pose(b);
+    if (step === 'fadein') {
+      fadein.push(now);
+      const own = pose({ ...b, tidePoseFrom: null, tidePoseNow: null });
+      now.forEach((v, i) => assert.ok(Math.abs(v - own[i]) < 1e-9, 'the fade-in draws its own pose'));
+    }
+    if (lastStep === 'fadein' && step === 'dissolve') boundary = Math.max(...now.map((v, i) => Math.abs(v - last[i])));
+    last = now; lastStep = step;
+  }
+  assert.ok(fadein.length > 20, 'watched the fade-in');
+  const travel = Math.max(...fadein[0].map((v, i) => Math.max(...fadein.map((f) => Math.abs(f[i] - v)))));
+  assert.ok(travel > 0.02, `it hangs frozen through the fade-in (${travel.toFixed(3)})`);
+  assert.ok(boundary !== null && boundary <= 0.15, `jumped ${boundary?.toFixed(2)} into the dissolve`);
 });
 // A warden against a wall summons into open floor, never into the wall (where the bot would chase
 // a foe it can never reach).

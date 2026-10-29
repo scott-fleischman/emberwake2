@@ -166,11 +166,28 @@ export const WARDENS = {
     ],
     taunt: { voice: 'unkindled', lines: ['Three. The last shard sleeps beneath the drowning water.', 'We are the same fire, you and I. Come home to the Spire.'] },
   },
+  tide: {
+    title: 'The Tidewarden', sub: 'Singer of the Drowned Fane', color: '#90e4f0',
+    narration: 'It sang the tides in and out. Now it sings only of drowning.',
+    omen: 'Water seeps up between the stones. Somewhere below, something is singing.',
+    rise: 'The floor gives way to the deep, and the Tidewarden surges up!',
+    rgb: '90,200,220',
+    voice: 'IN... OUT... I HAVE FORGOTTEN THE SONG. THE COLD ONE SINGS IT NOW. SINK. SINK WITH ME.',
+    hint: 'Step off the ripple before it bursts up. When it surfaces, it is dazed: strike then.',
+    spirit: { kind: 'whale', name: 'The Tide Spirit', color: '#a0e8ff' },
+    lines: [
+      'The water is quiet... I can hear the tide again.',
+      'I sang the sea in and out, a lullaby for the whole coast. When the Hearth dimmed, a cold voice took my song and sang it backward, and the water forgot where to go.',
+      'You carry all four shards now, and still they do not burn you. Every socket on the Spire\'s door is lit. He is waiting behind it.',
+      'Go up, little flame. Sing him the song he never learned: that fire shared is warmer than fire kept.',
+    ],
+    taunt: { voice: 'unkindled', lines: ['Four. Every socket burns, and the door stands open.', 'Climb, little ember. I have waited a thousand years to be warm.'] },
+  },
 };
 
 // A quake with the arena empty, the warden's entrance, a roaring close-up, its name slamming
 // down, then its voice and a tip. About twelve seconds; Esc twice skips.
-const IMPACT = { thornmaw: 0.62, cinder: 0.98, rime: 1.58 }; // when each entrance lands (s)
+const IMPACT = { thornmaw: 0.62, cinder: 0.98, rime: 1.58, tide: 0.86 }; // when each entrance lands (s)
 export function bossIntroShots(kind) {
   const w = WARDENS[kind];
   if (!w) return [];

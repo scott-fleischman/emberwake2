@@ -14,7 +14,7 @@ import { CLASS_ORDER, CLASSES } from '../data/classes.js';
 
 const AW = 28, AH = 16;
 const ARCH = ['brute', 'lunger', 'skirmisher', 'ranged'];
-const BOSSES = ['thornmaw', 'cinder', 'rime'];
+const BOSSES = ['thornmaw', 'cinder', 'rime', 'tide'];
 
 export class ArenaArea extends Area {
   constructor(game) {
@@ -118,7 +118,7 @@ export class ArenaScene extends GameScene {
       if (input.keyPressed('Digit5')) { for (const a of ['brute', 'lunger', 'ranged', 'skirmisher']) this.spawn(a); this.log('Spawned a mixed squad'); }
       if (input.keyPressed('Digit6')) {
         if (!this.area.boss || this.area.boss.dead) {
-          const kind = BOSSES[this.bossIdx++ % 3];
+          const kind = BOSSES[this.bossIdx++ % BOSSES.length];
           const b = createBoss(kind, AW * 8, AH * 8 - 30, this.diff.enemyHp);
           this.track(b);
           this.area.boss = b;

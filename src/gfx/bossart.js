@@ -1,4 +1,4 @@
-// Boss art shared by every warden. Painters (one file each: art-thornmaw.js, art-cinder.js,
+// Boss art shared by every warden. Painters (one file each: art-thornmaw.js, art-cinder.js, art-tide.js,
 // art-rime.js) draw around the boss's feet (0,0) in the boss's view (side, facing right; front;
 // back) and read pose fields off the boss (view, state, phase, anim, timer, roarT, phaseT, cdx/cdy,
 // mvx); each takes a palette, so another body can wear its look. stamp() runs them through an
@@ -19,8 +19,8 @@ const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 export const mix = (a, b, k) => { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], clamp01(k)))).join(',')})`; };
 export const roarK = (b) => (b.roarT > 0 ? Math.min(1, b.roarT / 0.25) : 0);
 
-// Roar / burst colors: red for the Grove, orange for the Ash, blue for the Rime.
-export const BOSS_RGB = { thornmaw: '255,70,60', cinder: '255,150,40', rime: '120,200,255' };
+// Roar / burst colors: red for the Grove, orange for the Ash, blue for the Rime, sea-green for the Tide.
+export const BOSS_RGB = { thornmaw: '255,70,60', cinder: '255,150,40', rime: '120,200,255', tide: '90,200,220' };
 
 export function glow(g, x, y, r, rgb, a = 0.6) {
   if (!(r > 0) || a <= 0) return;
@@ -154,10 +154,11 @@ export function quakeDebris(g, t, q = 1) {
 export function drawEntrance(g, kind, x, y, p, t) {
   if (kind === 'thornmaw') riseFx(g, x, y, p, t);
   else if (kind === 'cinder') igniteFx(g, x, y, p, t);
+  else if (kind === 'tide') surgeFx(g, x, y, p, t);
   else descendFx(g, x, y, p, t);
 }
 
-// What stirs before a warden shows itself: twitching roots, rising embers, creeping frost.
+// What stirs before a warden shows itself: twitching roots, rising embers, creeping frost, seeping water.
 export function drawOmen(g, kind, x, y, t) {
   const k = clamp01(t / 1.4);
   if (kind === 'thornmaw') {
@@ -176,6 +177,21 @@ export function drawOmen(g, kind, x, y, t) {
       g.fillRect(Math.round(x + (hash(i, 3) - 0.5) * 110), Math.round(y + 10 - hash(i, 4) * 20 - q * 34), 1, 1 + (i % 4 === 0));
     }
     g.globalAlpha = 1;
+  } else if (kind === 'tide') {
+    for (let i = 0; i < 7; i++) { // puddles welling up between the stones, joining as it nears
+      const a = (i / 7) * TAU + hash(i, 1), r = (12 + hash(i, 2) * 30) * (1 - k * 0.6), s = 3 + k * (6 + hash(i, 3) * 6);
+      g.fillStyle = `rgba(16,50,68,${0.3 + 0.5 * k})`; g.beginPath(); g.ellipse(x + Math.cos(a) * r, y + 6 + Math.sin(a) * r * 0.4, s, s * 0.35, 0, 0, TAU); g.fill();
+    }
+    g.fillStyle = `rgba(16,50,68,${0.7 * k})`; g.beginPath(); g.ellipse(x, y + 6, 4 + k * 22, 1.5 + k * 7, 0, 0, TAU); g.fill();
+    g.strokeStyle = `rgba(160,230,245,${0.5 * k})`; g.lineWidth = 1;
+    for (let i = 0; i < 3; i++) { const q = (t * 0.8 + i / 3) % 1, r = 6 + q * 34 * k; g.beginPath(); g.ellipse(x, y + 6, r, r * 0.35, 0, 0, TAU); g.stroke(); }
+    for (let i = 0; i < 16; i++) { // bubbles breaking the surface
+      const q = (t * 0.9 + hash(i, 4)) % 1;
+      g.globalAlpha = Math.sin(q * Math.PI) * k; g.fillStyle = '#c8f4ff';
+      g.fillRect(Math.round(x + (hash(i, 5) - 0.5) * 50), Math.round(y + 6 + (hash(i, 6) - 0.5) * 14 - q * 10), 1, 1);
+    }
+    g.globalAlpha = 1;
+    glow(g, x, y + 6, 24 + k * 20, '90,200,220', 0.12 + 0.08 * Math.abs(Math.sin(t * 3)));
   } else {
     g.fillStyle = `rgba(210,240,255,${0.18 * k})`; g.beginPath(); g.ellipse(x, y + 4, 20 + k * 40, 8 + k * 14, 0, 0, TAU); g.fill();
     g.strokeStyle = `rgba(235,250,255,${0.6 * k})`; g.lineWidth = 1;
@@ -279,6 +295,45 @@ function descendFx(g, x, y, p, t) {
   if (fl > 0) { g.fillStyle = `rgba(230,248,255,${fl * 0.6})`; g.fillRect(0, 0, 480, 270); }
 }
 
+// The floor floods dark round the spot and wheels; a geyser bursts up out of it, the serpent rising in
+// its column, the spray raining back down and waves rolling out across the flood.
+function surgeFx(g, x, y, p, t) {
+  const fl = easeOut(p / 0.38), R = 18 + fl * 56;
+  g.fillStyle = `rgba(16,50,68,${0.8 * fl})`; g.beginPath(); g.ellipse(x, y + 4, R, R * 0.34, 0, 0, TAU); g.fill();
+  g.strokeStyle = `rgba(80,160,180,${0.7 * fl})`; g.lineWidth = 1; g.beginPath(); g.ellipse(x, y + 4, R, R * 0.34, 0, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
+  for (let arm = 0; arm < 4; arm++) { // the flood wheeling in to where it will break
+    const fade = fl * (1 - clamp01((p - 0.45) / 0.2));
+    if (fade <= 0) break;
+    g.strokeStyle = `rgba(${arm % 2 ? '80,160,180' : '232,250,255'},${0.6 * fade})`; g.beginPath();
+    for (let i = 0; i <= 12; i++) { const q = i / 12, a = arm * (TAU / 4) - t * 4 + q * 3.2, r = R * (0.95 - q * 0.85); const px = x + Math.cos(a) * r, py = y + 4 + Math.sin(a) * r * 0.34; if (i) g.lineTo(px, py); else g.moveTo(px, py); }
+    g.stroke();
+  }
+  const burst = clamp01((p - 0.4) / 0.08) * (1 - clamp01((p - 0.62) / 0.25));
+  if (burst > 0) { // the geyser
+    const h = 120 * easeOut(clamp01((p - 0.4) / 0.12));
+    glow(g, x, y - h * 0.5, 40 + h * 0.3, '150,230,250', 0.4 * burst);
+    for (const [w, col] of [[30, '40,120,150'], [22, '120,210,235'], [10, '232,250,255']]) {
+      g.fillStyle = `rgba(${col},${0.85 * burst})`; g.beginPath();
+      g.moveTo(x - w * 0.7, y + 4); g.quadraticCurveTo(x - w * 0.4, y - h * 0.5, x - w * 0.25 + Math.sin(t * 20) * 2, y - h); g.lineTo(x + w * 0.25 + Math.sin(t * 23) * 2, y - h); g.quadraticCurveTo(x + w * 0.4, y - h * 0.5, x + w * 0.7, y + 4); g.closePath(); g.fill();
+    }
+  }
+  const sec = (p - 0.42) * 2;
+  if (sec > 0) for (let i = 0; i < 40; i++) { // spray thrown up and raining back
+    const a = -Math.PI / 2 + (hash(i, 8) - 0.5) * 2.2, v = 70 + hash(i, 9) * 110, px = x + Math.cos(a) * v * sec, py = y - 30 + Math.sin(a) * v * sec + 160 * sec * sec;
+    if (py > y + 8) continue;
+    g.fillStyle = hash(i, 10) < 0.5 ? '#e8faff' : '#78cce0'; g.fillRect(Math.round(px), Math.round(py), 1 + (i % 3 === 0), 2);
+  }
+  const wv = clamp01((p - 0.45) / 0.55);
+  for (let k = 0; k < 3; k++) { // waves rolling out across the flood
+    const q = wv - k * 0.18;
+    if (q <= 0 || q >= 1) continue;
+    const r = 20 + q * 120;
+    g.strokeStyle = `rgba(232,250,255,${(1 - q) * 0.8})`; g.lineWidth = 1 + (1 - q) * 2; g.beginPath(); g.ellipse(x, y + 4, r, r * 0.34, 0, 0, TAU); g.stroke();
+  }
+  const fl2 = Math.max(0, 1 - Math.abs(p - 0.44) / 0.06);
+  if (fl2 > 0) { g.fillStyle = `rgba(220,248,255,${fl2 * 0.6})`; g.fillRect(0, 0, 480, 270); }
+}
+
 // How a warden's body is placed during its entrance: {sink, ground} for rising out of the
 // floor, {dy, alpha} for igniting or descending, or null when it should not be drawn yet.
 export function entranceOffset(c) {
@@ -286,6 +341,7 @@ export function entranceOffset(c) {
   if (c.hidden) return null;
   if (c.kind === 'thornmaw') return { sink: (1 - easeOut((c.p - 0.32) / 0.4)) * 76, ground: 9 };
   if (c.kind === 'cinder') return { alpha: clamp01((c.p - 0.48) / 0.2) };
+  if (c.kind === 'tide') return { sink: (1 - easeOut((c.p - 0.42) / 0.33)) * 110, ground: 1 };
   return { dy: -(1 - easeOut((c.p - 0.22) / 0.52)) * 140, alpha: clamp01((c.p - 0.18) / 0.25) };
 }
 
@@ -299,3 +355,4 @@ export const portraitPose = (kind, t) => ({ kind, anim: t, state: 'intro', phase
 export { THORN_PAL, thornPose, paintThornmaw, thornUnder, thornOver } from './art-thornmaw.js';
 export { CINDER_PAL, cinderHover, ventOpen, cinderHands, paintCinder, fxCinder, emberSwirl } from './art-cinder.js';
 export { RIME_PAL, rimeHover, rimePose, paintRime, rimeUnder, rimeOver } from './art-rime.js';
+export { TIDE_PAL, tidePose, paintTide, tideOver } from './art-tide.js';

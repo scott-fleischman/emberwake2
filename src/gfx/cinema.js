@@ -7,6 +7,7 @@ import { portraitPose, drawLights } from './bossart.js';
 import { paintThornmaw } from './art-thornmaw.js';
 import { paintCinder, fxCinder } from './art-cinder.js';
 import { paintRime, rimeUnder, rimeOver } from './art-rime.js';
+import { paintTide, tideOver } from './art-tide.js';
 
 const W = 480, H = 270;
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -531,6 +532,25 @@ export const ART = {
     }
     vignette(g, 0.7, '0,8,24');
   },
+
+  portrait_tide(g, t) {
+    sky(g, ['#010a10', '#05283a', '#0a4458']);
+    for (let k = 0; k < 6; k++) { // light falling through the water from far above
+      const x = 30 + k * 82 + Math.sin(t * 0.7 + k) * 10, w = 16 + hash(k, 1) * 24;
+      g.fillStyle = `rgba(150,230,250,${0.05 + 0.03 * Math.sin(t * 1.3 + k * 2)})`;
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x + w, 0); g.lineTo(x + w * 2.4 - 60, H); g.lineTo(x + w * 0.6 - 60, H); g.closePath(); g.fill();
+    }
+    burstLines(g, 240, 100, t, '120,230,250', 0.05);
+    g.fillStyle = 'rgba(4,24,34,0.85)'; g.beginPath(); g.ellipse(240, 236, 170, 36, 0, 0, Math.PI * 2); g.fill();
+    const pose = portraitPose('tide', t), S = 2.9 + easeOut(t / 2) * 0.2;
+    glow(g, 240, 110, 120, '90,200,220', 0.22 + 0.1 * Math.abs(Math.sin(t * 9)));
+    bigBoss(g, paintTide, pose, 240, 234, S, false, (gg) => tideOver(gg, pose, 0, 0));
+    for (let i = 0; i < 40; i++) { // bubbles streaming up
+      const life = 3 + hash(i, 2) * 2, p = ((t + hash(i, 3) * life) % life) / life, x = hash(i, 4) * W + Math.sin(t * 2 + i) * 5, y = H - p * (H + 20);
+      g.strokeStyle = `rgba(200,245,255,${0.6 * (1 - p)})`; g.lineWidth = 1; g.beginPath(); g.arc(x, y, 1 + hash(i, 5) * 2.5, 0, Math.PI * 2); g.stroke();
+    }
+    vignette(g, 0.72, '0,10,16');
+  },
 };
 
 export const ART_IDS = Object.keys(ART);
@@ -539,7 +559,7 @@ export const ART_IDS = Object.keys(ART);
 // Glowing true forms that rise from a defeated warden. Drawn at 1x on the pixel canvas.
 export function drawSpirit(g, kind, x, y, t, alpha = 1) {
   if (alpha <= 0) return;
-  const col = { stag: '168,240,138', phoenix: '255,176,112', owl: '208,244,255' }[kind] || '255,230,180';
+  const col = { stag: '168,240,138', phoenix: '255,176,112', owl: '208,244,255', whale: '160,232,255' }[kind] || '255,230,180';
   const bob = Math.sin(t * 2) * 2;
   y += bob;
   glow(g, x, y, 34, col, 0.55 * alpha);
@@ -562,6 +582,17 @@ export function drawSpirit(g, kind, x, y, t, alpha = 1) {
     for (const s of [-1, 1]) { g.beginPath(); g.moveTo(x + s * 3, y - 3); g.lineTo(x + s * 22, y - 10 - flap); g.lineTo(x + s * 16, y + 2); g.closePath(); g.fill(); }
     R(g, x - 2, y - 13, 5, 5, c); R(g, x + 2, y - 11, 3, 1, '#ffe0a0');
     for (let k = 0; k < 3; k++) R(g, x - 3 + k * 2 + Math.sin(t * 6 + k) * 1.5, y + 7, 1, 8 + k * 2, hi);
+  } else if (kind === 'whale') { // a great whale swimming the air, its flukes beating, spouting
+    const sw = Math.sin(t * 2.4) * 2;
+    g.beginPath(); g.moveTo(x + 15, y - 1); g.quadraticCurveTo(x + 14, y - 8, x + 3, y - 8); g.quadraticCurveTo(x - 9, y - 8, x - 15, y - 2 + sw * 0.4);
+    g.quadraticCurveTo(x - 7, y + 5, x + 6, y + 5); g.quadraticCurveTo(x + 15, y + 4, x + 15, y - 1); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(x - 14, y - 2 + sw * 0.4); g.lineTo(x - 21, y - 7 + sw); g.lineTo(x - 19, y - 2 + sw); g.lineTo(x - 21, y + 3 + sw); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(x + 4, y + 3); g.lineTo(x - 1, y + 9 + sw * 0.3); g.lineTo(x - 3, y + 6); g.closePath(); g.fill();
+    g.strokeStyle = hi; g.lineWidth = 1; g.beginPath();
+    for (const dy of [2, 4]) { g.moveTo(x + 12, y + dy - 1); g.quadraticCurveTo(x + 4, y + dy + 1.5, x - 4, y + dy); }
+    g.stroke();
+    R(g, x + 9, y - 2, 1, 1, '#203040');
+    for (let k = 0; k < 3; k++) { const q = (t * 1.2 + k / 3) % 1; g.globalAlpha = alpha * (1 - q); R(g, x + 5 + (k - 1) * 3 * q, y - 10 - q * 9, 1, 2, hi); }
   } else {
     g.beginPath(); g.ellipse(x, y, 9, 11, 0, 0, Math.PI * 2); g.fill();
     for (const s of [-1, 1]) { R(g, x + s * 5 - 1, y - 12, 3, 4, c); g.fillStyle = hi; g.beginPath(); g.arc(x + s * 4, y - 4, 3, 0, Math.PI * 2); g.fill(); R(g, x + s * 4, y - 4, 1, 1, '#203040'); g.fillStyle = c; }

@@ -9,9 +9,11 @@ import { BOSS_RGB, stamp, roarRings, deathRays, entranceOffset } from '../gfx/bo
 import { paintThornmaw, thornUnder, thornOver } from '../gfx/art-thornmaw.js';
 import { paintCinder, fxCinder, emberSwirl, drawMeteors } from '../gfx/art-cinder.js';
 import { paintRime, rimeUnder, rimeOver, drawGust, drawFrostMarks } from '../gfx/art-rime.js';
+import { paintTide, tideOver, tidePose, tidePal } from '../gfx/art-tide.js';
 import { moves as thornmaw } from './warden-thornmaw.js';
 import { moves as cinder } from './warden-cinder.js';
 import { moves as rime } from './warden-rime.js';
+import { moves as tide } from './warden-tide.js';
 import { TAU } from '../core/math.js';
 
 // view: the way it faces until it first moves, the way its entrance and portrait show it.
@@ -19,6 +21,7 @@ export const BOSS_INFO = {
   thornmaw: { name: 'Thornmaw, Warden of the Grove', hp: 120, music: 'boss', view: 'side' },
   cinder: { name: 'The Cinder Warden', hp: 144, music: 'boss', view: 'front' },
   rime: { name: 'Rime Sovereign', hp: 168, music: 'boss', view: 'front' },
+  tide: { name: 'The Tidewarden', hp: 180, music: 'boss', view: 'front' },
 };
 export const DIE = 1.6; // seconds a warden takes to dematerialize
 const TRANSFORM = 1.5; // seconds the change into phase 2 takes, unhurtable
@@ -33,7 +36,7 @@ const TRANSFORM = 1.5; // seconds the change into phase 2 takes, unhurtable
 //   init?(b)         sets every field the handlers read, so a body can start at `first`
 //   enter2(b, ctx)   on reaching phase 2;  clear(b, ctx)  once, when it dies: undo what it left
 // }
-export const WARDEN_MOVES = { thornmaw, cinder, rime };
+export const WARDEN_MOVES = { thornmaw, cinder, rime, tide };
 
 // Which way a boss shows itself, from where it is going: 'side', 'front' (down the screen) or
 // 'back'. Slow, or on a diagonal, it keeps the view it had, so it doesn't flicker.
@@ -260,8 +263,22 @@ class RimeSovereign extends Boss {
   }
 }
 
+// The Tidewarden: water jets, a tail sweep, dives that burst up under the player; the Wail, a tidal
+// wave, a whirlpool, song rings. Its pool and what it puts on the floor are drawn under everything.
+class Tidewarden extends Boss {
+  constructor(x, y, hpMult) { super('tide', x, y, hpMult); this.w = 22; this.h = 14; }
+  draw(g, cam) {
+    const pal = tidePal(this), dry = 1 - tidePose(this).sink;
+    this.drawBoss(g, cam, (b, L) => paintTide(b, this, L, pal), {
+      shadow: [2, 24 * dry, 5 * dry],
+      over: (gg, x, y, a) => tideOver(gg, this, x, y, a, 1, pal),
+    });
+  }
+}
+
 export function createBoss(kind, x, y, hpMult = 1) {
   if (kind === 'thornmaw') return new Thornmaw(x, y, hpMult);
   if (kind === 'cinder') return new CinderWarden(x, y, hpMult);
+  if (kind === 'tide') return new Tidewarden(x, y, hpMult);
   return new RimeSovereign(x, y, hpMult);
 }

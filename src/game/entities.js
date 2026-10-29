@@ -166,10 +166,11 @@ const PROJ_STYLE = {
   arrow: { w: 4, h: 4 }, knife: { w: 4, h: 4 }, firebolt: { w: 6, h: 6 },
   shot: { w: 5, h: 5 }, thorn: { w: 5, h: 5 }, ember: { w: 6, h: 6 }, ice: { w: 5, h: 5 },
   vine: { w: 4, h: 4 }, mud: { w: 7, h: 7 }, poison: { w: 6, h: 6 }, sand: { w: 6, h: 6 }, seed: { w: 5, h: 5 },
-  boulder: { w: 10, h: 10 }, snowball: { w: 12, h: 12 }, fireball: { w: 8, h: 8 },
+  boulder: { w: 10, h: 10 }, snowball: { w: 12, h: 12 }, fireball: { w: 8, h: 8 }, water: { w: 6, h: 6 },
 };
 
 const ROLL_DUST = { boulder: ['#8a8278', '#5a544c'], snowball: ['#ffffff', '#c8dcf0'] };
+const DROP = 0.25;
 
 export class Projectile extends Entity {
   constructor(kind, x, y, angle, speed, dmg, team, opts = {}) {
@@ -179,6 +180,8 @@ export class Projectile extends Entity {
     this.dmg = dmg; this.team = team; this.life = opts.life ?? 1.6; this.pierce = opts.pierce ?? 0;
     this.hitSet = new Set(); this.t = 0; this.reflected = false;
     this.effect = opts.effect || null; // a status effect it carries onto the player, on a hit only
+    this.rgb = opts.rgb || null; // a jet of water takes its warden's colour
+    this.drop = opts.drop || 0; // spat from this high, it falls to the floor over its first DROP seconds
     // opts.lob: seconds of flight in an arc that comes down at the aim point, calling opts.land. It
     // leaves from opts.height above the ground (a hand's height) and peaks opts.arc above that line.
     this.lob = opts.lob || 0; this.land = opts.land || null;
@@ -216,7 +219,7 @@ export class Projectile extends Entity {
     const solid = flyingSolid(ctx.map);
     if (solid(Math.floor(nx / TILE), Math.floor(ny / TILE))) {
       this.dead = true;
-      ctx.area.spawn(new Particles(this.x, this.y, { count: 5, color: this.kind === 'firebolt' || this.kind === 'ember' ? '#ffa040' : '#d0d0d0', speed: 50, life: 0.25 }));
+      ctx.area.spawn(new Particles(this.x, this.y, { count: 5, color: this.kind === 'firebolt' || this.kind === 'ember' ? '#ffa040' : this.kind === 'water' ? `rgb(${this.rgb || '140,224,244'})` : '#d0d0d0', speed: 50, life: 0.25 }));
       ctx.area.onProjectileWall?.(this, Math.floor(nx / TILE), Math.floor(ny / TILE));
       return;
     }
@@ -267,7 +270,7 @@ export class Projectile extends Entity {
       return;
     }
     g.save();
-    g.translate(Math.round(x), Math.round(y));
+    g.translate(Math.round(x), Math.round(y - this.drop * Math.max(0, 1 - this.t / DROP) ** 2));
     g.rotate(this.angle);
     switch (this.kind) {
       case 'arrow': R(g, -6, -0.5, 10, 1, '#d8c8a0'); R(g, 3, -1.5, 3, 3, '#e0e0e0'); R(g, -7, -1.5, 2, 3, '#c04040'); break;
@@ -282,6 +285,14 @@ export class Projectile extends Entity {
       case 'ice':
         if (this.effect) { g.fillStyle = 'rgba(140,208,255,0.45)'; g.beginPath(); g.arc(1, 0, 5, 0, TAU); g.fill(); } // a frost arrow's glow
         g.fillStyle = '#c8f0ff'; g.beginPath(); g.moveTo(6, 0); g.lineTo(-3, -2.5); g.lineTo(-3, 2.5); g.closePath(); g.fill(); R(g, -1, -1, 3, 1, '#fff'); break;
+      case 'water': { // a gout of water, its spray trailing behind
+        const c = this.rgb || '140,224,244';
+        g.fillStyle = `rgba(${c},0.35)`; g.beginPath(); g.ellipse(-2, 0, 7, 4, 0, 0, TAU); g.fill();
+        R(g, -9, -1, 4, 1, `rgba(${c},0.6)`); R(g, -12, 1, 2, 1, `rgba(${c},0.45)`);
+        g.fillStyle = `rgb(${c})`; g.beginPath(); g.ellipse(0, 0, 4, 2.6, 0, 0, TAU); g.fill();
+        R(g, 0, -1, 2, 1, '#ffffff');
+        break;
+      }
       case 'vine': R(g, -6, -0.5, 10, 1, '#5a7a30'); R(g, 3, -1.5, 3, 3, '#8ac050'); R(g, -2, -2, 2, 1, '#7ab048'); R(g, 0, 1, 2, 1, '#7ab048'); R(g, -7, -1.5, 2, 3, '#4a6a2a'); break;
       default:
         g.fillStyle = this.team === 'player' ? '#a0e0ff' : '#ff5a6a';

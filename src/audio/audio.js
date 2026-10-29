@@ -490,6 +490,75 @@ const SFX = {
     a.noise(t + 1.6, { dur: 0.6, vol: 0.1, f: 5000, f2: 900, q: 1.5, attack: 0.4 });
     a.tone(t + 1.7, { type: 'triangle', f: 500, f2: 1500, dur: 0.6, vol: 0.04, attack: 0.3 });
   },
+  tide_roar: (a, t) => { // a deep bellow rolling up out of the water, bubbling through it, a long moan off the end
+    a.tone(t, { type: 'sawtooth', f: 58, f2: 84, dur: 0.9, vol: 0.13, lp: 380, lp2: 1100, attack: 0.1 });
+    a.tone(t, { type: 'sawtooth', f: 60, f2: 80, dur: 0.9, vol: 0.08, lp: 340, lp2: 900, attack: 0.1, detune: 22 });
+    a.noise(t, { dur: 0.8, vol: 0.12, type: 'lowpass', f: 300, f2: 1400, attack: 0.12 });
+    [0.1, 0.22, 0.31, 0.45, 0.58].forEach((d, i) => a.tone(t + d, { f: 300 + i * 70, f2: 520 + i * 90, dur: 0.05, vol: 0.05 }));
+    a.tone(t + 0.45, { type: 'triangle', f: 190, f2: 140, dur: 0.8, vol: 0.05, attack: 0.2 });
+  },
+  tide_dive: (a, t) => { // a heavy plunge, the water closing over it, bubbles boiling up after
+    a.noise(t, { dur: 0.35, vol: 0.22, type: 'lowpass', f: 1800, f2: 200, attack: 0.01 });
+    a.tone(t, { f: 160, f2: 50, dur: 0.35, vol: 0.25 });
+    a.tone(t + 0.2, { type: 'triangle', f: 420, f2: 160, dur: 0.25, vol: 0.05 });
+    [0.3, 0.38, 0.47, 0.55, 0.66, 0.74].forEach((d, i) => a.tone(t + d, { f: 600 + (i % 3) * 180, f2: 900 + (i % 3) * 200, dur: 0.04, vol: 0.04 }));
+  },
+  tide_surface: (a, t) => { // bursting up through the water: the roar of the spout, a thud, the spray raining back
+    a.noise(t, { dur: 0.5, vol: 0.3, f: 500, f2: 2600, q: 0.6, attack: 0.01 });
+    a.tone(t, { f: 120, f2: 40, dur: 0.45, vol: 0.35 });
+    a.tone(t + 0.02, { type: 'sawtooth', f: 90, f2: 130, dur: 0.4, vol: 0.07, lp: 700 });
+    a.noise(t + 0.25, { dur: 0.9, vol: 0.12, type: 'highpass', f: 4000, f2: 2200, attack: 0.05 });
+  },
+  tide_jet: (a, t) => { // a gout of water spat under pressure, a wet slap, a gurgle in the throat
+    a.noise(t, { dur: 0.16, vol: 0.18, f: 900, f2: 3200, q: 1.4, attack: 0.01 });
+    a.tone(t, { f: 260, f2: 120, dur: 0.1, vol: 0.12 });
+    a.tone(t + 0.05, { f: 340, f2: 480, dur: 0.08, vol: 0.04 });
+  },
+  tide_sweep: (a, t) => { // the tail coiling, water churning round it as it rises, then the lash cracking down the room
+    a.noise(t, { dur: 1, vol: 0.09, type: 'lowpass', f: 250, f2: 900, attack: 0.7 });
+    a.tone(t, { type: 'sawtooth', f: 70, f2: 110, dur: 1, vol: 0.04, lp: 400, attack: 0.6 });
+    a.noise(t + 0.9, { dur: 0.12, vol: 0.18, f: 700, f2: 4000, q: 1, attack: 0.05 });
+    a.noise(t + 1, { dur: 0.05, vol: 0.32, type: 'highpass', f: 2200 });
+    a.tone(t + 1, { f: 150, f2: 45, dur: 0.3, vol: 0.3 });
+    a.noise(t + 1.02, { dur: 0.6, vol: 0.14, type: 'lowpass', f: 2400, f2: 500 });
+  },
+  tide_wave: (a, t) => { // the sea drawing back and swelling, then the wave breaking and rolling the length of the room
+    a.noise(t, { dur: 1, vol: 0.14, type: 'lowpass', f: 160, f2: 900, attack: 0.85 });
+    a.tone(t, { type: 'sawtooth', f: 45, f2: 70, dur: 1, vol: 0.06, lp: 260, attack: 0.7 });
+    a.noise(t + 1, { dur: 0.35, vol: 0.3, f: 600, f2: 2800, q: 0.5, attack: 0.02 });
+    a.tone(t + 1, { f: 110, f2: 38, dur: 0.5, vol: 0.32 });
+    a.noise(t + 1.1, { dur: 2.2, vol: 0.16, type: 'lowpass', f: 1500, f2: 500, attack: 0.1 });
+    a.noise(t + 1.1, { dur: 2, vol: 0.06, type: 'highpass', f: 4500, f2: 3000, attack: 0.2 });
+  },
+  tide_whirl: (a, t) => { // water starting to wheel, a low hum under it, the rush rising and falling as it turns
+    a.tone(t, { type: 'sawtooth', f: 55, f2: 62, dur: 3.6, vol: 0.05, lp: 240, attack: 0.5 });
+    [0, 0.6, 1.2, 1.8, 2.4, 3].forEach((d, i) => a.noise(t + d, { dur: 0.8, vol: 0.1, f: i % 2 ? 1100 : 500, f2: i % 2 ? 500 : 1100, q: 2, attack: 0.3 }));
+    a.noise(t + 0.6, { dur: 3, vol: 0.05, type: 'lowpass', f: 400, f2: 300, attack: 0.4 });
+  },
+  tide_song: (a, t) => { // a breath drawn into the throat sac, then three sung notes, one for each ring as it leaves
+    a.noise(t, { dur: 0.6, vol: 0.06, type: 'lowpass', f: 300, f2: 1200, attack: 0.4 });
+    [[0.7, 69], [1.2, 74], [1.7, 66]].forEach(([d, m]) => {
+      a.tone(t + d, { type: 'triangle', f: mtof(m), f2: mtof(m) * 0.98, dur: 0.7, vol: 0.07, attack: 0.04 });
+      a.tone(t + d, { f: mtof(m + 12), dur: 0.5, vol: 0.025, attack: 0.04, detune: 8 });
+      a.noise(t + d, { dur: 0.08, vol: 0.06, type: 'highpass', f: 3000 });
+    });
+  },
+  tide_phase: (a, t) => { // the coral cracking away piece by piece, then its wail rising, drowned and hollow
+    [0.15, 0.32, 0.46, 0.6, 0.72, 0.82, 0.9, 0.97].forEach((d, i) => a.tone(t + d, { type: 'triangle', f: 1500 + (i % 3) * 350, f2: 900, dur: 0.05, vol: 0.04 + i * 0.004 }));
+    a.noise(t, { dur: 1.2, vol: 0.08, type: 'lowpass', f: 300, f2: 1500, attack: 0.9 });
+    a.tone(t + 1, { type: 'sawtooth', f: 220, f2: 520, dur: 1, vol: 0.06, lp: 1400, attack: 0.25 });
+    a.tone(t + 1, { type: 'sawtooth', f: 226, f2: 530, dur: 1, vol: 0.05, lp: 1300, attack: 0.25, detune: 30 });
+    a.noise(t + 1.45, { dur: 0.7, vol: 0.24, f: 500, f2: 2200, q: 0.6, attack: 0.02 });
+    a.tone(t + 1.45, { f: 130, f2: 45, dur: 0.5, vol: 0.3 });
+  },
+  tide_death: (a, t) => { // a long whale's song falling away, the water draining out of the room, one last low note
+    a.tone(t, { type: 'triangle', f: 330, f2: 220, dur: 0.9, vol: 0.07, attack: 0.15 });
+    a.tone(t + 0.7, { type: 'triangle', f: 260, f2: 340, dur: 0.6, vol: 0.06, attack: 0.1 });
+    a.tone(t + 1.2, { type: 'triangle', f: 300, f2: 150, dur: 1.2, vol: 0.06, attack: 0.1 });
+    a.noise(t, { dur: 1.8, vol: 0.1, type: 'lowpass', f: 900, f2: 160, attack: 0.2 });
+    [0.4, 0.75, 1.1, 1.5].forEach((d, i) => a.tone(t + d, { f: 500 - i * 60, f2: 700 - i * 70, dur: 0.05, vol: 0.035 }));
+    a.tone(t + 1.6, { f: mtof(45), dur: 1.4, vol: 0.06, attack: 0.1 });
+  },
   thornmaw_death: (a, t) => { // a long creak sinking into the earth, the roots letting go, the flower wilting
     a.tone(t, { type: 'sawtooth', f: 140, f2: 40, dur: 1.6, vol: 0.12, lp: 700, lp2: 150, attack: 0.05 });
     a.noise(t, { dur: 1.5, vol: 0.12, f: 900, f2: 160, q: 1.4, attack: 0.1 });
