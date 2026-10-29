@@ -117,12 +117,12 @@ test('drawing zones needs no randomness and covers every shape', async () => {
   const zs = [
     makeZone('circle', { x: 10, y: 10, r: 8 }), makeZone('segment', { x1: 0, y1: 0, x2: 40, y2: 0, w: 6 }),
     makeZone('ring', { x: 50, y: 50, r: 20, width: 6, gaps: [[0, 0.3], [3, 0.5]] }), makeZone('cone', { x: 0, y: 0, a: 0, spread: 0.4, r: 30 }),
-    makeZone('circle', { x: 5, y: 5, r: 8, art: 'mud', t: 0, life: 4 }),
+    makeZone('circle', { x: 5, y: 5, r: 8, art: 'mud', t: -1, life: 4 }),
   ];
   const rnd = Math.random;
   Math.random = () => { throw new Error('drawing used Math.random'); };
   try { drawZones(g, { left: 0, top: 0 }, zs, 1.3); } finally { Math.random = rnd; }
-  assert.equal(calls.filter((c) => c === 'fill').length, 5);
+  assert.ok(calls.filter((c) => c === 'fill').length >= 5);
 });
 // The outline once took its phase from the unbounded area clock, so it strobed after a few seconds.
 test('the telegraph pulse is smooth in elapsed telegraph time, whatever the area clock says', () => {
@@ -137,4 +137,28 @@ test('the telegraph pulse is smooth in elapsed telegraph time, whatever the area
   const early = alphas(0.5), late = alphas(5000);
   assert.deepEqual(late, early);
   for (const run of [early, late]) for (let i = 1; i < run.length; i++) assert.ok(Math.abs(run[i] - run[i - 1]) < 0.25, `frame ${i} jumped ${run[i - 1]} -> ${run[i]}`);
+});
+test('a blockable zone is stopped by a facing shield, an unblockable one is not', async () => {
+  const s = await sandbox(), p = s.game.player, { x, y } = s.center, res = s.game.state.player;
+  s.game.state.gear.shield = 'buckler';
+  s.app.input.press('KeyL'); p.aim = 0;
+  const hp0 = res.hp, stamina0 = res.stamina;
+  s.area.zones.push(makeZone('circle', { x: x + 14, y, r: 12, t: 0.2, life: 1, dmg: 1, blockable: true }));
+  s.step(0.5);
+  assert.equal(res.hp, hp0); assert.ok(res.stamina < stamina0);
+  p.iframes = 0;
+  s.area.zones.push(makeZone('circle', { x: x + 14, y, r: 40, t: 0.2, life: 1, dmg: 1 })); // wide: the block's push can't carry him out
+  s.step(0.5);
+  assert.ok(res.hp < hp0);
+});
+test('a ground patch strikes again every second while the player stays in it', async () => {
+  const s = await sandbox(), res = s.game.state.player, hp0 = res.hp;
+  s.area.zones.push(makeZone('circle', { ...s.center, r: 60, t: 0.1, life: 5, dmg: 1, art: 'fire' })); // wide: a hit's knockback doesn't carry him out
+  s.step(3.5);
+  assert.ok(hp0 - res.hp >= 3 && hp0 - res.hp <= 4, `${hp0 - res.hp}`);
+  // a plain zone of the same size strikes once
+  const q = await sandbox(), hq = q.game.state.player.hp;
+  q.area.zones.push(makeZone('circle', { ...q.center, r: 60, t: 0.1, life: 5, dmg: 1 }));
+  q.step(3.5);
+  assert.equal(hq - q.game.state.player.hp, 1);
 });

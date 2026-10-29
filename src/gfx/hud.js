@@ -4,6 +4,7 @@ import { text, panel, setFont, SERIF } from './ui.js';
 import { USE_ITEMS } from '../data/items.js';
 import { T, D } from '../world/tiles.js';
 import { makeCanvas, signBoard, SIGN_ICONS } from './sprites.js';
+import { drawEffectChips } from './effects.js';
 
 export const FOG_CELL = 4;
 
@@ -70,6 +71,7 @@ export function drawHUD(u, game) {
   const by = hearts > 12 ? 19 : 12;
   bar(u, 6, by, 54, 3, p.mana / d.maxMana, UI.mana);
   bar(u, 6, by + 5, 54, 2.5, p.stamina / d.maxStamina, p.stamina < d.dodgeCost ? '#c8a03a' : UI.stamina);
+  drawEffectChips(u, game.player, 6, by + 13);
 
   // Resources
   let rx = 120;

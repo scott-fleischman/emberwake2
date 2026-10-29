@@ -6,6 +6,8 @@ import { WEAPONS, USE_ITEMS, SHIELDS } from '../data/items.js';
 import { TILE, TILE_INFO, T } from '../world/tiles.js';
 import { humanSprite, idleLife, LOOKS, R } from '../gfx/sprites.js';
 import { drawShadow } from '../gfx/render.js';
+import { drawEffectIcons } from '../gfx/effects.js';
+import { EFFECTS, moveMult, blocked, shakeEffects } from './effects.js';
 import { normalize, facingFromVector, TAU } from '../core/math.js';
 
 const SPRINT_MULT = 1.55;
@@ -35,6 +37,8 @@ export class Player extends Actor {
     this.sprinting = false;
     this.charge = 0;
     this.team = 'player';
+    this.effects = {}; // status effects, see effects.js
+    this.controlImmune = 0;
     this.look = LOOKS[game.state.classId];
   }
 
@@ -62,6 +66,14 @@ export class Player extends Actor {
 
     if (this.knockStep(dt, map)) { this.mode = 'normal'; this.checkHazards(dt, ctx); return; }
 
+    // Frozen: nothing works but mashing buttons.
+    if (blocked(this, 'all')) {
+      this.mode = 'normal'; this.moving = this.shielding = this.sprinting = false; this.charge = 0;
+      if (input.justDown.size) this.shake('press');
+      this.checkHazards(dt, ctx);
+      return;
+    }
+
     // Lock-on
     if (this.lock && (this.lock.dead || this.lock.hp <= 0 || Math.hypot(this.lock.x - this.x, this.lock.y - this.y) > 210)) this.lock = null;
     if (input.pressed('lock')) {
@@ -71,7 +83,8 @@ export class Player extends Actor {
 
     let [ax, ay] = input.axis();
     [ax, ay] = normalize(ax, ay);
-    this.moving = ax !== 0 || ay !== 0;
+    const wish = ax !== 0 || ay !== 0;
+    this.moving = wish && !blocked(this, 'move'); // a snared player can still turn
     const hasShield = !!game.state.gear.shield;
     this.shielding = hasShield && input.held('shield') && this.mode !== 'dodge';
     this.sprinting = input.held('sprint') && this.moving && res.stamina > 1 && !this.shielding && this.mode === 'normal';
@@ -79,7 +92,7 @@ export class Player extends Actor {
     if (this.lock) {
       this.aim = Math.atan2(this.lock.y - this.y, this.lock.x - this.x);
       this.facing = facingFromVector(Math.cos(this.aim), Math.sin(this.aim));
-    } else if (this.moving && !this.shielding && this.mode !== 'attack') {
+    } else if (wish && !this.shielding && this.mode !== 'attack') {
       this.aim = Math.atan2(ay, ax);
       this.facing = facingFromVector(ax, ay, this.facing);
     }
@@ -93,7 +106,7 @@ export class Player extends Actor {
       return;
     }
 
-    let speed = d.speed * (TILE_INFO[map.tileAtPixel(this.x, this.y + 2)]?.slow ?? 1);
+    let speed = d.speed * (TILE_INFO[map.tileAtPixel(this.x, this.y + 2)]?.slow ?? 1) * moveMult(this);
     if (this.sprinting) { speed *= SPRINT_MULT; res.stamina = Math.max(0, res.stamina - 24 * dt); this.staminaDelay = 0.6; }
     if (this.shielding) { speed *= 0.5; this.staminaDelay = Math.max(this.staminaDelay, 0.3); }
     if (this.mode === 'attack' || this.mode === 'spin') speed *= 0.35;
@@ -127,6 +140,7 @@ export class Player extends Actor {
       this.swingHit = false;
       this.swingDir *= -1;
       game.audio.sfx('swing', { pitch: w.kind === 'stab' ? 1.3 : w.kind === 'bash' ? 0.8 : 1 });
+      this.shake('attack');
     }
 
     // Charged spin: keep holding attack after a swing; let go once the blade glows.
@@ -148,6 +162,7 @@ export class Player extends Actor {
         this.cool = 0.3;
         game.audio.sfx('swing', { pitch: 0.7 });
         game.audio.sfx('dash', { pitch: 1.3 });
+        this.shake('attack');
       }
       this.charge = 0;
     }
@@ -164,8 +179,15 @@ export class Player extends Actor {
     this.checkHazards(dt, ctx);
   }
 
+  // Asks the status effects whether this action shakes any off; a snare or freeze breaking rings out.
+  shake(action) {
+    const gone = shakeEffects(this, action);
+    if (gone.some((k) => EFFECTS[k].control)) this.game.audio.sfx('fx_break', { pitch: gone.includes('freeze') ? 1 : 0.6 });
+  }
+
   tryDodge(ax, ay, ctx) {
     const res = this.res, d = this.game.derived;
+    if (blocked(this, 'roll')) { this.game.audio.sfx('deny'); return; }
     if (res.stamina < d.dodgeCost) { this.game.audio.sfx('deny'); return; }
     res.stamina -= d.dodgeCost;
     this.staminaDelay = 0.7;
@@ -176,6 +198,7 @@ export class Player extends Actor {
     this.iframes = Math.max(this.iframes, 0.24 + (d.shadow ? 0.12 : 0));
     this.game.audio.sfx('dash');
     ctx.area.spawn(new Particles(this.x, this.y + 4, { count: 6, color: '#d8d0c0', speed: 30, life: 0.35, layer: -1 }));
+    this.shake('roll');
   }
 
   useItem(ctx) {
@@ -212,6 +235,7 @@ export class Player extends Actor {
     if (res.hp >= d.maxHp && this.regenPool <= 0) { this.game.toast('You are not hungry.'); return; }
     res.food--;
     this.regenPool += d.foodHeal;
+    this.shake('eat');
     this.game.audio.sfx('eat');
     this.game.toast(`Ate a ration (+${d.foodHeal / 2} hearts over time).`);
   }
@@ -254,9 +278,14 @@ export class Player extends Actor {
   }
 
   draw(g, cam) {
-    const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
     if (this.mode === 'dead') return;
-    if (this.iframes > 0 && this.mode !== 'dodge' && Math.floor(this.iframes * 20) % 2 === 0) return;
+    // The hit flicker hides the body but not the icons: they're how you read what's wrong.
+    if (!(this.iframes > 0 && this.mode !== 'dodge' && Math.floor(this.iframes * 20) % 2 === 0)) this.drawBody(g, cam);
+    drawEffectIcons(g, this, cam, this.game.time ?? this.anim);
+  }
+
+  drawBody(g, cam) {
+    const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
     drawShadow(g, x, y + 4, 5, 2);
     const frame = this.moving ? Math.floor(this.anim * (this.sprinting ? 12 : 8)) % 4 : 0;
     const idle = !this.moving && this.mode === 'normal' && !this.shielding && this.shootT <= 0 && this.charge <= 0.15;

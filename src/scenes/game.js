@@ -4,6 +4,7 @@ import { TILE } from '../world/tiles.js';
 import { derivedStats, decodeBits, encodeBits, applyDeathPenalty, DIFFICULTY } from '../game/state.js';
 import { generateSideQuests, advanceMain, mainObjective, sideObjective, sideStatus, recordKill, reveal, trackedObjective, trackableQuests, cycleTracked, questTitle } from '../game/quests.js';
 import { Player } from '../game/player.js';
+import * as fx from '../game/effects.js';
 import { OverworldArea, InteriorArea, CaveArea } from '../game/areas.js';
 import { DungeonArea } from '../game/dungeon.js';
 import { Poof, Particles, FloatText } from '../game/entities.js';
@@ -13,6 +14,8 @@ import { conversation, shopMenu, shrineMenu, talentMenu, chestReward, cacheRewar
 import { SHIELDS, WEAPONS, USE_ITEMS, ARTIFACTS } from '../data/items.js';
 import { CLASSES } from '../data/classes.js';
 import { Camera } from '../gfx/render.js';
+import { drawBlind } from '../gfx/effects.js';
+import { approach } from '../core/math.js';
 import { Dialog, Menu, text, panel, setFont } from '../gfx/ui.js';
 import { FAMILIES } from '../data/enemies.js';
 import { drawHUD, drawMinimap, drawWorldMap, drawOverworldMinimap, FOG_CELL } from '../gfx/hud.js';
@@ -58,6 +61,7 @@ export class GameScene {
     this.hitstop = 0;
     this.fade = 1;
     this.deathT = 0;
+    this.blindK = 0; // how far the blind vignette has closed, 0 to 1
     this.fogW = Math.ceil(this.world.w / FOG_CELL);
     this.fogH = Math.ceil(this.world.h / FOG_CELL);
     this.fog = decodeBits(state.progress.fog, this.fogW * this.fogH);
@@ -109,6 +113,7 @@ export class GameScene {
     this.player.lock = null;
     this.player.mode = this.player.mode === 'dead' ? 'dead' : 'normal';
     this.player.kbT = 0;
+    this.clearEffects();
   }
 
   placePlayer(x, y, facing = 'down') {
@@ -186,6 +191,7 @@ export class GameScene {
   update(dt) {
     this.time += dt;
     this.state.playTime += dt;
+    this.blindK = approach(this.blindK, this.player.effects.blind ? 1 : 0, dt * 3);
     for (const t of this.toasts) t.t -= dt;
     this.toasts = this.toasts.filter((t) => t.t > 0);
     if (this.banner) this.banner.t -= dt;
@@ -209,6 +215,7 @@ export class GameScene {
       if (this.area.interact()) return;
     }
     this.area.update(dt);
+    this.tickEffects(dt);
     const p = this.player;
     if (this.area.kind === 'dungeon') this.cam.follow(ROOM_W * 8, ROOM_H * 8, ROOM_W * TILE, ROOM_H * TILE, dt, true);
     else this.cam.follow(p.x, p.y, this.area.map.pixelW, this.area.map.pixelH, dt);
@@ -223,6 +230,7 @@ export class GameScene {
     g.fillStyle = '#08060a';
     g.fillRect(0, 0, 480, 270);
     this.area.draw(g, this.cam);
+    if (this.blindK > 0) drawBlind(g, this.player, this.cam, this.blindK);
     for (const ui of this.uiStack) if (ui.drawWorld) ui.drawWorld(g, this);
     if (this.fade > 0) { g.fillStyle = `rgba(0,0,0,${Math.min(1, this.fade)})`; g.fillRect(0, 0, 480, 270); }
     if (this.deathT > 0) { g.fillStyle = `rgba(20,0,0,${Math.min(0.7, (2.2 - this.deathT) * 0.5)})`; g.fillRect(0, 0, 480, 270); }
@@ -240,6 +248,7 @@ export class GameScene {
 
   // ---------------------------------------------------------------- cutscenes
   playCutscene(shots, opts = {}) {
+    this.clearEffects();
     return this.pushUI(new Cutscene(shots, { ...opts, ctx: { look: LOOKS[this.state.classId], world: this.world, shake: this.app.options.screenShake } }));
   }
 
@@ -309,13 +318,14 @@ export class GameScene {
   pushUI(c) { this.uiStack.push(c); return c; }
 
   // ---------------------------------------------------------------- combat outcomes
-  // Zones pass opts.effect and opts.knock too; nothing acts on them until status effects land.
+  // opts.effect lands only with a hit that connects: a blocked or dodged blow carries nothing.
+  // opts.unblockable skips the shield; zones set it unless they are blockable. opts.knock is unused so far.
   damagePlayer(dmg, src, opts = {}) {
     const p = this.player, res = this.state.player;
     if (p.mode === 'dead' || this.deathT > 0) return 'ignored';
     if (p.iframes > 0 && !opts.ignoreIframes) return 'ignored';
     const shield = SHIELDS[this.state.gear.shield];
-    if (src && shield && p.shielding && shieldBlocks(p, src.x, src.y, shield.arc)) {
+    if (src && shield && !opts.unblockable && p.shielding && shieldBlocks(p, src.x, src.y, shield.arc)) {
       const cost = dmg * shield.cost * this.derived.blockMult;
       if (res.stamina >= cost) {
         res.stamina -= cost;
@@ -339,15 +349,46 @@ export class GameScene {
     this.audio.sfx('hurt');
     if (this.app.options.screenShake) this.cam.shake(2.5, 0.2);
     this.hitstop = 0.06;
-    if (res.hp <= 0) this.die();
+    if (res.hp <= 0) this.die(); else if (opts.effect) this.applyEffect(opts.effect, src);
     return 'hit';
   }
 
-  // Status effects arrive later; zones already call this for zero-damage hazards.
-  applyEffect(kind, src) {}
+  // ---------------------------------------------------------------- status effects
+  // Zones with no damage call this directly. `src` is whoever dealt it; nothing reads it yet.
+  applyEffect(kind, src) {
+    const p = this.player;
+    if (p.mode === 'dead' || this.deathT > 0) return false;
+    const to = fx.resolve(p, kind), fresh = !p.effects[to];
+    if (!fx.applyEffect(p, kind, { story: this.app.options.difficulty === 'story' })) return false;
+    // A patch re-strikes every second; only the first strike of an effect gets the fanfare.
+    if (fresh) {
+      const def = fx.EFFECTS[to];
+      this.audio.sfx(def.sfx);
+      this.area.spawn(new Particles(p.x, p.y - 6, { count: 8, color: `rgb(${def.rgb})`, speed: 40, life: 0.4 }));
+    }
+    return true;
+  }
+
+  // Damage over time skips invulnerability and knockback: poison alone stops at half a heart, but a
+  // burning player can die.
+  tickEffects(dt) {
+    const p = this.player, res = this.state.player;
+    if (p.mode === 'dead') return;
+    const floor = fx.dotFloor(p), dmg = fx.tickEffects(p, dt);
+    if (dmg <= 0) return;
+    res.hp = Math.min(res.hp, Math.max(floor, res.hp - dmg * this.diff.damageTaken));
+    this.audio.sfx('hurt', { volume: 0.5, pitch: 1.4 });
+    if (res.hp <= 0) this.die();
+  }
+
+  clearEffects() {
+    fx.clearEffects(this.player);
+    this.blindK = 0;
+  }
 
   die() {
     const p = this.player;
+    this.clearEffects();
     p.mode = 'dead';
     this.deathT = 2.2;
     this.area.spawn(new Poof(p.x, p.y - 4, '#ffffff', true));

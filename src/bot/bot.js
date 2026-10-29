@@ -70,7 +70,7 @@ export class Bot {
     this.taps = [];
     this.dt = dt;
     this.time += dt;
-    if (!this.done) this.think();
+    if (!this.done) { this.think(); this.shakeOff(); }
     for (const c of [...inp.down]) if (!this.want.has(c)) inp.release(c);
     for (const c of this.want) if (!inp.down.has(c)) inp.press(c);
     for (const c of this.taps) { inp.press(c); this.pending.push(c); }
@@ -109,6 +109,19 @@ export class Bot {
     const g = this.g, p = g.player, res = g.state.player;
     if (p.lock && this.time - this.lastR > 0.3) { this.tap(K.lock); this.lastR = this.time; }
     if (res.hp < g.derived.maxHp * 0.6 && res.food > 0 && p.regenPool <= 0 && this.time - this.lastEat > 3) { this.tap(K.eat); this.lastEat = this.time; }
+  }
+
+  // Status effects, after the frame's moves are chosen so a roll can go the way we're already heading:
+  // mash out of a freeze, swing out of a snare, roll out of a fire. Poison needs nothing here: the
+  // eat rules in tidyUp and fight already fire below half health and eating cures it.
+  shakeOff() {
+    const g = this.g, p = g.player, res = g.state.player, fx = p.effects;
+    if (g.uiStack.length || g.deathT > 0 || p.mode === 'dead') return;
+    if (fx.freeze || fx.snare) this.tap(K.attack);
+    if (fx.burn && p.mode === 'normal' && !fx.snare && res.stamina >= g.derived.dodgeCost && this.time - this.lastDodge > 0.45) {
+      const ax = (this.want.has(K.right) ? 1 : 0) - (this.want.has(K.left) ? 1 : 0), ay = (this.want.has(K.down) ? 1 : 0) - (this.want.has(K.up) ? 1 : 0);
+      if (this.safeRoll(ax || ay ? [ax, ay] : [Math.cos(p.aim), Math.sin(p.aim)])) { this.tap(K.dodge); this.lastDodge = this.time; }
+    }
   }
 
   // ---------------------------------------------------------------- dialogs, cutscenes, menus

@@ -101,6 +101,7 @@ export class ArenaScene extends GameScene {
 
   die() {
     this.log('You fell — revived.');
+    this.clearEffects();
     const d = this.derived;
     this.state.player.hp = d.maxHp;
     this.player.iframes = 2;

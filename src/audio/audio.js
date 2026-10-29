@@ -286,6 +286,44 @@ const SFX = {
     a.notes(t, [72, 76, 79, 84, 88, 91], 0.065, { type: 'triangle', dur: 0.35, vol: 0.065 });
     [84, 88, 91, 96].forEach((m) => a.tone(t + 0.42, { f: mtof(m), dur: 1.4, vol: 0.035, attack: 0.02 }));
   },
+  // status effects, one voice each
+  fx_snare: (a, t) => { // a wooden creak ending in a snap
+    a.tone(t, { type: 'sawtooth', f: 150, f2: 105, dur: 0.22, vol: 0.07, lp: 700, lp2: 420, q: 4, attack: 0.02 });
+    a.tone(t + 0.12, { type: 'sawtooth', f: 120, f2: 175, dur: 0.18, vol: 0.06, lp: 600, q: 5, attack: 0.02 });
+    a.noise(t, { dur: 0.12, vol: 0.05, f: 900, q: 6 });
+    a.tone(t + 0.28, { type: 'triangle', f: 210, f2: 70, dur: 0.1, vol: 0.2 });
+  },
+  fx_poison: (a, t) => { // bubbles
+    [0, 0.07, 0.17, 0.26].forEach((d, i) => a.tone(t + d, { f: 260 + i * 70, f2: 640 + i * 120, dur: 0.07, vol: 0.09, attack: 0.006 }));
+    a.noise(t, { dur: 0.3, vol: 0.05, type: 'lowpass', f: 500, f2: 250 });
+  },
+  fx_mud: (a, t) => { // a squelch
+    a.noise(t, { dur: 0.28, vol: 0.2, type: 'lowpass', f: 700, f2: 120, q: 3, attack: 0.02 });
+    a.tone(t, { f: 130, f2: 55, dur: 0.22, vol: 0.2 });
+    a.tone(t + 0.12, { f: 200, f2: 90, dur: 0.12, vol: 0.1 });
+  },
+  fx_blind: (a, t) => { // a whoosh that closes in
+    a.noise(t, { dur: 0.45, vol: 0.2, f: 300, f2: 2400, q: 0.8, attack: 0.18 });
+    a.noise(t + 0.2, { dur: 0.3, vol: 0.12, type: 'lowpass', f: 1800, f2: 150, attack: 0.02 });
+  },
+  fx_chill: (a, t) => { // a cold shimmer
+    a.notes(t, [96, 93, 89], 0.07, { type: 'triangle', dur: 0.4, vol: 0.05 });
+    a.noise(t, { dur: 0.35, vol: 0.06, type: 'highpass', f: 5200, f2: 3000, attack: 0.05 });
+  },
+  fx_freeze: (a, t) => { // glassy crackle
+    [0, 0.03, 0.06, 0.11, 0.15, 0.22].forEach((d, i) => a.noise(t + d, { dur: 0.025, vol: 0.12, type: 'highpass', f: 4200 + i * 700, q: 2 }));
+    [1, 2.4, 3.8].forEach((r, i) => a.tone(t, { f: 1900 * r, dur: 0.3 - i * 0.07, vol: 0.04 / (i + 1), attack: 0.002 }));
+  },
+  fx_burn: (a, t) => { // a sizzle
+    a.noise(t, { dur: 0.5, vol: 0.12, type: 'highpass', f: 5200, f2: 3000, attack: 0.02 });
+    [0.04, 0.11, 0.19, 0.3].forEach((d) => a.noise(t + d, { dur: 0.02, vol: 0.15, f: 2200, q: 3 }));
+    a.noise(t, { dur: 0.3, vol: 0.1, type: 'lowpass', f: 500, f2: 1400, attack: 0.05 });
+  },
+  fx_break: (a, t) => { // a shatter
+    a.noise(t, { dur: 0.35, vol: 0.28, type: 'highpass', f: 3000, f2: 1500, attack: 0.002 });
+    [0, 0.02, 0.05, 0.09].forEach((d, i) => a.tone(t + d, { f: 2600 - i * 380, f2: 1800 - i * 300, dur: 0.18, vol: 0.06 }));
+    a.tone(t, { type: 'triangle', f: 240, f2: 70, dur: 0.12, vol: 0.2 });
+  },
 };
 
 // Small random pitch drift so repeated combat sounds don't machine-gun.

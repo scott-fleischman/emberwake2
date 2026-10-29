@@ -87,6 +87,7 @@ class Boss extends Actor {
       this.hp = 0;
       this.state = 'dying';
       this.timer = DIE;
+      ctx.game.clearEffects(); // nothing should hold the player through the victory
       ctx.game.audio.sfx('death', { pitch: 0.6 });
       ctx.game.cam.shake(4, 1.2);
     }
