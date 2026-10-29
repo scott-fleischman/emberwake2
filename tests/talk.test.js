@@ -145,6 +145,29 @@ test('after the end, villagers talk about the Hearth', () => {
   for (const npc of folk) for (let t = 0; t < 300; t += 30) { game.time = t; assert.match(conversation(game, { data: npc })[0].text, /Hearth/, npc.name); }
 });
 
+test('after the end, keepers and the seer speak of peace, not the old troubles', () => {
+  const troubles = /ash falls|water rises|cold one|smiling|forget|isn't natural|wait for it|dodge aside/i;
+  const talk = (stage) => {
+    const state = newGameState('talk', 'ranger');
+    state.quest.main = stage;
+    const game = fakeGame(state);
+    for (const q of game.sideQuests) { state.quest.side[q.id] = 'done'; delete q.after; } // past their own epilogues
+    const said = {};
+    for (const npc of W.npcs.filter((n) => n.role === 'keeper')) said[npc.settlementId] = conversation(game, { data: npc }).map((p) => p.text).join(' ');
+    const realm = conversation(game, { data: W.npcs.find((n) => n.role === 'seer') })[0].options.find((o) => /realm/.test(o.label));
+    said.seer = realm.onSelect().pages.map((p) => p.text).join(' ');
+    return said;
+  };
+  const before = talk('spire'), after = talk('end');
+  assert.deepEqual(Object.keys(after).sort(), ['desert', 'mountain', 'seer', 'snow', 'swamp', 'volcanic']);
+  for (const [who, text] of Object.entries(after)) {
+    assert.doesNotMatch(text, troubles, who);
+    assert.notEqual(text, before[who], `${who} has a line for the world at peace`);
+  }
+  assert.match(before.desert, /Ash falls/);
+  assert.match(before.seer, /cold one/);
+});
+
 test('every NPC can call out a bark in every quest state', async () => {
   const { GameScene } = await import('../src/scenes/game.js');
   for (const status of [undefined, 'active', 'ready', 'done']) {

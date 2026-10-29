@@ -131,12 +131,28 @@ test('the cutscene theater plays every scene through to the end', async () => {
   const { TheaterScene } = await import('../src/scenes/theater.js');
   const theater = new TheaterScene(app);
   const g = document.createElement('canvas').getContext('2d');
-  for (let f = 0; f < 60 * 60 * 10 && !app.titled; f++) {
+  for (let f = 0; f < 60 * 60 * 15 && !app.titled; f++) { // about 13 minutes of film
     theater.update(1 / 60);
     if (f % 30 === 0) theater.drawWorld(g);
     app.input.endFrame();
   }
   assert.ok(app.titled, 'the theater should end by returning to the title');
+});
+
+test('the Theater covers the whole story in order', async () => {
+  const { installHeadless } = await import('../tools/headless.mjs');
+  installHeadless();
+  const { theaterScenes } = await import('../src/scenes/theater.js');
+  const W = generateOverworld('quests');
+  assert.ok(W.pois.lookouts.some((l) => l.id === 'belfry'), 'this world has its Belfry');
+  const labels = theaterScenes(W).map((s) => s.label);
+  for (const l of ['Hearth', 'Drowned Belfry', 'Tidewall', 'Tidewarden', 'Kindling', 'Spire', 'Vesper', 'Ending']) assert.ok(labels.some((x) => x.includes(l)), l);
+  const at = (l) => labels.findIndex((x) => x.includes(l));
+  assert.ok(at('Tidewarden') < at('Vesper'));
+  const story = ['Prologue', 'Thornmaw awakens', 'Cinder Warden falls', 'Rime Sovereign falls', 'Hearth', 'Chapter IV', 'Drowned Belfry', 'Tidewall',
+    'Tidewarden awakens', 'Tidewarden falls', 'Kindling', 'Chapter V', 'Spire', 'Vesper awakens', 'Vesper rises', 'Vesper lets go', 'Ending'];
+  for (let k = 1; k < story.length; k++) assert.ok(at(story[k - 1]) < at(story[k]), `${story[k - 1]} before ${story[k]}`);
+  assert.equal(at('Ending'), labels.length - 1);
 });
 
 test('the Tidewarden has warden story data and a whale spirit', () => {

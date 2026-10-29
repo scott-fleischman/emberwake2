@@ -11,7 +11,7 @@ import { UI } from '../gfx/palette.js';
 const SPEEDS = [0.5, 1, 2, 4, 8, 16, 32];
 const STEP = 1 / 60;
 const SKIP_BUDGET_MS = 22; // simulation time per frame while skipping ahead
-const DUNGEON_NAME = { verdant: 'the Verdant Vault', ashen: 'the Ashen Reliquary', frost: 'the Frostbound Sanctuary' };
+const DUNGEON_NAME = { verdant: 'the Verdant Vault', ashen: 'the Ashen Reliquary', frost: 'the Frostbound Sanctuary', drowned: 'the Drowned Fane', spire: 'the Emberwake Spire' };
 
 export const fmtTime = (t, cs = true) => {
   const m = Math.floor(t / 60), s = Math.floor(t % 60), c = Math.floor((t * 100) % 100);
@@ -39,13 +39,14 @@ export class AutoplayScene {
     this.touchBarAt = 'top';
   }
 
-  // Where "skip" goes next: into the coming dungeon, then to its warden, then the win.
+  // Where "skip" goes next: into the coming dungeon (the four wards, then the Spire), then to its warden
+  // (Vesper, in the Spire), then the win.
   skipTarget() {
     const g = this.game, pr = g.state.progress, inside = g.area.kind === 'dungeon' ? g.area.id : null;
     if (inside && !g.area.boss && !pr.bosses.includes(inside)) {
-      return { label: 'the warden', until: () => !!g.area.boss || g.area.kind !== 'dungeon' || pr.bosses.includes(inside) };
+      return { label: inside === 'spire' ? 'Vesper' : 'the warden', until: () => !!g.area.boss || g.area.kind !== 'dungeon' || pr.bosses.includes(inside) };
     }
-    const next = ['verdant', 'ashen', 'frost'].find((id) => !pr.bosses.includes(id) && id !== inside);
+    const next = Object.keys(DUNGEON_NAME).find((id) => !pr.bosses.includes(id) && id !== inside);
     if (!next) return { label: 'the end', until: () => false };
     return { label: DUNGEON_NAME[next], until: () => g.area.kind === 'dungeon' && g.area.id === next };
   }

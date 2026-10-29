@@ -331,6 +331,30 @@ const HEARTH_LINES = [
   'Even the wind off the north is warm now. The Hearth reaches farther than it ever did.',
 ];
 
+// What the keepers and the seer say of the realm: its troubles, then (after the end) the world at peace.
+const KEEPER_LINES = {
+  swamp: 'The water rises a hand\'s breadth every week. Our grandparents said a ward slept beneath the western fane. Now it dreams of drowning us. When you\'re ready, we\'ll need you.',
+  desert: 'Ash falls in our wells now. Whatever burns beyond the ridge, its anger reaches even here.',
+  mountain: 'Stone remembers. The frost on the high roads isn\'t natural — it comes from the Sanctuary.',
+  volcanic: 'The Cinder Warden flits between pillars, they say. Wait for it to vent its heat; that\'s when it\'s soft.',
+  snow: 'The Rime Sovereign dashes like the blizzard itself. Dodge aside and let it hit the walls.',
+};
+const KEEPER_PEACE = {
+  swamp: 'The flood drew back the night the Hearth flared, and the tide comes in gentle now. Some evenings I\'d swear I hear singing out past the Fane.',
+  desert: 'Clean water in every well, and not a fleck of ash. The eastern ridge is just a ridge again, and I\'d forgotten how blue the sky gets out here.',
+  mountain: 'The frost let go of the high roads. Meltwater runs down every pass, and the oxen have grown fat and lazy.',
+  volcanic: 'The wall of fire is long gone, and the vents only smoke now, like a pipe after supper. Somewhere out there the Ash Spirit is counting flames again, and none too many.',
+  snow: 'Warm enough up here to hear yourself think. The high snows are still again, but gently: still and safe, the way the Sovereign always meant them to be.',
+};
+const SEER_REALM = [
+  'Four wards, four wardens, one flame between them. When the flame gutters, the wardens forget they were guardians. Remind them, gently or otherwise.',
+  'And far beneath the Spire, a cold one who would have the whole fire to himself. Lately the smoke shows him smiling. At you.',
+];
+const SEER_PEACE = [
+  'Nothing, for the first time in my life. Four wardens keep their wards again, guardians as they were made to be, and the flame between them burns bright.',
+  'And beneath the Spire, nothing waits in the dark any more. The smoke showed him to me once, at the very end: an old man opening his hands. Then only warm air, rising.',
+];
+
 function roleLines(game, npc, c) {
   const W = game.world, s = game.state, d = npc.data, { S, page, stage } = c;
   const here = S(d.settlementId);
@@ -356,7 +380,7 @@ function roleLines(game, npc, c) {
     case 'seer':
       return [page('The Ember speaks in smoke and sparks. For a few coins, I will listen on your behalf.', [
         { label: 'A reading (15 coins)', onSelect: () => game.buy(15, () => {}, game.seerReading()) },
-        { label: 'What troubles the realm?', onSelect: () => ({ pages: [page('Four wards, four wardens, one flame between them. When the flame gutters, the wardens forget they were guardians. Remind them, gently or otherwise.'), page('And far beneath the Spire, a cold one who would have the whole fire to himself. Lately the smoke shows him smiling. At you.')] }) },
+        { label: 'What troubles the realm?', onSelect: () => ({ pages: (stage === 'end' ? SEER_PEACE : SEER_REALM).map((t) => page(t)) }) },
         { label: 'Leave', onSelect: () => {} },
       ])];
     case 'informant': {
@@ -369,13 +393,7 @@ function roleLines(game, npc, c) {
       return [page(rumor())];
     }
     case 'keeper':
-      return [page({
-        swamp: 'The water rises a hand\'s breadth every week. Our grandparents said a ward slept beneath the western fane. Now it dreams of drowning us. When you\'re ready, we\'ll need you.',
-        desert: 'Ash falls in our wells now. Whatever burns beyond the ridge, its anger reaches even here.',
-        mountain: 'Stone remembers. The frost on the high roads isn\'t natural — it comes from the Sanctuary.',
-        volcanic: 'The Cinder Warden flits between pillars, they say. Wait for it to vent its heat; that\'s when it\'s soft.',
-        snow: 'The Rime Sovereign dashes like the blizzard itself. Dodge aside and let it hit the walls.',
-      }[d.settlementId] || 'Keep the roads safe, traveler.')];
+      return [page((stage === 'end' ? KEEPER_PEACE : KEEPER_LINES)[d.settlementId] || 'Keep the roads safe, traveler.')];
     case 'ranger':
       return [page('The scout\'s been out on that ridge for days. Stubborn as an old oak.')];
     case 'elder':

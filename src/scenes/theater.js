@@ -5,7 +5,7 @@ import { GameScene } from './game.js';
 import { Particles } from '../game/entities.js';
 import { newGameState } from '../game/state.js';
 import { CLASSES } from '../data/classes.js';
-import { introShots, elderShots, hearthShots, kindleShots, bossIntroShots, bossOutroShots, vesperRiseShots, WARDENS } from '../data/story.js';
+import { introShots, elderShots, hearthShots, kindleShots, endingShots, bossIntroShots, bossOutroShots, vesperRiseShots, WARDENS } from '../data/story.js';
 import { dirWord } from '../game/quests.js';
 import { DUNGEON_INFO } from '../world/dungeons.js';
 import { lookoutShots, sealShots } from '../data/wards.js';
@@ -14,9 +14,49 @@ import { TILE } from '../world/tiles.js';
 import { text } from '../gfx/ui.js';
 import { UI } from '../gfx/palette.js';
 
-const CHAPTERS = [['verdant', 'thornmaw', 'I'], ['ashen', 'cinder', 'II'], ['frost', 'rime', 'III']];
+const WARD_CHAPTERS = [['verdant', 'I'], ['ashen', 'II'], ['frost', 'III'], ['drowned', 'IV']];
+const LOOKOUT = { verdant: ['lookout', 'The watchtower'], frost: ['windcrest', 'The Windcrest'], drowned: ['belfry', 'The Drowned Belfry'] };
+const SEAL = { verdant: 'The thornwall', ashen: 'The firewall', frost: 'The ice wall', drowned: 'The Tidewall' };
 const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 3, 4];
 const fmtSpeed = (s) => `${s < 1 ? s.toString().replace('0.', '.') : s}×`;
+const card = (title, sub) => [{ art: 'titlecard', title, sub, hold: 2.2 }];
+
+// The whole story in the order it plays, as {label, run}. Labels need only the world; each run sets
+// up its own stage on the Theater `t`, so any one scene can be played on its own.
+export function theaterScenes(W, t) {
+  const N = (sid, role) => W.npcs.find((n) => n.settlementId === sid && n.role === role);
+  const S = (id) => W.settlements.find((s) => s.id === id);
+  const home = S('home'), out = S('outpost'), elder = N('home', 'elder').name;
+  const cls = () => CLASSES[t.state.classId].name;
+  const story = (shots) => t.play(shots, { music: 'story' });
+  const list = [
+    { label: 'Prologue', run: () => story(introShots(cls())) },
+    { label: 'The elder', run: () => story(elderShots({ cls: cls(), elder, scout: N('outpost', 'scout').name, outpost: out.name, dir: dirWord(home.center, out.center), tip: 'trust your instincts' })) },
+  ];
+  for (const [id, num] of WARD_CHAPTERS) {
+    const kind = DUNGEON_INFO[id].boss, w = WARDENS[kind];
+    // Three shards home come before the fourth ward's chain.
+    if (id === 'drowned') list.push({ label: 'The Hearth rekindled', run: () => story(hearthShots({ elder, town: S('swamp').name })) });
+    list.push({ label: `Chapter ${num}`, run: () => story(card(DUNGEON_INFO[id].name, `Chapter ${num} · ${w.sub}`)) });
+    // The road to the ward: its lookout (if this world has one), then the seal breaking.
+    const [look, lookLabel] = LOOKOUT[id] || [];
+    const tower = look && W.pois.lookouts.find((l) => l.id === look);
+    if (tower) list.push({ label: lookLabel, run: () => { t.toWorld(tower, 1); t.play(lookoutShots(W, look), { letterbox: true, music: 'story' }); } });
+    if (W.pois.seals[id]) list.push({ label: SEAL[id], run: () => { t.toWorld(W.pois.seals[id].arena, 0); closeSeal(W, t.overworldMap, id); t.play(sealShots(W, id, () => t.openSealFx(id)), { letterbox: true, liveFx: true, music: 'story' }); } });
+    list.push({ label: `${w.title} awakens`, run: () => { t.toBossRoom(id); t.play(bossIntroShots(kind), { letterbox: true, music: 'boss' }); } });
+    list.push({ label: `${w.title} falls`, run: () => { t.toBossRoom(id); t.play(bossOutroShots(kind, t.quietBoss()), { letterbox: true, music: 'story' }); } });
+  }
+  list.push(
+    { label: 'The Kindling', run: () => story(kindleShots({ elder })) },
+    { label: 'Chapter V', run: () => story(card(DUNGEON_INFO.spire.name, `Chapter V · ${WARDENS.vesper.sub}`)) },
+    { label: 'Into the Spire', run: () => { t.toSpire(); t.play(t.spireShots(), { letterbox: true, music: 'dungeon' }); } },
+    { label: 'Vesper awakens', run: () => { t.toBossRoom('spire'); t.play(bossIntroShots('vesper'), { letterbox: true, music: 'boss' }); } },
+    { label: 'Vesper rises', run: () => { t.toBossRoom('spire'); t.play(vesperRiseShots(), { letterbox: true, music: 'boss2' }); } },
+    { label: 'Vesper lets go', run: () => { t.toBossRoom('spire'); t.play(bossOutroShots('vesper', t.quietBoss()), { letterbox: true, music: 'story' }); } },
+    { label: 'Ending', run: () => t.play(endingShots({ elder }), { music: 'title' }) },
+  );
+  return list;
+}
 
 export class TheaterScene extends GameScene {
   constructor(app, classId = 'swordsman') {
@@ -26,38 +66,14 @@ export class TheaterScene extends GameScene {
     this.paused = false;
     this.touchBack = 'Backspace';
     this.touchBarAt = 'top';
-    this.scenes = this.program();
+    this.scenes = theaterScenes(this.world, this);
     this.i = -1;
     this.go(0);
   }
 
-  // Each scene sets up its own stage, so any one can be played on its own.
-  program() {
-    const W = this.world, N = (sid, role) => W.npcs.find((n) => n.settlementId === sid && n.role === role);
-    const home = W.settlements.find((s) => s.id === 'home'), out = W.settlements.find((s) => s.id === 'outpost');
-    const cls = CLASSES[this.state.classId].name;
-    const play = (shots, opts = {}) => this.playCutscene(shots, { autoplay: true, noSkip: true, hint: '←→ scene · −/+ speed · P pause · Backspace leave', ...opts, onDone: () => this.go(this.i + 1) });
-    const list = [
-      { label: 'Prologue', run: () => play(introShots(cls), { music: 'story' }) },
-      { label: 'The elder', run: () => play(elderShots({ cls, elder: N('home', 'elder').name, scout: N('outpost', 'scout').name, outpost: out.name, dir: dirWord(home.center, out.center), tip: 'trust your instincts' }), { music: 'story' }) },
-    ];
-    for (const [id, kind, num] of CHAPTERS) {
-      const name = DUNGEON_INFO[id].name;
-      list.push({ label: `Chapter ${num}`, run: () => play([{ art: 'titlecard', title: name, sub: `Chapter ${num} · ${WARDENS[kind].sub}`, hold: 2.2 }], { music: 'story' }) });
-      // The road to the ward: its lookout (if it has one), then the seal breaking.
-      const look = { verdant: 'lookout', frost: 'windcrest' }[id];
-      if (look && W.pois.lookouts.some((l) => l.id === look)) list.push({ label: look === 'lookout' ? 'The watchtower' : 'The Windcrest', run: () => { this.toWorld(W.pois.lookouts.find((l) => l.id === look), 1); play(lookoutShots(W, look), { letterbox: true, music: 'story' }); } });
-      if (W.pois.seals[id]) list.push({ label: { verdant: 'The thornwall', ashen: 'The firewall', frost: 'The ice wall' }[id], run: () => { this.toWorld(W.pois.seals[id].arena, 0); closeSeal(W, this.overworldMap, id); play(sealShots(W, id, () => this.openSealFx(id)), { letterbox: true, liveFx: true, music: 'story' }); } });
-      list.push({ label: `${WARDENS[kind].title} awakens`, run: () => { this.toBossRoom(id); play(bossIntroShots(kind), { letterbox: true, music: 'boss' }); } });
-      list.push({ label: `${WARDENS[kind].title} falls`, run: () => { this.toBossRoom(id); const focus = this.quietBoss(); play(bossOutroShots(kind, focus), { letterbox: true, music: 'story' }); } });
-    }
-    const elder = N('home', 'elder').name, town = W.settlements.find((s) => s.id === 'swamp').name;
-    list.push({ label: 'Rekindled', run: () => play(hearthShots({ elder, town }), { music: 'story' }) });
-    list.push({ label: 'The Spire opens', run: () => play(kindleShots({ elder }), { music: 'story' }) });
-    list.push({ label: 'Vesper awakens', run: () => { this.toBossRoom('spire'); play(bossIntroShots('vesper'), { letterbox: true, music: 'boss' }); } });
-    list.push({ label: 'Vesper rises', run: () => { this.toBossRoom('spire'); play(vesperRiseShots(), { letterbox: true, music: 'boss2' }); } });
-    list.push({ label: 'Vesper lets go', run: () => { this.toBossRoom('spire'); const focus = this.quietBoss(); play(bossOutroShots('vesper', focus), { letterbox: true, music: 'story' }); } });
-    return list;
+  // Scenes play themselves and chain on to the next.
+  play(shots, opts = {}) {
+    return this.playCutscene(shots, { autoplay: true, noSkip: true, hint: '←→ scene · −/+ speed · P pause · Backspace leave', ...opts, onDone: () => this.go(this.i + 1) });
   }
 
   // Jump to scene i, dropping whatever is playing without letting it chain on.
@@ -89,6 +105,25 @@ export class TheaterScene extends GameScene {
     const a = this.area;
     a.enterRoom(a.dungeon.rooms.find((r) => r.role === 'boss').id, 's');
     this.fade = 0;
+  }
+
+  // Just inside the Spire's door.
+  toSpire() {
+    this.enterDungeon('spire');
+    this.fade = 0;
+  }
+
+  // Play has no scene for the first steps into the Spire, so the Theater makes one from what its
+  // walls say, then looks in on the inner hub's four dark sockets.
+  spireShots() {
+    const a = this.area;
+    const plaque = a.room.objects.find((o) => o.type === 'plaque');
+    const hub = a.dungeon.rooms.find((r) => r.role === 'hub' && r.objects.some((o) => o.type === 'socket'));
+    return [
+      { text: 'Through the open door, a stair winds down into the Spire. The air is cold, and smells of old smoke.', hold: 2.4, sfx: [['door', { pitch: 0.6 }]] },
+      plaque && { text: `Carved over the arch: "${plaque.text}"`, hold: 2.6 },
+      hub && { run: () => { a.enterRoom(hub.id, 's'); this.fade = 0; }, text: 'Deeper in, four sockets sit dark in the floor of a round hall, one for each ward. The way down stays shut until every one burns.', hold: 3 },
+    ];
   }
 
   quietBoss() {
