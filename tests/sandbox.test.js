@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sandbox, botDo } from './helpers/sandbox.js';
 import { Enemy } from '../src/game/enemies.js';
+import { Projectile } from '../src/game/entities.js';
 import { Bot } from '../src/bot/bot.js';
 import { tileOf } from '../src/bot/nav.js';
 import { T, TILE } from '../src/world/tiles.js';
@@ -41,4 +42,64 @@ test('clearing a camp goes after its stragglers', async () => {
   const e = s.spawn(new Enemy('lunger', 0, 24 * TILE + 8, 8 * TILE + 8, { spawnId: camp.id }));
   botDo(s, (bot) => bot.clearCamp(camp), { maxSeconds: 60 });
   assert.ok(e.hp <= 0);
+});
+
+// dune88's ranger spent 45 of its 48 coins on arrows, met the Cinder Warden with no food, and fell
+// twice there.
+test('the bot buys food before ammo', async () => {
+  const s = await sandbox({ cls: 'ranger' }), p = s.game.state.player;
+  Object.assign(p, { food: 1, arrows: 0, coins: 48 });
+  const bot = new Bot(s.game, 'any');
+  assert.equal(bot.shoppingList()[0][0], 'Ration');
+});
+
+// hearth's rogue cut a diagonal across a lava corner (still invulnerable from a burn) into a pocket
+// walled by cliffs and lava, and never got out.
+test('the bot will not step across a lava corner into ground it cannot walk back from', async () => {
+  const s = await sandbox(), map = s.area.map, p = s.game.player;
+  map.set(9, 8, T.LAVA); map.set(8, 9, T.LAVA); map.set(9, 10, T.LAVA); map.set(10, 9, T.DWALL);
+  p.x = 10 * TILE + 0.5; p.y = 8 * TILE + 15.5; // the bottom-left corner of tile (10, 8)
+  const e = s.spawn(new Enemy('brute', 0, 7 * TILE, 12 * TILE));
+  Object.assign(e, { aggro: true, cool: 999, specialCool: 999 });
+  const bot = new Bot(s.game, 'any');
+  bot.threats();
+  assert.notDeepEqual(bot.bestMove([e], e, 40, { lv: 0 }), [-1, 1]); // onto (9, 9), ringed by lava
+});
+
+// fen77's ranger wore Slagheart from 35 hp down to 14, but Ash Golems kept joining, so the fight's
+// total health never fell and the bot walked off a fight it was winning.
+test('the bot stays in a fight while it is wearing one foe down, even as others join', async () => {
+  const s = await sandbox(), p = s.game.player, bot = new Bot(s.game, 'any');
+  bot.task = (function* () { for (;;) yield; })();
+  const foe = (dx, dy) => Object.assign(s.spawn(new Enemy('brute', 5, p.x + dx, p.y + dy)), { aggro: true, cool: 999, specialCool: 999, state: 'idle' });
+  const target = foe(20, 0);
+  for (let i = 0; i < 20; i++) {
+    if (i % 3 === 0) foe(-20, i * 2 - 20);
+    target.hp -= 0.5;
+    for (let k = 0; k < 60; k++) { bot.step(1 / 60); s.app.input.endFrame(); }
+  }
+  assert.ok(!bot.log.some((l) => l.includes('goes nowhere')), bot.log.join('\n'));
+});
+
+// A roll's invulnerability is brief: rolling as soon as a shot enters our lane ran out before it
+// landed, and the roll's cooldown left us open. Rangers ate a dozen embers a Cinder Warden fight.
+test('a shot far down our lane is a warning; one about to land is the moment to roll', async () => {
+  const s = await sandbox(), p = s.game.player, bot = new Bot(s.game, 'any');
+  const pr = s.spawn(new Projectile('arrow', p.x - 48, p.y, 0, 120, 1, 'enemy')); // 0.4 s out
+  assert.equal(bot.danger(p.x, p.y, []).lv, 1);
+  pr.x = p.x - 20; // under 0.2 s
+  assert.equal(bot.danger(p.x, p.y, []).lv, 2);
+});
+
+// Rolling away from a volley lets its wave catch up once the roll's invulnerability ends; rolling
+// into it crosses the whole wave while still invulnerable.
+test('the bot rolls into a shot that is about to land, not away from it', async () => {
+  const s = await sandbox({ cls: 'ranger' }), p = s.game.player, bot = new Bot(s.game, 'any');
+  bot.task = (function* () { for (;;) yield; })();
+  const e = s.spawn(new Enemy('brute', 0, p.x + 40, p.y)); // what we're fighting is the other way
+  Object.assign(e, { aggro: true, cool: 999, specialCool: 999, state: 'idle' });
+  p.aim = 0;
+  s.spawn(new Projectile('arrow', p.x - 22, p.y, 0, 120, 1, 'enemy'));
+  bot.step(1 / 60); s.game.update(1 / 60); s.app.input.endFrame();
+  assert.equal(p.mode, 'dodge'); assert.ok(p.dodgeX < 0, `rolled ${p.dodgeX},${p.dodgeY}`);
 });

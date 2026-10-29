@@ -203,9 +203,10 @@ export class Bot {
     const s = this.g.state, p = s.player, d = this.g.derived;
     return [
       ['Bombs ×4', () => p.bombs < this.bombsNeeded() && p.bombs < d.maxBombs - 3, 20],
+      // Food before ammo: topping up arrows can spend the coins that would have kept us alive.
+      ['Ration', () => p.food < 3, 10],
       ['Arrows ×10', () => s.gear.items.includes('bow') && p.arrows < d.maxArrows - 9, 15],
       ['Throwing knives ×5', () => s.gear.items.includes('knives') && p.knives < d.maxKnives - 4, 15],
-      ['Ration', () => p.food < 3, 10],
     ].filter(([, need, price]) => need() && p.coins >= price);
   }
 
@@ -288,12 +289,16 @@ export class Bot {
     const p = this.g.player;
     this.fightAt = this.fightAt && this.time - this.fightAt.t < 1.5 ? { ...this.fightAt, t: this.time } : { x: p.x, y: p.y, t: this.time };
     // Juggling several foes resets each give-up timer; if nobody takes damage for a while, move on.
-    const a = this.g.area, hp = list.reduce((t, e) => t + e.hp, 0);
-    if (!this.calm || hp < this.calm.hp) this.calm = { hp, t: 0 };
-    else if (!(a.kind === 'dungeon' && (a.shut || a.shutPending || a.boss)) && (this.calm.t += this.dt) > 15) {
-      for (const e of list) this.ignore.set(e, this.time + 20);
-      this.engaged = null; this.calm = null; this.note('Breaking off a fight that goes nowhere');
-      return false;
+    // Each foe is measured against itself, so a newcomer's health can't hide the damage being done.
+    const a = this.g.area, was = this.calm?.hp;
+    if (!was || list.some((e) => e.hp < (was.get(e) ?? Infinity))) this.calm = { hp: new Map(list.map((e) => [e, e.hp])), t: 0 };
+    else {
+      for (const e of list) if (!was.has(e)) was.set(e, e.hp);
+      if (!(a.kind === 'dungeon' && (a.shut || a.shutPending || a.boss)) && (this.calm.t += this.dt) > 15) {
+        for (const e of list) this.ignore.set(e, this.time + 20);
+        this.engaged = null; this.calm = null; this.note('Breaking off a fight that goes nowhere');
+        return false;
+      }
     }
     this.fight(list);
     return true;
@@ -305,9 +310,10 @@ export class Bot {
     return !e.untargetable && !TELEGRAPH.has(e.pose ?? e.state);
   }
 
-  // Danger at a point: {lv 0..3, block: can a shield stop it}.
+  // Danger at a point: {lv 0..3, block: can a shield stop it, shot: the projectile about to land, if
+  // that's what the danger is}.
   danger(x, y, list) {
-    let lv = 0, block = true;
+    let lv = 0, block = true, shot = null;
     const bump = (v, blockable) => { if (v > lv) { lv = v; block = blockable; } else if (v === lv && !blockable) block = false; };
     for (const e of list) {
       if (e.boss) {
@@ -347,10 +353,13 @@ export class Bot {
     }
     for (const pr of this.g.area.entities) {
       if (pr.team !== 'enemy' || pr.vx === undefined || pr.dead || !pr.hitSet || pr.lob) continue; // a lob's landing is a zone
-      // A rolling boulder hits as a zone a shield can't stop; this sees it coming.
-      if (segDist(x, y, pr.x, pr.y, pr.x + pr.vx * 0.45, pr.y + pr.vy * 0.45) < (pr.rolling ? pr.zone.w / 2 + 8 : 12)) bump(2, !pr.rolling);
+      // A shot in our lane is a warning to step aside or raise a shield; one about to land is the
+      // moment to roll, so the roll's brief invulnerability covers it rather than running out first.
+      // A rolling boulder hits as a zone a shield can't stop.
+      const r = pr.rolling ? pr.zone.w / 2 + 8 : 12, lane = (k) => segDist(x, y, pr.x, pr.y, pr.x + pr.vx * k, pr.y + pr.vy * k) < r;
+      if (lane(0.22)) { if (lv <= 2) shot = pr; bump(2, !pr.rolling); } else if (lane(0.45)) bump(1, !pr.rolling);
     }
-    return { lv, block };
+    return { lv, block, shot: lv === 2 ? shot : null };
   }
 
   fight(list) {
@@ -382,10 +391,17 @@ export class Bot {
     const mv = chase || this.bestMove(list, focus, desired, here);
     if (mv) this.move(mv[0], mv[1]);
     if (shield) this.want.add(K.shield);
-    if (open && focus.boss && dist > reach + 12 && res.stamina > 10) this.want.add(K.sprint);
+    // Sprinting into an opening, not into what's still flying at us, and not with the stamina a roll needs.
+    if (open && focus.boss && dist > reach + 12 && here.lv === 0 && res.stamina > d.dodgeCost * 2) this.want.add(K.sprint);
     if ((!shield && here.lv >= 2) || here.lv >= 3) {
-      const roll = mv || [Math.cos(p.aim), Math.sin(p.aim)];
-      if (res.stamina >= d.dodgeCost && p.mode === 'normal' && this.time - this.lastDodge > 0.45 && this.safeRoll(roll)) { this.tap(K.dodge); this.lastDodge = this.time; }
+      // Roll through a shot, not away from it: a roll is quick enough to cross a volley's whole wave
+      // before its invulnerability runs out, where rolling off leaves the wave to catch us after.
+      const s = here.shot, l = s && (Math.hypot(s.vx, s.vy) || 1), into = s && [Math.round(-s.vx / l), Math.round(-s.vy / l)];
+      const roll = into && this.safeRoll(into) ? into : mv || [Math.cos(p.aim), Math.sin(p.aim)];
+      if (res.stamina >= d.dodgeCost && p.mode === 'normal' && this.time - this.lastDodge > 0.45 && this.safeRoll(roll)) {
+        if (roll === into) { for (const k of [K.left, K.right, K.up, K.down]) this.want.delete(k); this.move(into[0], into[1]); }
+        this.tap(K.dodge); this.lastDodge = this.time;
+      }
     }
     if (open && dist <= reach && p.cool <= 0 && p.mode === 'normal' && !shield) this.tap(K.attack);
     else if (dist > reach + 2 && dist < 160 && !shield && p.mode === 'normal' && this.rangedReady(focus)) this.tap(K.item);
@@ -444,13 +460,15 @@ export class Bot {
   bestMove(list, focus, desired, here) {
     const g = this.g, p = g.player, map = g.area.map;
     const portal = this.portalTile();
+    // Ground we can walk back from: a diagonal step can clip a lava corner into a pocket we can't leave.
+    const reach = this.reach?.area === g.area ? this.reach.map : null;
     let best = null, bs = -Infinity;
     const step = 7;
     for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
       const l = Math.hypot(dx, dy) || 1;
       const qx = p.x + (dx / l) * step, qy = p.y + (dy / l) * step;
       const qt = tileOf(qx, qy);
-      if ((dx || dy) && !walkable(map, qt.x, qt.y)) continue;
+      if ((dx || dy) && (!walkable(map, qt.x, qt.y) || (reach && reach[qt.y * map.w + qt.x] < 0))) continue;
       if (portal && Math.hypot(qx - (portal.x * TILE + 8), qy - (portal.y * TILE + 8)) < 14) continue;
       const dz = this.danger(qx, qy, list);
       let s = -dz.lv * 12;
