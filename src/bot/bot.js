@@ -2,7 +2,7 @@
 // speedrunner would. It reads the world (the map, quest markers, enemy telegraphs) and presses
 // keys every frame: no teleporting, no invincibility. Tasks are generators that yield once per
 // frame; combat and dialogs interrupt them, and death restarts the route from the current state.
-import { TILE } from '../world/tiles.js';
+import { TILE, T } from '../world/tiles.js';
 import { ROOM_W, ROOM_H } from '../world/dungeons.js';
 import { WEAPONS, USE_ITEMS } from '../data/items.js';
 import { RIDDLES } from '../data/sidequests.js';
@@ -386,7 +386,9 @@ export class Bot {
     const shield = shieldOk && here.lv > 0 && here.block && !(open && dist <= reach);
     const desired = open ? reach - 6 : focus.boss ? 56 : 40;
     const chase = dist > desired + 14 && here.lv === 0 ? this.chaseStep(focus) : null;
-    const mv = chase || this.bestMove(list, focus, desired, here);
+    // A charge's lane is wider than any one step bestMove weighs: leave it square to the side.
+    const out = here.lv >= 2 ? this.laneEscape(list) : null;
+    const mv = out || chase || this.bestMove(list, focus, desired, here);
     if (mv) this.move(mv[0], mv[1]);
     if (shield) this.want.add(K.shield);
     // Sprinting into an opening, not into what's still flying at us, and not with the stamina a roll needs.
@@ -394,8 +396,9 @@ export class Bot {
     if ((!shield && here.lv >= 2) || here.lv >= 3) {
       // Roll through a shot, not away from it: a roll is quick enough to cross a volley's whole wave
       // before its invulnerability runs out, where rolling off leaves the wave to catch us after.
+      // Not through a warden's thorn ring, though: that roll ends up against its body.
       const s = here.shot, l = s && (Math.hypot(s.vx, s.vy) || 1), into = s && [Math.round(-s.vx / l), Math.round(-s.vy / l)];
-      const roll = into && this.safeRoll(into) ? into : mv || [Math.cos(p.aim), Math.sin(p.aim)];
+      const roll = into && !out && this.safeRoll(into) && !this.rollsOntoBoss(into, list) ? into : mv || [Math.cos(p.aim), Math.sin(p.aim)];
       if (res.stamina >= d.dodgeCost && p.mode === 'normal' && this.time - this.lastDodge > 0.45 && this.safeRoll(roll)) {
         if (roll === into) { for (const k of [K.left, K.right, K.up, K.down]) this.want.delete(k); this.move(into[0], into[1]); }
         this.tap(K.dodge); this.lastDodge = this.time;
@@ -414,6 +417,27 @@ export class Bot {
       if (!walkable(map, t.x, t.y)) return false;
     }
     return true;
+  }
+
+  // Square out of a warden's charge lane, to the side we're already on unless that side is wall.
+  laneEscape(list) {
+    const p = this.g.player, map = this.g.area.map;
+    for (const e of list) {
+      if (!e.boss || e.cdx === undefined || !['wind', 'charge', 'dash'].includes(e.state)) continue;
+      if (segDist(p.x, p.y, e.x, e.y, e.x + e.cdx * 300, e.y + e.cdy * 300) >= 24) continue;
+      const side = Math.sign((p.x - e.x) * -e.cdy + (p.y - e.y) * e.cdx) || 1;
+      for (const k of [side, -side]) {
+        const dir = [Math.round(-e.cdy * k), Math.round(e.cdx * k)], t = tileOf(p.x + dir[0] * 16, p.y + dir[1] * 16);
+        if ((dir[0] || dir[1]) && walkable(map, t.x, t.y)) return dir;
+      }
+    }
+    return null;
+  }
+
+  // Whether a roll would end against a warden that can't be hit yet (its body hurts to touch).
+  rollsOntoBoss([dx, dy], list) {
+    const p = this.g.player, l = Math.hypot(dx, dy) || 1, x = p.x + (dx / l) * 46, y = p.y + (dy / l) * 46;
+    return list.some((e) => e.boss && !e.vulnerable && Math.hypot(e.x - x, e.y - y) < 30);
   }
 
   // One step along an A* path toward an enemy, for when walls or hazards stand between us.
@@ -470,6 +494,8 @@ export class Bot {
       if (portal && Math.hypot(qx - (portal.x * TILE + 8), qy - (portal.y * TILE + 8)) < 14) continue;
       const dz = this.danger(qx, qy, list);
       let s = -dz.lv * 12;
+      // Brambles prick from beside the tile too (Player's contact probes), not only underfoot.
+      if ([[-7, 0], [7, 0], [0, -6], [0, 6]].some(([ox, oy]) => map.tileAtPixel(qx + ox, qy + oy) === T.THORNS)) s -= 8;
       s -= Math.abs(Math.hypot(focus.x - qx, focus.y - (qy - 2)) - desired) * 0.25;
       for (const e of list) if (e !== focus && Math.hypot(e.x - qx, e.y - qy) < 22) s -= 1.5;
       if (g.area.kind === 'dungeon') s -= Math.hypot(qx - ROOM_W * 8, qy - ROOM_H * 8) * 0.006;

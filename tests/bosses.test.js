@@ -10,6 +10,7 @@ import { paintThornmaw, THORN_PAL } from '../src/gfx/art-thornmaw.js';
 import { paintRime, RIME_PAL } from '../src/gfx/art-rime.js';
 import { portraitPose } from '../src/gfx/bossart.js';
 import { T } from '../src/world/tiles.js';
+import { Bot } from '../src/bot/bot.js';
 
 test('every warden has a complete moveset', () => {
   for (const [k, m] of Object.entries(WARDEN_MOVES)) {
@@ -243,3 +244,29 @@ test('eruptions and shard drops strike on the frame their telegraph promised', a
   }
 });
 
+// ---------------------------------------------------------------- the bot, in fights twice as long
+const idleBot = (s) => { const bot = new Bot(s.game, 'any'); bot.task = (function* () { for (;;) yield; })(); return bot; };
+const run = (s, bot, seconds) => { for (let t = 0; t < seconds; t += 1 / 60) { bot.step(1 / 60); s.game.update(1 / 60); s.app.input.endFrame(); } };
+test('the bot leaves a charge lane square to the side, not along it toward the warden', async () => {
+  const s = await sandbox(), p = s.game.player, bot = idleBot(s);
+  const b = s.spawn(createBoss('rime', p.x, p.y - 70)); Object.assign(b, { state: 'wind', timer: 9, cdx: 0, cdy: 1, aggro: true }); // aggro: the arena isn't a boss room
+  const out = bot.laneEscape([b]);
+  assert.equal(out[1], 0); assert.equal(Math.abs(out[0]), 1);
+  run(s, bot, 0.5);
+  assert.ok(Math.abs(p.x - b.x) >= 20, `out of the lane (${(p.x - b.x).toFixed(1)})`);
+  assert.ok(p.y - b.y > 50, 'not rolled up the lane at her');
+});
+test('the bot won\'t roll onto a warden it can\'t hurt yet', async () => {
+  const s = await sandbox(), p = s.game.player, bot = idleBot(s);
+  const b = s.spawn(createBoss('thornmaw', p.x, p.y - 46)); b.state = 'thorns';
+  assert.ok(bot.rollsOntoBoss([0, -1], [b])); assert.ok(!bot.rollsOntoBoss([0, 1], [b]));
+  b.state = 'stunned'; b.vulnerable = true; assert.ok(!bot.rollsOntoBoss([0, -1], [b]));
+});
+test('the bot keeps clear of the brambles beside its path', async () => {
+  const s = await sandbox(), p = s.game.player, map = s.area.map, bot = idleBot(s);
+  const tx = Math.floor(p.x / 16), ty = Math.floor(p.y / 16); p.x = tx * 16 + 8; p.y = ty * 16 + 8;
+  map.set(tx + 1, ty, T.THORNS); map.set(tx + 1, ty - 1, T.THORNS); map.set(tx + 1, ty + 1, T.THORNS);
+  const foe = s.spawn(new Enemy('brute', 0, p.x + 120, p.y)); // pulls it toward the brambles
+  const mv = bot.bestMove([foe], foe, 40, { lv: 0 });
+  assert.ok(!mv || mv[0] <= 0, `stepped ${mv}`);
+});
