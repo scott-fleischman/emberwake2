@@ -322,8 +322,6 @@ export class Bot {
         if ((e.state === 'wind' || e.state === 'charge' || e.state === 'dash') && e.cdx !== undefined) {
           if (segDist(x, y, e.x, e.y, e.x + e.cdx * 300, e.y + e.cdy * 300) < 24) bump(e.state === 'wind' ? 2 : 3, false);
         }
-        for (const m of e.marks || []) if (!m.done && m.t < 0.9 && Math.hypot(x - m.x, y - m.y) < 24) bump(2, false);
-        for (const dr of e.drops || []) if (!dr.done && dr.t < 0.8 && Math.hypot(x - dr.x, y - dr.y) < 20) bump(2, false);
         continue;
       }
       switch (e.state) {

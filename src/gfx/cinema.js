@@ -3,7 +3,10 @@
 // {look, world} for panels that show the hero or the real map of this seed.
 import { R, humanSprite, LOOKS } from './sprites.js';
 import { worldImage } from './hud.js';
-import { paintThornmaw, paintCinder, fxCinder, paintRime, rimeUnder, rimeOver, portraitPose, drawLights } from './bossart.js';
+import { portraitPose, drawLights } from './bossart.js';
+import { paintThornmaw } from './art-thornmaw.js';
+import { paintCinder, fxCinder } from './art-cinder.js';
+import { paintRime, rimeUnder, rimeOver } from './art-rime.js';
 
 const W = 480, H = 270;
 const clamp01 = (v) => Math.max(0, Math.min(1, v));

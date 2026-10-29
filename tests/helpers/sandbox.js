@@ -27,6 +27,20 @@ export async function sandbox({ cls = 'swordsman', seed = 'sandbox', difficulty 
   return { app, game, area, step, spawn, center };
 }
 
+// A 2D context that records instead of drawing: colours assigned to fillStyle and strokeStyle go to
+// `fills`, method calls (and gradient stops) to `calls`. Every call returns a stub gradient, so
+// painters run unchanged; getTransform's stub has no matrix, so lights are skipped unless a test
+// assigns its own.
+export function recorder() {
+  const fills = [], calls = [], props = {};
+  const grad = { addColorStop: (...a) => calls.push(['addColorStop', ...a]) };
+  const g = new Proxy(props, {
+    get: (_, k) => (k in props ? props[k] : (...a) => { calls.push([k, ...a]); return grad; }),
+    set: (_, k, v) => { if (k === 'fillStyle' || k === 'strokeStyle') fills.push(v); props[k] = v; return true; },
+  });
+  return { g, fills, calls };
+}
+
 // Runs a bot task until it finishes or maxSeconds of game time pass. The bot replaces a finished
 // task with its route on the next frame, so the wrapper records completion itself.
 export function botDo(s, makeTask, { maxSeconds = 120 } = {}) {

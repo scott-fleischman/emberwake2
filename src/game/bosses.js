@@ -1,10 +1,16 @@
 // Regional bosses. Each has phases with distinct pressure and an explicit punish window.
-import { Actor, Entity, Particles, Poof, Projectile } from './entities.js';
+import { Actor, Entity, Particles, Poof } from './entities.js';
 import { Enemy } from './enemies.js';
-import { moveActor } from './physics.js';
+import { makeZone } from './zones.js';
 import { drawShadow } from '../gfx/render.js';
-import { BOSS_RGB, stamp, roarRings, deathRays, entranceOffset, paintThornmaw, thornUnder, thornOver, paintCinder, fxCinder, emberSwirl, paintRime, rimeUnder, rimeOver } from '../gfx/bossart.js';
-import { TILE, T } from '../world/tiles.js';
+import { BOSS_RGB, stamp, roarRings, deathRays, entranceOffset } from '../gfx/bossart.js';
+import { paintThornmaw, thornUnder, thornOver } from '../gfx/art-thornmaw.js';
+import { paintCinder, fxCinder, emberSwirl } from '../gfx/art-cinder.js';
+import { paintRime, rimeUnder, rimeOver } from '../gfx/art-rime.js';
+import { moves as thornmaw } from './warden-thornmaw.js';
+import { moves as cinder } from './warden-cinder.js';
+import { moves as rime } from './warden-rime.js';
+import { TILE } from '../world/tiles.js';
 import { TAU } from '../core/math.js';
 
 export const BOSS_INFO = {
@@ -13,6 +19,9 @@ export const BOSS_INFO = {
   rime: { name: 'Rime Sovereign', hp: 84, music: 'boss' },
 };
 const DIE = 2; // seconds a warden takes to die
+
+// Each warden's fight as a moveset: a table of state handlers any boss body can run (see runMoves).
+export const WARDEN_MOVES = { thornmaw, cinder, rime };
 
 // A non-blocking white flash and shockwave for phase changes and deaths, drawn above everything.
 class Burst extends Entity {
@@ -46,11 +55,30 @@ class Boss extends Actor {
     this.timer = 1.6;
     this.t = 0;
     this.phase = 1;
+    this.moves = WARDEN_MOVES[kind];
     this.vulnerable = false;
     this.summoned = 0;
     this.face = -1; this.roarT = 0; this.phaseT = 9; this.mvx = 0; // visual only
   }
   get hpFrac() { return this.hp / this.maxHp; }
+  update(dt, ctx) {
+    this.tickTimers(dt); this.t += dt;
+    if (this.state === 'dying') { this.moves.clear(this, ctx); return this.dyingUpdate(dt, ctx); }
+    this.checkPhase(ctx);
+    this.timer -= dt;
+    this.runMoves(this.moves, dt, ctx);
+  }
+  // One frame of a moveset: phase 2's handler for the state if it has one, else phase 1's. me is
+  // where the player is from here. The punish window (and any untargetable state) is read before
+  // the handler runs, so it follows the state the frame began in.
+  runMoves(m, dt, ctx) {
+    const p = ctx.player, dx = p.x - this.x, dy = p.y - this.y, me = { p, dx, dy, d: Math.hypot(dx, dy) || 1 };
+    this.vulnerable = m.vulnerable(this);
+    this.untargetable = !!m.untargetable?.(this);
+    m.tick?.(this, dt, ctx);
+    ((this.phase > 1 && m.phase2[this.state]) || m.phase1[this.state])?.(this, dt, ctx, me);
+  }
+  checkPhase() {}
   // Visual bookkeeping only: animation clock, facing, speed, roar and phase-change timers.
   tickTimers(dt) {
     super.tickTimers(dt);
@@ -111,6 +139,10 @@ class Boss extends Actor {
       ctx.area.spawnEnemy(e);
     }
   }
+  // The lane a charge will take, shown while it winds up; it warns, it doesn't strike.
+  showLane(ctx) {
+    ctx.area.zones.push(makeZone('segment', { x1: this.x, y1: this.y, x2: this.x + this.cdx * 300, y2: this.y + this.cdy * 300, w: 24, t: this.timer, dmg: 0, owner: this, rgb: BOSS_RGB[this.kind] }));
+  }
   touchPlayer(ctx, dmg, pad = 4) {
     const p = ctx.player;
     return Math.abs(p.x - this.x) < (p.w + this.w) / 2 + pad && Math.abs(p.y - this.y) < (p.h + this.h) / 2 + pad ? ctx.game.damagePlayer(dmg, this) : false;
@@ -135,57 +167,13 @@ class Boss extends Actor {
   }
 }
 
-// ---------------------------------------------------------------- Thornmaw: charges, stuns on walls, thorn rings.
+// ---------------------------------------------------------------- the wardens
+// Each fight is a moveset in its warden-*.js file; a class adds the body, the phase steps and the draw.
+
+// Thornmaw: charges, stuns on walls, thorn rings.
 class Thornmaw extends Boss {
   constructor(x, y, hpMult) { super('thornmaw', x, y, hpMult); this.w = 26; this.h = 18; }
-  update(dt, ctx) {
-    this.tickTimers(dt); this.t += dt;
-    if (this.state === 'dying') return this.dyingUpdate(dt, ctx);
-    const p = ctx.player, dx = p.x - this.x, dy = p.y - this.y, d = Math.hypot(dx, dy) || 1;
-    if (this.updatePhase(ctx, [0.5])) this.summon(ctx, 'lunger', 0, 2);
-    this.timer -= dt;
-    this.vulnerable = this.state === 'stunned';
-    switch (this.state) {
-      case 'intro': if (this.timer <= 0) { this.state = 'stalk'; this.timer = 1.4; } break;
-      case 'stalk':
-        moveActor(ctx.map, this, (dx / d) * 30 * dt, (dy / d) * 30 * dt);
-        this.touchPlayer(ctx, 2);
-        if (this.timer <= 0) { this.state = 'wind'; this.timer = this.phase > 1 ? 0.55 : 0.75; this.cdx = dx / d; this.cdy = dy / d; ctx.game.audio.sfx('boss', { pitch: 1.6, volume: 0.4 }); }
-        break;
-      case 'wind':
-        if (this.timer <= 0) { this.state = 'charge'; this.timer = 2.2; }
-        break;
-      case 'charge': {
-        const sp = this.phase > 1 ? 245 : 205;
-        const r = moveActor(ctx.map, this, this.cdx * sp * dt, this.cdy * sp * dt);
-        if (Math.random() < 0.5) ctx.area.spawn(new Particles(this.x, this.y + 8, { count: 1, color: '#7a6a4a', speed: 20, life: 0.4, layer: -1 }));
-        this.touchPlayer(ctx, 2);
-        if (r.hitX || r.hitY || this.timer <= 0) {
-          ctx.game.cam.shake(4, 0.3);
-          ctx.game.audio.sfx('explode', { pitch: 0.7, volume: 0.6 });
-          this.state = 'stunned';
-          this.timer = this.phase > 1 ? 1.3 : 1.6;
-        }
-        break;
-      }
-      case 'stunned':
-        if (this.timer <= 0) { this.state = 'thorns'; this.timer = 0.5; this.bursts = this.phase > 1 ? 2 : 1; }
-        break;
-      case 'thorns':
-        if (this.timer <= 0) {
-          const n = this.phase > 1 ? 12 : 8, off = this.bursts % 2 ? 0 : Math.PI / n;
-          for (let k = 0; k < n; k++) ctx.area.spawn(new Projectile('thorn', this.x, this.y - 6, off + (k * TAU) / n, 105, 1, 'enemy', { life: 2.5 }));
-          ctx.game.audio.sfx('arrow', { pitch: 0.6 });
-          this.bursts--;
-          this.timer = 0.6;
-          if (this.bursts <= 0) {
-            this.state = 'stalk'; this.timer = 1.2;
-            if (this.phase > 1 && ctx.area.enemyList.filter((e) => !e.boss && !e.dead).length < 2) this.summon(ctx, 'skirmisher', 0, 1);
-          }
-        }
-        break;
-    }
-  }
+  checkPhase(ctx) { if (this.updatePhase(ctx, [0.5])) this.moves.enter2(this, ctx); }
   draw(g, cam) {
     const st = this.state, face = st === 'wind' && Math.abs(this.cdx) > 0.15 ? Math.sign(this.cdx) : this.face;
     const tele = st === 'wind' && Math.floor(this.t * 14) % 2 === 0;
@@ -198,78 +186,17 @@ class Thornmaw extends Boss {
   }
 }
 
-// ---------------------------------------------------------------- Cinder Warden: teleports, fans of embers, vents (punish), eruptions.
+// Cinder Warden: teleports, fans of embers, vents (punish), eruptions.
 class CinderWarden extends Boss {
   constructor(x, y, hpMult) {
     super('cinder', x, y, hpMult);
     this.w = 18; this.h = 14;
     this.anchors = [[6, 4], [17, 4], [6, 10], [17, 10]].map(([tx, ty]) => ({ x: tx * TILE + 8, y: ty * TILE + 8 }));
     this.alpha = 1;
-    this.marks = [];
   }
-  update(dt, ctx) {
-    this.tickTimers(dt); this.t += dt;
-    if (this.state === 'dying') return this.dyingUpdate(dt, ctx);
-    const p = ctx.player;
-    if (this.updatePhase(ctx, [0.5, 0.25]) && this.phase === 3) this.summon(ctx, 'skirmisher', 5, 2);
-    this.timer -= dt;
-    this.vulnerable = this.state === 'vent';
-    this.untargetable = this.state === 'fadeout' || this.state === 'fadein';
-    // eruption marks
-    for (const m of this.marks) {
-      m.t -= dt;
-      if (m.t <= 0 && !m.done) {
-        m.done = true;
-        ctx.area.spawn(new Particles(m.x, m.y, { count: 14, color: ['#ff7030', '#ffd060'], speed: 70, life: 0.5, up: 40 }));
-        ctx.game.audio.sfx('explode', { volume: 0.4, pitch: 1.2 });
-        if (Math.hypot(p.x - m.x, p.y - m.y) < 16) ctx.game.damagePlayer(2, m);
-      }
-    }
-    this.marks = this.marks.filter((m) => m.t > -0.3);
-    switch (this.state) {
-      case 'intro': if (this.timer <= 0) { this.state = 'volley'; this.timer = 0.6; this.volleys = 3; } break;
-      case 'volley':
-        if (this.timer <= 0) {
-          const n = this.phase > 1 ? 5 : 3, spread = 0.26;
-          const a = Math.atan2(p.y - this.y, p.x - this.x);
-          for (let k = 0; k < n; k++) ctx.area.spawn(new Projectile('ember', this.x, this.y - 10, a + (k - (n - 1) / 2) * spread, 120, 1, 'enemy', { life: 2.6 }));
-          ctx.game.audio.sfx('spell', { pitch: 0.7 });
-          this.volleys--;
-          this.timer = 0.55;
-          if (this.volleys <= 0) {
-            if (this.phase > 1) {
-              for (let k = 0; k < 3; k++) this.marks.push({ x: p.x + (Math.random() - 0.5) * 40 * k, y: p.y + (Math.random() - 0.5) * 30 * k, t: 0.9 + k * 0.25 });
-            }
-            this.state = 'vent'; this.timer = this.phase === 3 ? 1.4 : 1.9;
-            ctx.game.audio.sfx('gate', { pitch: 0.6, volume: 0.5 });
-          }
-        }
-        break;
-      case 'vent': if (this.timer <= 0) { this.state = 'fadeout'; this.timer = 0.4; } break;
-      case 'fadeout':
-        this.alpha = Math.max(0, this.timer / 0.4);
-        if (this.timer <= 0) {
-          const choices = this.anchors.filter((a) => Math.hypot(a.x - this.x, a.y - this.y) > 20 && Math.hypot(a.x - p.x, a.y - p.y) > 50);
-          const a = choices[Math.floor(Math.random() * choices.length)] || this.anchors[0];
-          this.x = a.x; this.y = a.y;
-          this.state = 'fadein'; this.timer = 0.4;
-        }
-        break;
-      case 'fadein':
-        this.alpha = 1 - Math.max(0, this.timer / 0.4);
-        if (this.timer <= 0) { this.alpha = 1; this.state = 'volley'; this.timer = 0.35; this.volleys = this.phase === 3 ? 4 : 3; }
-        break;
-    }
-  }
+  checkPhase(ctx) { if (this.updatePhase(ctx, [0.5, 0.25]) && this.phase === 3) this.summon(ctx, 'skirmisher', 5, 2); }
   draw(g, cam) {
     const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
-    for (const m of this.marks) {
-      if (m.done) continue;
-      const mx = m.x - cam.left, my = m.y - cam.top;
-      g.strokeStyle = `rgba(255,${Math.floor(120 + 100 * Math.sin(this.t * 20))},40,0.9)`; g.lineWidth = 1.5;
-      g.beginPath(); g.ellipse(mx, my, 15, 9, 0, 0, TAU); g.stroke();
-      g.fillStyle = 'rgba(255,90,30,0.2)'; g.beginPath(); g.ellipse(mx, my, 15 * (1 - m.t / 1.5), 9 * (1 - m.t / 1.5), 0, 0, TAU); g.fill();
-    }
     const fade = this.state === 'fadeout' || this.state === 'fadein' ? 1 - this.alpha : 0;
     this.drawBoss(g, cam, (b, L) => paintCinder(b, this, L), {
       alpha: this.alpha, shadow: [7, 22, 6],
@@ -279,102 +206,26 @@ class CinderWarden extends Boss {
   }
 }
 
-// ---------------------------------------------------------------- Rime Sovereign: orbits, dashes (stun on walls), shard rain, ice walls.
+// Rime Sovereign: orbits, dashes (stun on walls), shard rain, ice walls.
 class RimeSovereign extends Boss {
   constructor(x, y, hpMult) {
     super('rime', x, y, hpMult);
     this.w = 18; this.h = 14;
     this.orbitA = 0;
-    this.drops = [];
     this.walls = [];
   }
-  update(dt, ctx) {
-    this.tickTimers(dt); this.t += dt;
-    if (this.state === 'dying') { this.clearWalls(ctx); return this.dyingUpdate(dt, ctx); }
-    const p = ctx.player, dx = p.x - this.x, dy = p.y - this.y, d = Math.hypot(dx, dy) || 1;
+  checkPhase(ctx) {
     if (this.updatePhase(ctx, [0.6, 0.3])) {
-      if (this.phase === 2) this.raiseWalls(ctx);
+      if (this.phase === 2) this.moves.enter2(this, ctx);
       if (this.phase === 3) this.summon(ctx, 'skirmisher', 4, 2);
     }
-    this.timer -= dt;
-    this.vulnerable = this.state === 'stunned' || this.state === 'skid';
-    for (const dr of this.drops) {
-      dr.t -= dt;
-      if (dr.t <= 0 && !dr.done) {
-        dr.done = true;
-        ctx.area.spawn(new Particles(dr.x, dr.y, { count: 10, color: ['#c8f0ff', '#ffffff'], speed: 60, life: 0.4 }));
-        ctx.game.audio.sfx('block', { pitch: 1.4, volume: 0.4 });
-        if (Math.hypot(p.x - dr.x, p.y - dr.y) < 12) ctx.game.damagePlayer(1, dr);
-      }
-    }
-    this.drops = this.drops.filter((dr) => dr.t > -0.2);
-    for (const w of this.walls) { w.t -= dt; }
-    if (this.walls.length && this.walls.every((w) => w.t <= 0)) this.clearWalls(ctx);
-    switch (this.state) {
-      case 'intro': if (this.timer <= 0) { this.state = 'orbit'; this.timer = 2.2; this.shotT = 0.7; } break;
-      case 'orbit': {
-        this.orbitA += dt * (this.phase > 1 ? 1.9 : 1.4);
-        const tx = p.x + Math.cos(this.orbitA) * 70, ty = p.y + Math.sin(this.orbitA) * 52;
-        const l = Math.hypot(tx - this.x, ty - this.y) || 1;
-        moveActor(ctx.map, this, ((tx - this.x) / l) * 110 * dt, ((ty - this.y) / l) * 110 * dt);
-        this.shotT -= dt;
-        if (this.shotT <= 0) { this.shotT = this.phase > 1 ? 0.5 : 0.8; ctx.area.spawn(new Projectile('ice', this.x, this.y - 6, Math.atan2(dy, dx), 140, 1, 'enemy', { life: 2.2 })); }
-        if (this.timer <= 0) { this.state = 'wind'; this.timer = 0.55; this.dashes = this.phase === 3 ? 2 : 1; this.cdx = dx / d; this.cdy = dy / d; }
-        break;
-      }
-      case 'wind': if (this.timer <= 0) { this.state = 'dash'; this.timer = 0.6; ctx.game.audio.sfx('dash', { pitch: 0.7 }); } break;
-      case 'dash': {
-        const r = moveActor(ctx.map, this, this.cdx * 270 * dt, this.cdy * 270 * dt);
-        if (Math.random() < 0.7) ctx.area.spawn(new Particles(this.x, this.y, { count: 1, color: '#e0f8ff', speed: 10, life: 0.5, layer: -1 }));
-        this.touchPlayer(ctx, 2);
-        if (r.hitX || r.hitY) { ctx.game.cam.shake(3, 0.25); ctx.game.audio.sfx('block', { pitch: 0.5 }); this.state = 'stunned'; this.timer = 1.8; break; }
-        if (this.timer <= 0) {
-          this.dashes--;
-          if (this.dashes > 0) { this.state = 'wind'; this.timer = 0.35; this.cdx = dx / d; this.cdy = dy / d; }
-          else { this.state = 'skid'; this.timer = this.phase > 1 ? 0.9 : 1.2; }
-        }
-        break;
-      }
-      case 'skid': // a missed dash leaves it sliding and winded: the everyday punish window
-        moveActor(ctx.map, this, this.cdx * 40 * this.timer * dt, this.cdy * 40 * this.timer * dt);
-        if (this.timer <= 0) { this.state = 'rain'; this.timer = 0.3; }
-        break;
-      case 'stunned': if (this.timer <= 0) { this.state = 'rain'; this.timer = 0.3; } break;
-      case 'rain':
-        if (this.timer <= 0) {
-          const n = this.phase > 1 ? 8 : 5;
-          for (let k = 0; k < n; k++) {
-            const a = Math.random() * TAU, r = k === 0 ? 0 : 20 + Math.random() * 60;
-            this.drops.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r * 0.7, t: 0.8 + k * 0.08 });
-          }
-          this.state = 'orbit'; this.timer = 1.8; this.shotT = 1;
-        }
-        break;
-    }
   }
-  raiseWalls(ctx) {
-    const spots = [[8, 5], [15, 5], [8, 9], [15, 9], [11, 3], [12, 11]];
-    for (const [tx, ty] of spots) {
-      const px = tx * TILE + 8, py = ty * TILE + 8;
-      if (Math.hypot(ctx.player.x - px, ctx.player.y - py) < 20 || Math.hypot(this.x - px, this.y - py) < 20) continue;
-      if (ctx.map.get(tx, ty) !== T.DFLOOR) continue;
-      ctx.map.set(tx, ty, T.DWALL);
-      this.walls.push({ tx, ty, t: 7 });
-      ctx.area.spawn(new Particles(px, py, { count: 8, color: '#e0f8ff', speed: 40, life: 0.4 }));
-    }
-    ctx.game.audio.sfx('gate', { pitch: 1.4 });
-  }
-  clearWalls(ctx) {
-    for (const w of this.walls) if (ctx.map.get(w.tx, w.ty) === T.DWALL) ctx.map.set(w.tx, w.ty, T.DFLOOR);
-    this.walls = [];
-  }
-  draw(g, cam) {
-    for (const dr of this.drops) {
-      if (dr.done) continue;
-      g.fillStyle = `rgba(20,40,80,${0.25 + (1 - dr.t) * 0.4})`;
-      g.beginPath(); g.ellipse(dr.x - cam.left, dr.y - cam.top, 9, 5, 0, 0, TAU); g.fill();
-      const h = dr.t * 120;
-      g.fillStyle = '#d8f4ff'; g.fillRect(dr.x - cam.left - 2, dr.y - cam.top - h - 8, 4, 8);
+  draw(g, cam, ctx) {
+    // Each falling shard over its landing zone.
+    for (const z of ctx.area.zones) {
+      if (z.owner !== this || !z.shard) continue;
+      const h = z.t * 120;
+      g.fillStyle = '#d8f4ff'; g.fillRect(z.x - cam.left - 2, z.y - cam.top - h - 8, 4, 8);
     }
     const st = this.state, tele = st === 'wind' && Math.floor(this.t * 14) % 2 === 0;
     const ghosts = st === 'dash' ? [[-this.cdx * 12, -this.cdy * 12, 0.35], [-this.cdx * 24, -this.cdy * 24, 0.16]] : null;
