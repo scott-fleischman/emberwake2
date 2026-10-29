@@ -298,4 +298,4 @@ export const portraitPose = (kind, t) => ({ kind, anim: t, state: 'intro', phase
 // above, so they must not call into this module while loading.
 export { THORN_PAL, thornPose, paintThornmaw, thornUnder, thornOver } from './art-thornmaw.js';
 export { CINDER_PAL, cinderHover, ventOpen, cinderHands, paintCinder, fxCinder, emberSwirl } from './art-cinder.js';
-export { RIME_PAL, rimeHover, rimeWings, paintRime, rimeUnder, rimeOver } from './art-rime.js';
+export { RIME_PAL, rimeHover, rimePose, paintRime, rimeUnder, rimeOver } from './art-rime.js';

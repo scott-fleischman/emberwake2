@@ -440,16 +440,55 @@ const SFX = {
     a.noise(t + 1.6, { dur: 0.5, vol: 0.12, f: 500, f2: 3500, q: 1, attack: 0.3 });
     a.tone(t + 1.6, { f: 300, f2: 900, dur: 0.5, vol: 0.03, attack: 0.3 });
   },
-  rime_roar: (a, t) => { // a cold howl with ice grinding under it
-    a.noise(t, { dur: 0.6, vol: 0.12, type: 'highpass', f: 3000, f2: 1800, attack: 0.1 });
-    a.tone(t, { type: 'sawtooth', f: 120, f2: 160, dur: 0.6, vol: 0.07, lp: 900, attack: 0.08 });
-    a.notes(t + 0.1, [91, 96], 0.1, { type: 'triangle', dur: 0.4, vol: 0.03 });
+  rime_roar: (a, t) => { // an owl's shriek, ice grinding under it, frost ringing off the end
+    a.tone(t, { type: 'sawtooth', f: 1100, f2: 1500, dur: 0.18, vol: 0.05, lp: 3000, attack: 0.03 });
+    a.tone(t + 0.12, { type: 'sawtooth', f: 1500, f2: 900, dur: 0.5, vol: 0.06, lp: 2800, lp2: 1200, attack: 0.02 });
+    a.tone(t + 0.12, { type: 'triangle', f: 1510, f2: 905, dur: 0.5, vol: 0.04, detune: 14 });
+    a.noise(t, { dur: 0.7, vol: 0.12, type: 'highpass', f: 3200, f2: 1800, attack: 0.1 });
+    a.tone(t, { type: 'sawtooth', f: 110, f2: 150, dur: 0.6, vol: 0.06, lp: 700, q: 4, attack: 0.08 });
+    a.notes(t + 0.5, [91, 96, 100], 0.07, { type: 'triangle', dur: 0.45, vol: 0.03 });
   },
-  rime_phase: (a, t) => { // a rising cold shimmer that bursts into ringing shards
-    a.tone(t, { f: 700, f2: 2100, dur: 0.8, vol: 0.06, attack: 0.5 });
-    a.tone(t, { type: 'triangle', f: 705, f2: 2120, dur: 0.8, vol: 0.05, attack: 0.5, detune: 9 });
-    a.noise(t + 0.75, { dur: 0.5, vol: 0.26, type: 'highpass', f: 3500, f2: 1800, attack: 0.002 });
-    a.notes(t + 0.78, [96, 91, 100, 93, 98], 0.05, { type: 'triangle', dur: 0.6, vol: 0.06 });
+  rime_dash: (a, t) => { // a wingbeat, then frost hissing past and a sharp crystal ring
+    a.noise(t, { dur: 0.1, vol: 0.12, type: 'lowpass', f: 900, f2: 300 });
+    a.noise(t + 0.05, { dur: 0.45, vol: 0.14, f: 1200, f2: 5000, q: 1.2, attack: 0.08 });
+    a.tone(t + 0.05, { type: 'triangle', f: 1800, f2: 2600, dur: 0.25, vol: 0.04, attack: 0.05 });
+    a.notes(t + 0.1, [96, 103], 0.05, { type: 'triangle', dur: 0.4, vol: 0.035 });
+  },
+  rime_shard: (a, t) => { // ice cracking on stone, splinters tinkling away
+    a.noise(t, { dur: 0.06, vol: 0.2, type: 'highpass', f: 2600 });
+    a.tone(t, { type: 'triangle', f: 340, f2: 120, dur: 0.08, vol: 0.14 });
+    [0.02, 0.05, 0.09, 0.14].forEach((d, i) => a.tone(t + d, { type: 'triangle', f: 3000 - i * 350, f2: 2400 - i * 300, dur: 0.12, vol: 0.035 }));
+  },
+  rime_gust: (a, t) => { // air sucked in as her wings draw back, then a howling blizzard for as long as the gust blows
+    a.noise(t, { dur: 0.6, vol: 0.1, f: 3000, f2: 800, q: 1.5, attack: 0.45 });
+    a.tone(t, { type: 'sawtooth', f: 300, f2: 180, dur: 0.6, vol: 0.025, lp: 900, attack: 0.4 });
+    a.noise(t + 0.6, { dur: 2, vol: 0.18, f: 700, f2: 1300, q: 0.8, attack: 0.12 });
+    a.noise(t + 0.6, { dur: 2, vol: 0.08, type: 'highpass', f: 4500, f2: 3000, attack: 0.2 });
+    a.tone(t + 0.6, { type: 'sawtooth', f: 220, f2: 330, dur: 2, vol: 0.03, lp: 800, q: 6, attack: 0.3 });
+    a.tone(t + 0.7, { type: 'triangle', f: 640, f2: 520, dur: 1.8, vol: 0.02, attack: 0.4 });
+  },
+  rime_pillar: (a, t) => { // frost creeping and crackling round the player, then the pillars bursting up as their zones strike
+    a.noise(t, { dur: 1.1, vol: 0.07, type: 'highpass', f: 5000, f2: 2500, attack: 0.6 });
+    [0.25, 0.45, 0.6, 0.75, 0.86, 0.95, 1.02].forEach((d, i) => a.noise(t + d, { dur: 0.02, vol: 0.05 + i * 0.01, type: 'highpass', f: 3800 }));
+    a.noise(t + 1.1, { dur: 0.4, vol: 0.26, type: 'lowpass', f: 3000, f2: 300, attack: 0.003 });
+    a.tone(t + 1.1, { f: 150, f2: 50, dur: 0.35, vol: 0.32 });
+    a.notes(t + 1.12, [86, 93, 98], 0.04, { type: 'triangle', dur: 0.6, vol: 0.05 });
+  },
+  rime_decoy: (a, t) => { // a cold shimmer that splits in two, each half chiming as a copy of her forms
+    a.tone(t, { type: 'triangle', f: 1200, f2: 1700, dur: 0.35, vol: 0.05, attack: 0.15 });
+    a.noise(t, { dur: 0.35, vol: 0.06, type: 'highpass', f: 5000, attack: 0.15 });
+    a.notes(t + 0.3, [93, 100, 105], 0.06, { type: 'triangle', dur: 0.5, vol: 0.04 });
+    a.notes(t + 0.33, [88, 95, 100], 0.06, { type: 'triangle', dur: 0.5, vol: 0.04, detune: 12 });
+  },
+  rime_phase: (a, t) => { // ice groaning as light cracks through her, the burst into ringing shards, then the shards rushing back together
+    a.tone(t, { type: 'sawtooth', f: 90, f2: 140, dur: 1.4, vol: 0.06, lp: 500, lp2: 1400, attack: 0.5 });
+    [0.2, 0.42, 0.6, 0.76, 0.9, 1.02, 1.12, 1.21, 1.29, 1.36].forEach((d, i) => a.noise(t + d, { dur: 0.03, vol: 0.06 + i * 0.012, type: 'highpass', f: 2600 + (i % 3) * 600 }));
+    a.tone(t + 0.3, { f: 700, f2: 2100, dur: 1.15, vol: 0.04, attack: 0.8 });
+    a.noise(t + 1.45, { dur: 0.6, vol: 0.3, type: 'highpass', f: 3500, f2: 1500, attack: 0.002 });
+    a.tone(t + 1.45, { f: 130, f2: 45, dur: 0.5, vol: 0.3 });
+    a.notes(t + 1.47, [96, 91, 100, 93, 98, 103], 0.04, { type: 'triangle', dur: 0.6, vol: 0.05 });
+    a.noise(t + 1.6, { dur: 0.6, vol: 0.1, f: 5000, f2: 900, q: 1.5, attack: 0.4 });
+    a.tone(t + 1.7, { type: 'triangle', f: 500, f2: 1500, dur: 0.6, vol: 0.04, attack: 0.3 });
   },
   thornmaw_death: (a, t) => { // a long creak sinking into the earth, the roots letting go, the flower wilting
     a.tone(t, { type: 'sawtooth', f: 140, f2: 40, dur: 1.6, vol: 0.12, lp: 700, lp2: 150, attack: 0.05 });
@@ -468,10 +507,14 @@ const SFX = {
     [[0.95, 640], [1.08, 480], [1.18, 820], [1.32, 560]].forEach(([d, f]) => a.tone(t + d, { type: 'triangle', f, f2: f * 0.85, dur: 0.12, vol: 0.05 }));
     a.tone(t + 1.5, { f: mtof(81), dur: 1, vol: 0.03, attack: 0.02 });
   },
-  rime_death: (a, t) => { // a cascade of falling icicles chiming away to a single note
-    a.notes(t, [103, 98, 96, 91, 89, 84, 79], 0.12, { type: 'triangle', dur: 0.5, vol: 0.05 });
-    a.noise(t, { dur: 0.4, vol: 0.18, type: 'highpass', f: 4200, f2: 2400, attack: 0.002 });
-    a.tone(t + 0.9, { f: mtof(72), dur: 1.4, vol: 0.05, attack: 0.1 });
+  rime_death: (a, t) => { // her crown and wings coming apart in a long cascade of falling icicles, chiming away to one cold note
+    a.noise(t, { dur: 0.5, vol: 0.2, type: 'highpass', f: 4200, f2: 2000, attack: 0.002 });
+    a.tone(t, { type: 'sawtooth', f: 160, f2: 60, dur: 1.2, vol: 0.06, lp: 900, lp2: 200 });
+    a.notes(t + 0.05, [103, 98, 100, 96, 91, 93, 89, 84, 86, 79], 0.1, { type: 'triangle', dur: 0.5, vol: 0.045 });
+    [0.3, 0.55, 0.85, 1.1].forEach((d, i) => a.noise(t + d, { dur: 0.15, vol: 0.12 - i * 0.02, type: 'highpass', f: 3000 - i * 300 }));
+    a.noise(t + 0.4, { dur: 1.2, vol: 0.05, type: 'highpass', f: 6000, f2: 3500, attack: 0.3 });
+    a.tone(t + 1.1, { f: mtof(72), dur: 1.6, vol: 0.05, attack: 0.1 });
+    a.tone(t + 1.1, { type: 'triangle', f: mtof(84), dur: 1.2, vol: 0.02, attack: 0.2 });
   },
   // monster signature moves, mv_<region>_<archetype>, played as the move is unleashed
   mv_forest_brute: (a, t) => { // a slam, then thorns scraping up
@@ -577,7 +620,7 @@ const SFX = {
 };
 
 // Small random pitch drift so repeated combat sounds don't machine-gun.
-const VARY = new Set(['swing', 'hit', 'block', 'dash', 'arrow', 'talk', 'eat', 'splash', 'hurt']);
+const VARY = new Set(['swing', 'hit', 'block', 'dash', 'arrow', 'talk', 'eat', 'splash', 'hurt', 'rime_shard']);
 
 // ---------- engine ----------
 export class AudioEngine {

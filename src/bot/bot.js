@@ -368,7 +368,8 @@ export class Bot {
     const minions = list.filter((e) => !e.boss).sort((x, y) => near(x) - near(y));
     const boss = list.find((e) => e.boss);
     let target = minions.find((e) => !e.untargetable) || minions[0];
-    if (boss && (!target || near(target) > 56 || boss.vulnerable)) target = boss;
+    // A decoy breaks at one blow, so it's worth the walk; anything else only when it's close.
+    if (boss && (!target || near(target) > (target.decoy ? 130 : 56) || boss.vulnerable)) target = boss;
     this.status = `Fighting ${target.boss ? target.name.split(',')[0] : target.name || target.archetype}`;
     if (!this.ignore) this.ignore = new Map();
     this.engage(target);

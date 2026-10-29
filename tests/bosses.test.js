@@ -8,7 +8,8 @@ import { makeZone } from '../src/game/zones.js';
 import { AudioEngine, SFX_NAMES, MUSIC_KEYS } from '../src/audio/audio.js';
 import { paintCinder, CINDER_PAL, cinderHands, cinderPalms, cinderSword, cinderHover } from '../src/gfx/art-cinder.js';
 import { paintThornmaw, THORN_PAL } from '../src/gfx/art-thornmaw.js';
-import { paintRime, RIME_PAL } from '../src/gfx/art-rime.js';
+import { paintRime, RIME_PAL, rimePose } from '../src/gfx/art-rime.js';
+import { RimeDecoy } from '../src/game/warden-rime.js';
 import { portraitPose } from '../src/gfx/bossart.js';
 import { T } from '../src/world/tiles.js';
 import { Bot } from '../src/bot/bot.js';
@@ -36,7 +37,7 @@ test('painters take a palette', () => {
 // Repainted with every palette colour swapped, no colour the painter uses may stay the same.
 test('a palette reaches every colour its painter uses', () => {
   const swap = (pal) => JSON.parse(JSON.stringify(pal).replace(/#[0-9a-f]{6}/gi, '#010203').replace(/\d+,\d+,\d+/g, '1,2,3'));
-  const states = ['intro', 'stalk', 'wind', 'charge', 'stunned', 'thorns', 'roots', 'spores', 'lash', 'transform', 'volley', 'vent', 'fadeout', 'ready', 'meteors', 'sweep', 'pools', 'orbit', 'dash', 'skid', 'rain', 'dying'];
+  const states = ['intro', 'stalk', 'wind', 'charge', 'stunned', 'thorns', 'roots', 'spores', 'lash', 'transform', 'volley', 'vent', 'fadeout', 'ready', 'meteors', 'sweep', 'pools', 'orbit', 'dash', 'skid', 'rain', 'gust', 'pillars', 'decoys', 'spent', 'defeated', 'dying'];
   const colours = (kind, paint, pal) => {
     const rec = recorder(), L = [];
     rec.g.getTransform = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
@@ -541,6 +542,190 @@ test('every Cinder sound is its own', () => {
   for (const n of names) { assert.ok(SFX_NAMES.includes(n), n); assert.ok(recipe(n).length > 2, `${n} makes no sound`); }
   assert.equal(new Set(names.map(recipe)).size, names.length);
 });
+
+// ---------------------------------------------------------------- the Rime Sovereign, Shattered
+// Every point a painter touches, carried through its transforms: how much of the buffer it covers.
+function extent(paint, pose) {
+  let m = [1, 0, 0, 1, 0, 0];
+  const stack = [], box = [Infinity, Infinity, -Infinity, -Infinity], grad = { addColorStop() {} };
+  const pt = (x, y) => {
+    const X = m[0] * x + m[2] * y + m[4], Y = m[1] * x + m[3] * y + m[5];
+    box[0] = Math.min(box[0], X); box[1] = Math.min(box[1], Y); box[2] = Math.max(box[2], X); box[3] = Math.max(box[3], Y);
+  };
+  const mul = (a, b, c, d, e, f) => { m = [m[0] * a + m[2] * b, m[1] * a + m[3] * b, m[0] * c + m[2] * d, m[1] * c + m[3] * d, m[0] * e + m[2] * f + m[4], m[1] * e + m[3] * f + m[5]]; };
+  const ops = {
+    save: () => stack.push(m), restore: () => { m = stack.pop(); },
+    translate: (x, y) => mul(1, 0, 0, 1, x, y), scale: (x, y) => mul(x, 0, 0, y, 0, 0), rotate: (a) => mul(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0),
+    moveTo: pt, lineTo: pt, quadraticCurveTo: (a, b, x, y) => { pt(a, b); pt(x, y); }, bezierCurveTo: (a, b, c, d, x, y) => { pt(a, b); pt(c, d); pt(x, y); },
+    ellipse: (x, y, rx, ry) => { pt(x - rx, y - ry); pt(x + rx, y + ry); }, arc: (x, y, r) => { pt(x - r, y - r); pt(x + r, y + r); },
+    fillRect: (x, y, w, h) => { pt(x, y); pt(x + w, y + h); },
+  };
+  const g = new Proxy({}, { get: (t, k) => (k in t ? t[k] : ops[k] || (() => grad)), set: (t, k, v) => { t[k] = v; return true; } });
+  paint(g, pose, []);
+  return { w: box[2] - box[0], h: box[3] - box[1], box };
+}
+test('the Rime Sovereign shatters: phase 2 uses new attacks', async () => {
+  const s = await sandbox();
+  const b = s.spawn(createBoss('rime', s.center.x, s.center.y - 50)); b.phase = 2; b.state = WARDEN_MOVES.rime.first;
+  const seen = new Set(); for (let t = 0; t < 30; t += 1 / 60) { s.step(1 / 60); seen.add(b.state); s.game.state.player.hp = 99; }
+  for (const st of ['gust', 'pillars', 'decoys']) assert.ok(seen.has(st), st);
+});
+test('the Rime Sovereign has her own voice', async () => {
+  const names = await sfxDuringFight('rime', 40);
+  assert.ok(names.filter((n) => n.startsWith('rime_')).length >= 4);
+  for (const n of ['boss', 'dash', 'block', 'gate']) assert.ok(!names.includes(n), n);
+});
+// From behind there is no face: the back of her crystal head, the backs of her wings, her train.
+test('Rime front and back views differ from the side, in both forms, and her back shows no face', () => {
+  for (const o of [{}, { phase: 2, phaseT: 9 }]) {
+    const draw = (view) => { const r = recorder(); paintRime(r.g, { ...portraitPose('rime', 1), ...o, view }, []); return r; };
+    const [side, front, back] = ['side', 'front', 'back'].map(draw), calls = (r) => JSON.stringify(r.calls);
+    assert.notEqual(calls(front), calls(side)); assert.notEqual(calls(back), calls(side)); assert.notEqual(calls(front), calls(back));
+    for (const k of ['face', 'eye', 'socket', 'mask', 'beak']) {
+      assert.ok(front.fills.includes(RIME_PAL[k]) && side.fills.includes(RIME_PAL[k]), `phase ${o.phase || 1}: ${k} shows from the front and side`);
+      assert.ok(!back.fills.includes(RIME_PAL[k]), `phase ${o.phase || 1}: no ${k} from behind`);
+    }
+  }
+});
+test('Shattered, she reforms larger, on frost wings under a taller crown, in every view', () => {
+  for (const view of ['side', 'front', 'back']) {
+    const pose = { ...portraitPose('rime', 1), roarT: 0, view };
+    const one = extent(paintRime, pose), two = extent(paintRime, { ...pose, phase: 2, phaseT: 9 });
+    assert.ok(two.h > one.h * 1.15, `${view}: ${two.h.toFixed(1)} tall against ${one.h.toFixed(1)}`);
+    assert.ok(two.w > one.w * 1.2, `${view}: ${two.w.toFixed(1)} wide against ${one.w.toFixed(1)}`);
+  }
+});
+// stamp() paints into a 184x150 buffer with her feet at (92, 124); past it she'd be clipped, and the
+// outline takes a pixel more. (A roar comes only in phase 1: it is spent by the end of the transform.)
+test('every pose she takes fits the stamp\'s buffer', () => {
+  const states = ['orbit', 'wind', 'dash', 'skid', 'stunned', 'rain', 'gust', 'pillars', 'decoys', 'spent', 'defeated', 'dying'];
+  for (const state of [...states, 'transform']) for (const phase of state === 'transform' ? [1] : [1, 2]) for (const view of ['side', 'front', 'back']) {
+    for (const roarT of phase > 1 ? [0] : [0, 0.5]) for (let i = 0; i < 12; i++) for (const timer of [0.1, 0.5, 1.2, 2.2]) {
+      const { box } = extent(paintRime, { anim: i * 0.29, state, phase, phaseT: i < 4 ? i * 0.2 : 9, view, roarT, timer, cdx: 1, cdy: 0, face: 1 });
+      assert.ok(box[0] > -91 && box[2] < 91 && box[1] > -123 && box[3] < 25, `${state} phase ${phase} ${view}: ${box.map((v) => v.toFixed(1))}`);
+    }
+  }
+});
+// Each Shatter attack is the orbit's next move by turns; the dash comes between them.
+test('the Shatter attacks do what they promise, each in its own voice', async () => {
+  const cast = async (rimeTurn) => {
+    const s = await sandbox(), p = s.game.player, heard = [];
+    s.app.audio.sfx = (name) => heard.push(name);
+    const b = s.spawn(createBoss('rime', p.x, p.y - 80));
+    Object.assign(b, { phase: 2, phaseT: 9, state: 'orbit', timer: 0, shotT: 9, rimeTurn });
+    s.step(1 / 60);
+    return { s, b, p, heard, zones: s.area.zones.filter((z) => z.owner === b) };
+  };
+  const close = (a, x, e = 0.05) => Math.abs(a - x) < e;
+  let { s, b, p, heard, zones } = await cast(0);
+  const map = s.area.map, open = (e) => !rectSolid(map, e.x, e.y, e.w, e.h, (x, y) => map.isSolid(x, y));
+  assert.equal(b.state, 'gust');
+  assert.equal(zones.length, 1);
+  const [cone] = zones;
+  assert.deepEqual([cone.shape, cone.dmg, cone.life], ['cone', 0, 2]);
+  assert.ok(close(cone.a, Math.PI / 2) && Math.hypot(cone.x - b.x, cone.y - b.y) < 1, 'blown from her at the player');
+  assert.ok(heard.includes('rime_gust'));
+  s.step(cone.t);
+  const x0 = p.x, y0 = p.y;
+  s.step(1);
+  assert.ok(close(p.y - y0, 60, 3) && Math.abs(p.x - x0) < 3, `pushed ${(p.y - y0).toFixed(1)} px away from her in a second`);
+  s.step(1.2);
+  assert.ok(p.y - y0 < 115 && open(p), `the wall stops it (${(p.y - y0).toFixed(1)} px)`);
+  assert.equal(b.state, 'spent'); assert.ok(b.vulnerable, 'it leaves her spent: the punish window');
+
+  ({ b } = await cast(1));
+  assert.equal(b.state, 'wind', 'the dash between');
+
+  ({ s, b, p, heard, zones } = await cast(2));
+  assert.equal(b.state, 'pillars');
+  assert.equal(zones.length, 4);
+  for (const z of zones) assert.deepEqual([z.shape, z.r, z.effect, z.dmg], ['circle', 12, 'freeze', 1]);
+  assert.ok(zones.every((z) => close(z.t, 1.1)), `rising at 1.1 s: ${zones.map((z) => z.t)}`);
+  assert.ok(zones.some((z) => Math.hypot(z.x - p.x, z.y - p.y) < 1) && zones.every((z) => Math.hypot(z.x - p.x, z.y - p.y) < 40), 'on the player and round them');
+  assert.ok(heard.includes('rime_pillar'));
+  const states = new Set();
+  for (let t = 0; t < 2.5; t += 1 / 60) { s.step(1 / 60); states.add(b.state); }
+  assert.ok(p.effects.freeze, 'caught standing still: frozen');
+  assert.ok(states.has('spent'), 'then spent');
+
+  ({ s, b, p, heard } = await cast(4));
+  assert.equal(b.state, 'decoys');
+  const decoys = s.area.enemyList.filter((e) => e instanceof RimeDecoy);
+  assert.equal(decoys.length, 2);
+  assert.ok(decoys.every((d) => d.hp === 1 && d.owner === b && d.team === 'enemy'));
+  assert.ok(heard.includes('rime_decoy'));
+  const edge = 32;
+  for (const d of decoys) assert.ok(open(d) && d.x >= edge && d.y >= edge && d.x <= map.pixelW - edge && d.y <= map.pixelH - edge, `on open floor, clear of the doorways (${d.x}, ${d.y})`);
+  const shots = new Map(decoys.map((d) => [d, 0])), spawn = s.area.spawn.bind(s.area);
+  s.area.spawn = (e) => {
+    if (e.kind === 'ice' && e.effect === 'chill') for (const d of decoys) if (Math.hypot(e.x - d.x, e.y - d.y) < 14) shots.set(d, shots.get(d) + 1);
+    return spawn(e);
+  };
+  const fight = (secs) => { for (let t = 0; t < secs; t += 1 / 60) { p.iframes = 9; s.step(1 / 60); } }; // no hit-stop to slow the clocks
+  fight(3);
+  for (const d of decoys) assert.equal(shots.get(d), 2, 'a chilling bolt every 1.4 s');
+  fight(4.85);
+  assert.ok(decoys.every((d) => !d.dead), 'still there before 8 s');
+  fight(0.45);
+  assert.ok(decoys.every((d) => d.dead) && !s.area.enemyList.some((e) => e instanceof RimeDecoy), 'shattered at 8 s');
+});
+test('Rime decoys break in one hit', async () => {
+  const s = await sandbox(); const d = s.spawn(new RimeDecoy(s.center.x + 30, s.center.y, null));
+  d.damage(1, s.game.player, s.game.area.ctx); s.step(0.3); assert.ok(d.dead);
+});
+// The wing pose as drawn, frame after frame, through both phases: nothing snaps between states.
+// The pillars' slam is a blow, fast on purpose, and is left out.
+test('her wings ease between poses through both phases', async () => {
+  for (const phase of [1, 2]) {
+    const s = await sandbox(), p = s.game.player;
+    const b = s.spawn(createBoss('rime', p.x, p.y - 70)); Object.assign(b, { phase, phaseT: 9, state: 'orbit', timer: 0.5 });
+    const seen = new Set(), slam = () => b.state === 'pillars' && Math.abs(b.timer - (1.5 - 1.1)) < 0.2;
+    let last = null, worst = 0, at = '';
+    for (let t = 0; t < 26; t += 1 / 60) {
+      s.step(1 / 60); s.game.state.player.hp = 99; seen.add(b.state);
+      const w = rimePose(b), now = [w.a0, w.a1, w.al, w.lean, w.sink / 10];
+      if (last && !slam()) now.forEach((v, i) => { const d = Math.abs(v - last[i]); if (d > worst) { worst = d; at = `${b.state} #${i}`; } });
+      last = now;
+    }
+    for (const st of phase > 1 ? ['gust', 'pillars', 'decoys', 'spent', 'dash'] : ['orbit', 'wind', 'dash', 'rain']) assert.ok(seen.has(st), `phase ${phase} saw ${st}`);
+    assert.ok(worst < 0.35, `phase ${phase}: the pose jumped ${worst.toFixed(2)} in a frame (${at})`);
+  }
+});
+// Killed while spent and set back at the centre behind the black: through the fade-in she shows her
+// own pose, wings still beating, and carries straight on into the dissolve.
+test('killed while spent, her wings neither freeze through the fade-in nor jump into the dissolve', async () => {
+  const s = await sandbox(), p = s.game.player;
+  const b = s.spawn(createBoss('rime', p.x, p.y - 70)); Object.assign(b, { phase: 2, phaseT: 9, state: 'spent', timer: 1.2, view: 'front' });
+  s.step(0.2);
+  b.damage(9999, p, s.area.ctx);
+  const pose = (q) => { const w = rimePose(q); return [w.a0 + w.flap, w.a1, w.al, w.sink / 10]; };
+  const fadein = [];
+  let last = null, lastStep = null, boundary = null;
+  for (let t = 0; t < 2.2 && s.game.bossDeath; t += 1 / 60) {
+    s.step(1 / 60);
+    const step = s.game.bossDeath?.step, now = pose(b);
+    if (step === 'fadein') {
+      fadein.push(now);
+      const own = pose({ ...b, rimePoseFrom: null, rimePoseNow: null });
+      now.forEach((v, i) => assert.ok(Math.abs(v - own[i]) < 1e-9, 'the fade-in draws its own pose'));
+    }
+    if (lastStep === 'fadein' && step === 'dissolve') boundary = Math.max(...now.map((v, i) => Math.abs(v - last[i])));
+    last = now; lastStep = step;
+  }
+  assert.ok(fadein.length > 20, 'watched the fade-in');
+  const travel = Math.max(...fadein[0].map((v, i) => Math.max(...fadein.map((f) => Math.abs(f[i] - v)))));
+  assert.ok(travel > 0.05, `the wings hang frozen through the fade-in (${travel.toFixed(3)})`);
+  assert.ok(boundary !== null && boundary <= 0.15, `jumped ${boundary?.toFixed(2)} into the dissolve`);
+});
+test('every Rime sound is its own', () => {
+  const engine = new AudioEngine(), calls = [];
+  engine.ctx = { currentTime: 0 };
+  for (const k of ['tone', 'noise']) engine[k] = (t, o) => calls.push([k, t, o]);
+  const recipe = (name) => { calls.length = 0; engine._last = {}; engine.sfx(name); return JSON.stringify(calls); };
+  const names = ['roar', 'dash', 'shard', 'gust', 'pillar', 'decoy', 'phase', 'death'].map((k) => `rime_${k}`);
+  for (const n of names) { assert.ok(SFX_NAMES.includes(n), n); assert.ok(recipe(n).length > 2, `${n} makes no sound`); }
+  assert.equal(new Set(names.map(recipe)).size, names.length);
+});
 // A warden against a wall summons into open floor, never into the wall (where the bot would chase
 // a foe it can never reach).
 test('a warden\'s summons never stand in a wall', async () => {
@@ -604,6 +789,14 @@ test('the bot won\'t roll onto a warden it can\'t hurt yet', async () => {
   const b = s.spawn(createBoss('thornmaw', p.x, p.y - 46)); b.state = 'thorns';
   assert.ok(bot.rollsOntoBoss([0, -1], [b])); assert.ok(!bot.rollsOntoBoss([0, 1], [b]));
   b.state = 'stunned'; b.vulnerable = true; assert.ok(!bot.rollsOntoBoss([0, -1], [b]));
+});
+// A decoy breaks at one blow: worth the walk, unless the warden itself is open.
+test('the bot goes for a decoy in reach before the warden, and for the warden when it is open', async () => {
+  const s = await sandbox(), p = s.game.player, bot = idleBot(s);
+  const b = s.spawn(createBoss('rime', p.x, p.y - 90)); Object.assign(b, { state: 'orbit', timer: 9, shotT: 9, aggro: true });
+  const d = s.spawn(new RimeDecoy(p.x + 100, p.y, b));
+  bot.fight([b, d]); assert.equal(bot.engaged, d);
+  b.vulnerable = true; bot.fight([b, d]); assert.equal(bot.engaged, b);
 });
 test('the bot keeps clear of the brambles beside its path', async () => {
   const s = await sandbox(), p = s.game.player, map = s.area.map, bot = idleBot(s);

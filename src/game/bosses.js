@@ -8,7 +8,7 @@ import { drawShadow } from '../gfx/render.js';
 import { BOSS_RGB, stamp, roarRings, deathRays, entranceOffset } from '../gfx/bossart.js';
 import { paintThornmaw, thornUnder, thornOver } from '../gfx/art-thornmaw.js';
 import { paintCinder, fxCinder, emberSwirl, drawMeteors } from '../gfx/art-cinder.js';
-import { paintRime, rimeUnder, rimeOver } from '../gfx/art-rime.js';
+import { paintRime, rimeUnder, rimeOver, drawGust, drawFrostMarks } from '../gfx/art-rime.js';
 import { moves as thornmaw } from './warden-thornmaw.js';
 import { moves as cinder } from './warden-cinder.js';
 import { moves as rime } from './warden-rime.js';
@@ -238,10 +238,12 @@ class CinderWarden extends Boss {
   }
 }
 
-// Rime Sovereign: orbits, dashes (stun on walls), shard rain, ice walls.
+// Rime Sovereign: orbits, dashes (stun on walls), shard rain; Shattered, a gust, ice-pillar prisons, decoys.
 class RimeSovereign extends Boss {
   constructor(x, y, hpMult) { super('rime', x, y, hpMult); this.w = 18; this.h = 14; }
   draw(g, cam, ctx) {
+    drawFrostMarks(g, this, ctx.area.zones, cam);
+    drawGust(g, this, ctx.area.zones, cam);
     // Each falling shard over its landing zone.
     for (const z of ctx.area.zones) {
       if (z.owner !== this || !z.shard) continue;
