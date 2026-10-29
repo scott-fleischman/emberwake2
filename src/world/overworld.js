@@ -676,8 +676,9 @@ export function stageContent(W) {
   }
 
   // Every blocking placement is verified: if it would cut anything off from home, it is reverted.
-  // A flooded pool must not cut anything off from someone who hasn't got the charm yet, either. Its
-  // count without the charm is kept only while pools go in one after another.
+  // A flooded pool must not cut anything off from someone who hasn't got the charm yet, either, and with
+  // it must cost nothing but its bell. The count without the charm is kept only while pools go in one
+  // after another.
   const countReach = (p = pass) => { let n = 0; const d = bfsDistances(W.w, W.h, p, [W.pois.home]); for (let i = 0; i < d.length; i++) if (d[i] >= 0) n++; return n; };
   let reachCount = countReach(), dryCount = 0;
   const tryPlace = (changes) => {
@@ -691,7 +692,7 @@ export function stageContent(W) {
     }
     const nDry = flood ? countReach(dry) : 0;
     const n = flood && nDry < dryCount - changes.length ? -1 : countReach();
-    if (n < reachCount - changes.length) {
+    if (n < reachCount - (flood ? changes.filter((c) => c[2] !== T.FLOOD).length : changes.length)) {
       for (const [i, t, d] of saved) { W.tiles[i] = t; W.deco[i] = d; }
       return false;
     }
@@ -804,13 +805,14 @@ export function stageContent(W) {
     if (pts.some((p) => nearSettlement(p.x, p.y, 10))) continue;
     W.pois.patrols.push({ id: `pt${W.pois.patrols.length}`, path: pts, biome: W.biome[at(W, pts[0].x, pts[0].y)] });
   }
-  stageWardFeatures(W, { rng, free, tryPlace, randomTile, keepClear, roadDist, nearSettlement });
+  stageWardFeatures(W, { rng, free, tryPlace, randomTile, keepClear, roadDist, nearSettlement, pass });
   coolLavaPaths(W);
   // Seals go last. Whatever the quest needs before a ward breaks must stay reachable around it, and
   // without the charm, which only the bells in their pools need.
   const beside = (r) => N4.map(([dx, dy]) => ({ x: r.x + dx, y: r.y + dy })).find((q) => pass(q.x, q.y)) || r;
   const needed = () => [...W.settlements.map((s) => s.center), ...[...W.pois.lookouts, ...Object.values(W.pois.relics).flat()].map(beside), ...W.pois.gates];
   const reaches = (go, pts) => { const d = bfsDistances(W.w, W.h, go, [W.pois.home]); return pts.every((p) => d[at(W, p.x, p.y)] >= 0 || !go(p.x, p.y)); };
+  // A bell's neighbours are all flooded, so it drops out of the dry check (!go) and is checked with the charm.
   stageSeals(W, pass, (extra) => reaches(dry, [...needed(), ...extra]) && reaches(pass, W.pois.relics.bells.map(beside)));
   coolLavaPaths(W, { bombs: true, gloves: true, charm: true }); // a seal may have cut the only lava-free way somewhere
   // Clear decoration from anything solid it ended up on.

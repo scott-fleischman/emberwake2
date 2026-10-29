@@ -9,12 +9,13 @@ export const SEAL_R = 5;
 export const WARDS = ['verdant', 'ashen', 'frost', 'drowned'];
 export const RELICS = { leaves: 'verdant', vents: 'ashen', beacons: 'frost', bells: 'drowned' };
 
+const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const at = (W, x, y) => y * W.w + x;
 const far = (p, list, d) => list.every((q) => Math.hypot(q.x - p.x, q.y - p.y) >= d);
 
-// h: helpers from stageContent {rng, free, tryPlace, randomTile, keepClear, roadDist, nearSettlement}
+// h: helpers from stageContent {rng, free, tryPlace, randomTile, keepClear, roadDist, nearSettlement, pass}
 export function stageWardFeatures(W, h) {
-  const { rng, free, tryPlace, randomTile, keepClear, roadDist, nearSettlement } = h;
+  const { rng, free, tryPlace, randomTile, keepClear, roadDist, nearSettlement, pass } = h;
   const Dg = W.pois.dungeons;
   const S = (id) => W.settlements.find((s) => s.id === id);
   const awayFromWards = (x, y, d) => [...Object.values(Dg), W.pois.spire].every((q) => Math.hypot(q.front.x - x, q.front.y - y) >= d);
@@ -65,20 +66,37 @@ export function stageWardFeatures(W, h) {
   const spread = (kind, biome, anchor, build, fits = () => true) => {
     const list = W.pois.relics[kind];
     const taken = () => [...list, ...W.pois.lookouts, ...W.pois.camps];
-    // The last pass forgets the roads, for fens whose only open ground lies far off them.
+    const ok = (x, y, minGap, maxRoad, maxAnchor, town = 9) => {
+      const i = at(W, x, y);
+      if (W.biome[i] !== biome || roadDist[i] < 1 || roadDist[i] > maxRoad || !free(x, y)) return false;
+      if (!awayFromWards(x, y, SEAL_R + 7) || nearSettlement(x, y, town) || !far({ x, y }, taken(), minGap)) return false;
+      return Math.hypot(x - anchor.x, y - anchor.y) <= maxAnchor && N4.filter(([dx, dy]) => free(x + dx, y + dy)).length >= 3 && fits(x, y);
+    };
+    const add = (spot) => {
+      if (!tryPlace(build(spot))) return false;
+      list.push({ id: `${kind}${list.length}`, kind, x: spot.x, y: spot.y });
+      keepClear(spot.x, spot.y, 2);
+      return true;
+    };
+    // The fourth pass forgets the roads, for fens whose only open ground lies far off them.
     for (let relax = 0; relax < 4 && list.length < 3; relax++) {
       const minGap = [14, 10, 7, 7][relax], maxRoad = [8, 12, 30, 200][relax], maxAnchor = [44, 60, 200, 200][relax];
       for (let tries = 0; tries < 12 && list.length < 3; tries++) {
-        const spot = randomTile((x, y) => {
-          const i = at(W, x, y);
-          if (W.biome[i] !== biome || roadDist[i] < 1 || roadDist[i] > maxRoad || !free(x, y)) return false;
-          if (!awayFromWards(x, y, SEAL_R + 7) || nearSettlement(x, y, 9) || !far({ x, y }, taken(), minGap)) return false;
-          return Math.hypot(x - anchor.x, y - anchor.y) <= maxAnchor && [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => free(x + dx, y + dy)).length >= 3 && fits(x, y);
-        }, 20000);
+        const spot = randomTile((x, y) => ok(x, y, minGap, maxRoad, maxAnchor), 20000);
         if (!spot) break;
-        if (!tryPlace(build(spot))) continue;
-        list.push({ id: `${kind}${list.length}`, kind, x: spot.x, y: spot.y });
-        keepClear(spot.x, spot.y, 2);
+        add(spot);
+      }
+    }
+    // Random picks can miss the last few spots in a cramped region: try every one, the loneliest first,
+    // and then closer together and closer to town.
+    for (const [minGap, town] of [[7, 9], [5, 5]]) {
+      while (list.length < 3) {
+        const spots = [];
+        for (let y = 4; y < W.h - 4; y++) for (let x = 4; x < W.w - 4; x++) {
+          if (ok(x, y, minGap, 200, 200, town)) spots.push({ x, y, gap: Math.min(...taken().map((q) => Math.hypot(q.x - x, q.y - y))) });
+        }
+        spots.sort((a, b) => b.gap - a.gap);
+        if (!spots.slice(0, 40).some(add)) break;
       }
     }
   };
@@ -101,17 +119,38 @@ export function stageWardFeatures(W, h) {
   }
   lookout('belfry', 'drowned', fen);
 
-  // The Tide Bells: each on a one-tile island in a pool one or two tiles wide.
+  // The Tide Bells: each on a one-tile island in a flooded pool. A pool may not drown a cache or a spawn
+  // point (a fetch quest leaves its item on one), and a bell should stay in reach with the charm once all
+  // four wards are sealed, so no seal has to shrink, or fall back to its door, to keep it.
   const around = (x, y, lo, hi) => {
     const out = [];
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (dx * dx + dy * dy >= lo && dx * dx + dy * dy <= hi) out.push({ x: x + dx, y: y + dy });
     return out;
   };
-  spread('bells', BIOME.SWAMP, Dg.drowned.front, (p) => [
-    [p.x, p.y, null, D.BELL],
-    ...around(p.x, p.y, 1, 2).map((q) => [q.x, q.y, T.FLOOD, D.NONE]),
-    ...around(p.x, p.y, 4, 5).filter((q) => free(q.x, q.y) && rng.chance(0.6)).map((q) => [q.x, q.y, T.FLOOD, D.NONE]),
-  ], (x, y) => around(x, y, 1, 2).every((q) => free(q.x, q.y)));
+  const records = new Set([...W.pois.caches, ...W.pois.spawns].map((p) => at(W, p.x, p.y)));
+  const warded = new Uint8Array(W.w * W.h);
+  for (const key of WARDS) bfsDistances(W.w, W.h, pass, [Dg[key].front]).forEach((d, i) => { if (d >= 0 && d <= SEAL_R) warded[i] = 1; });
+  let sealed = null, sealedFor = -1;
+  const inReach = (x, y) => {
+    if (sealedFor !== W.pois.relics.bells.length) {
+      sealed = bfsDistances(W.w, W.h, (ax, ay) => !warded[at(W, ax, ay)] && pass(ax, ay), [W.pois.home]);
+      sealedFor = W.pois.relics.bells.length;
+    }
+    return N4.some(([dx, dy]) => sealed[at(W, x + dx, y + dy)] >= 0);
+  };
+  // A full pool rings its bell one or two deep; a plus-shaped one floods just the four sides, which is all
+  // it takes to keep the bell out of reach without the charm, and fits the narrowest causeway.
+  const pool = (full, guarded) => {
+    const must = (x, y) => around(x, y, 1, full ? 2 : 1), maybe = (x, y) => around(x, y, full ? 4 : 2, full ? 5 : 2);
+    const flood = (q) => [q.x, q.y, T.FLOOD, D.NONE];
+    return [
+      (p) => [[p.x, p.y, null, D.BELL], ...must(p.x, p.y).map(flood), ...maybe(p.x, p.y).filter((q) => free(q.x, q.y) && rng.chance(0.6)).map(flood)],
+      (x, y) => must(x, y).every((q) => free(q.x, q.y)) && around(x, y, 0, full ? 5 : 2).every((q) => !records.has(at(W, q.x, q.y))) && (!guarded || inReach(x, y)),
+    ];
+  };
+  // Each fallback gives up a little more: first the full pool, then the sealed-ward guard, for fens that
+  // lie wholly past a ward's approach (that seal must shrink for the swamp town anyway).
+  for (const [full, guarded] of [[true, true], [false, true], [true, false], [false, false]]) spread('bells', BIOME.SWAMP, Dg.drowned.front, ...pool(full, guarded));
   for (const b of W.pois.relics.bells) b.pool = around(b.x, b.y, 1, 5).filter((q) => W.tiles[at(W, q.x, q.y)] === T.FLOOD);
 }
 

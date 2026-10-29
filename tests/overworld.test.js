@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateOverworld, reachableFrom } from '../src/world/overworld.js';
 import { T, D, BIOME, TILE_INFO } from '../src/world/tiles.js';
+import { generateSideQuests } from '../src/game/quests.js';
 
 const SEEDS = ['ember', 'alpha', 'beta', 'gamma', 1, 2, 3, 42, 'hearth', 'ward', 'spire', 'thorn'];
 const worlds = new Map();
@@ -73,6 +74,9 @@ for (const seed of SEEDS) {
     }
     for (const c of W.pois.caves) assert.ok(reach(open(all), c.front), `cave ${c.id} unreachable`);
     for (const c of W.pois.camps) assert.ok(reach(open(all), c.entry), `camp ${c.id} unreachable`);
+    // Nothing a pool could drown: caches, and the spawn points fetch quests leave their items on.
+    for (const c of W.pois.caches) assert.ok(reach(open(all), c), `cache ${c.id} unreachable`);
+    for (const q of generateSideQuests(W).filter((x) => x.type === 'fetch')) assert.ok(reach(open(all), q.target), `${q.id} fetch target unreachable`);
     const quest = W.pois.camps.find((c) => c.quest);
     assert.ok(reach(none, quest.entry), 'quest camp needs tools');
   });
@@ -93,7 +97,32 @@ test('each Tide Bell stands ringed by its pool, which the Rime Charm freezes int
     assert.ok(reach({ x: b.x, y: b.y + 1 }), `${b.id} frozen pool is no path`);
     thawPool(W, map, b.id);
     assert.ok(b.pool.every((p) => map.get(p.x, p.y) === T.FLOOD), `${b.id} not thawed`);
+    assert.ok(!reach({ x: b.x, y: b.y + 1 }), `${b.id} thawed pool is still a path`);
   }
+});
+
+// World generation only, spread over worker threads: the cramped fens that need the fallbacks are rare.
+test('every world gets three Tide Bells, out of reach without the charm and in reach from every side with it, drowning no cache or spawn point', async () => {
+  const { Worker } = await import('node:worker_threads');
+  const { cpus } = await import('node:os');
+  const seeds = [...Array.from({ length: 250 }, (_, k) => `s${k}`), 's359', 's360', 's433', 's480', 's976', 's995'];
+  const code = `const { parentPort, workerData } = require('node:worker_threads');
+import(workerData.url).then(({ generateOverworld, reachableFrom }) => parentPort.postMessage(workerData.seeds.map((seed) => {
+  const W = generateOverworld(seed), tools = { bombs: true, gloves: true, seals: true };
+  const dry = reachableFrom(W, W.pois.homeDoor, tools), wet = reachableFrom(W, W.pois.homeDoor, { ...tools, charm: true });
+  const sides = (b) => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => (b.y + dy) * W.w + b.x + dx);
+  const flooded = new Set(W.pois.relics.bells.flatMap((b) => [b, ...b.pool]).map((p) => p.y * W.w + p.x));
+  return [seed, W.pois.relics.bells.length, W.pois.relics.bells.every((b) => sides(b).every((i) => dry[i] < 0 && wet[i] >= 0)), [...W.pois.caches, ...W.pois.spawns].every((p) => !flooded.has(p.y * W.w + p.x))];
+})));`;
+  const n = Math.max(1, Math.min(8, cpus().length - 1));
+  const url = new URL('../src/world/overworld.js', import.meta.url).href;
+  const runs = Array.from({ length: n }, (_, w) => new Promise((resolve, reject) => {
+    const worker = new Worker(code, { eval: true, workerData: { url, seeds: seeds.filter((_, k) => k % n === w) } });
+    worker.once('message', resolve);
+    worker.once('error', reject);
+  }));
+  const bad = (await Promise.all(runs)).flat().filter(([, count, reached, dry]) => count !== 3 || !reached || !dry);
+  assert.deepEqual(bad, []);
 });
 
 test('gate tiles are cracked walls and boulders on ridges', () => {
