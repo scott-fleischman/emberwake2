@@ -206,7 +206,8 @@ export function drawRoomTile(g, map, x, y, px, py, th) {
     R(g, px, py + 3, 16, 2, '#5a5a64'); R(g, px, py + 11, 16, 2, '#5a5a64');
     R(g, px + 1, py, 1, 16, '#8a8a96'); R(g, px + 7, py, 1, 16, '#8a8a96'); R(g, px + 13, py, 1, 16, '#8a8a96');
   } else if (t === T.HAZARD) {
-    R(g, px + 2, py + 4, 12, 2, '#ff6a20'); R(g, px + 5, py + 6, 2, 6, '#ff6a20'); R(g, px + 9, py + 9, 5, 2, '#ffa040');
+    const [hot, hotter] = th.hazard ?? ['#ff6a20', '#ffa040']; // the Spire's burns violet
+    R(g, px + 2, py + 4, 12, 2, hot); R(g, px + 5, py + 6, 2, 6, hot); R(g, px + 9, py + 9, 5, 2, hotter);
   } else if (t === T.BOG || t === T.MIRE) {
     // A sunken pool of muck, banked wherever its neighbour isn't the same muck.
     const [deep, mid, fleck] = t === T.BOG ? ['#3a2c1c', '#5a4630', '#7e6848'] : ['#24401a', '#43702a', '#9ed858'];

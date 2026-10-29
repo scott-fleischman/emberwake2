@@ -836,7 +836,7 @@ export class Bot {
     const a = this.g.area, room = a.room, pr = this.g.state.progress;
     // Rooms lock their doors once you step inside; walk in so the fight (and any hidden chest) starts.
     if (a.enemyList.some((e) => !e.dead && e.hp > 0) && !pr.cleared.includes(`d:${a.key()}`)) {
-      this.status = 'Clearing the room';
+      this.status = room.role === 'echo' ? 'Facing the echo' : 'Clearing the room';
       const mid = standableNear(a.map, { x: 12, y: 7 }, tileOf(this.g.player.x, this.g.player.y), 6);
       if (mid) yield* this.walkTo(mid, { near: 2, timeout: 8 });
     }
@@ -874,6 +874,7 @@ export class Bot {
     const visited = new Set(pr.visited[id] || []);
     const pass = (r, door, useKeys) => {
       if (door.to === null || door.to === undefined) return false;
+      if (door.type === 'inner') return !a.isDoorSealed(door); // the Spire's descent waits on all four echoes
       const pz = door.type === 'sealed' ? a.puzzleRoomFor(door) : door.type === 'locked' ? a.puzzleRoomFor(door, IN_ROOM_PUZZLES) : null;
       if (pz && !solved(pz) && pz.id !== r.id) return false;
       if (door.type === 'locked' && !pr.unlocked.includes(`${id}:${door.id}`)) return useKeys && keys > 0;
@@ -908,8 +909,10 @@ export class Bot {
     };
     const strict = bfs(false), loose = bfs(true);
     const boss = a.dungeon.bossId;
+    const echoLeft = (r) => r.role === 'echo' && !pr.solved.includes(`spire:echo:${r.theme}`);
     return pick(strict, chestLeft)
       || (!bossDone && loose.has(boss) ? firstStep(loose, boss) : null)
+      || pick(loose, echoLeft)
       || pick(strict, (r) => r.puzzle && r.puzzle.kind !== 'tide' && !solved(r))
       || pick(loose, (r) => !visited.has(r.id))
       || (full ? pick(loose, chestLeft) : null);

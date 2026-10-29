@@ -2,12 +2,13 @@
 import { Area } from './areas.js';
 import { Entity, Chest, Particles, FloatText } from './entities.js';
 import { Enemy } from './enemies.js';
+import { Elite, AURA } from './elites.js';
 import { createBoss } from './bosses.js';
 import { Lever, setTide, drawTide } from './puzzles.js';
 import { findFreeSpot } from './physics.js';
 import { WARDENS, MEMORIES, bossIntroShots, bossOutroShots, learnLore } from '../data/story.js';
 import { meleeTargets } from './combat.js';
-import { generateDungeon, ROOM_W, ROOM_H, DOOR_TILES, DUNGEON_INFO } from '../world/dungeons.js';
+import { generateDungeon, ROOM_W, ROOM_H, DOOR_TILES, DUNGEON_INFO, ECHO } from '../world/dungeons.js';
 import { TileMap } from '../world/tilemap.js';
 import { T, TILE, TILE_INFO } from '../world/tiles.js';
 import { THEMES } from '../gfx/palette.js';
@@ -20,6 +21,10 @@ import { tileHash } from '../core/rng.js';
 const OPP = { n: 's', s: 'n', e: 'w', w: 'e' };
 const PUZZLE_ROLES = new Set(['timed', 'switches', 'ordered', 'push']);
 const IN_ROOM_PUZZLES = new Set(['switches', 'ordered', 'push']); // timed rooms already gate with their bars
+const WARDS = Object.keys(ECHO);
+const echoKey = (wing) => `spire:echo:${wing}`;
+// A room's palette: a Spire wing wears its ward's colours, the rest of the Spire its own.
+const roomTheme = (t) => ({ ...THEMES[t], kind: 'dungeon', water: THEMES[t].water ?? (t === 'frost' ? '#6a9ac8' : '#3a5a7a') });
 
 // ---------------------------------------------------------------- room objects
 class RoomObject extends Entity {
@@ -166,6 +171,20 @@ class Plaque extends RoomObject {
   }
 }
 
+// An ember socket. The hub's burn in their ward's colour once its echo is beaten; the Spire arena's are
+// lit as you enter it (Vesper's rise drains them).
+class Socket extends RoomObject {
+  constructor(obj, area, lit) { super(obj, area); this.lit = lit; }
+  get rgb() { return this.obj.wing ? AURA[ECHO[this.obj.wing]] : undefined; }
+  draw(g, cam) {
+    const x = this.x - cam.left, y = this.y - cam.top;
+    drawShadow(g, x, y + 6, 7, 2);
+    R(g, x - 5, y - 1, 10, 7, '#4a4258'); R(g, x - 5, y + 5, 10, 1, '#2e2838');
+    R(g, x - 6, y - 4, 12, 3, '#6e6680'); R(g, x - 4, y - 3, 8, 1, '#1a1420');
+    if (this.lit) drawEmberGlow(g, x, y - 7, this.t * 1.3 + this.obj.x, this.rgb);
+  }
+}
+
 class Torch extends RoomObject {
   get sortY() { return this.y + 4; }
   draw(g, cam) {
@@ -182,9 +201,9 @@ export class DungeonArea extends Area {
     this.id = id;
     this.dungeon = generateDungeon(id, game.world.seed);
     this.byId = new Map(this.dungeon.rooms.map((r) => [r.id, r]));
-    this.theme = { ...THEMES[id], kind: 'dungeon', water: THEMES[id].water ?? (id === 'frost' ? '#6a9ac8' : '#3a5a7a') };
-    this.family = DUNGEON_FAMILY[id];
+    this.themes = {};
     this.tier = DUNGEON_TIER[id]; // undefined: the region's own
+    this.gloam = id === 'spire'; // every Spire monster is Gloam-touched
     this.name = DUNGEON_INFO[id].name;
     this.tokenMax = 2;
     this.lockMsgT = 0;
@@ -205,10 +224,14 @@ export class DungeonArea extends Area {
   }
 
   isDoorSealed(door) {
+    if (door.type === 'inner') return this.litSeals() < 4;
     // Locked doors out of a plate/crystal/block room need the puzzle solved first, then a key.
     const pz = door.type === 'sealed' ? this.puzzleRoomFor(door) : door.type === 'locked' ? this.puzzleRoomFor(door, IN_ROOM_PUZZLES) : null;
     return !!pz && !this.pr.solved.includes(this.key(pz));
   }
+
+  // The Spire's inner seals: one lit for each wing whose echo is beaten.
+  litSeals() { return WARDS.filter((w) => this.pr.solved.includes(echoKey(w))).length; }
 
   isDoorOpen(room, door) {
     if (this.isDoorSealed(door)) return false;
@@ -231,6 +254,9 @@ export class DungeonArea extends Area {
     this.shutPending = false;
     this.map = new TileMap(ROOM_W, ROOM_H);
     this.map.tiles.set(room.tiles);
+    // The Spire proper takes each room's kin from one of the four wards.
+    this.theme = this.themes[room.theme] ??= roomTheme(room.theme);
+    this.family = DUNGEON_FAMILY[room.theme] ?? DUNGEON_FAMILY[WARDS[room.id % WARDS.length]];
     this.renderer = new RoomRenderer(this.map, this.theme);
     const visited = this.pr.visited[this.id] || (this.pr.visited[this.id] = []);
     if (!visited.includes(room.id)) visited.push(room.id);
@@ -241,7 +267,17 @@ export class DungeonArea extends Area {
     for (const o of room.objects) {
       switch (o.type) {
         case 'enemy':
-          if (!cleared) { this.spawnEnemy(new Enemy(o.archetype, this.family, o.x * TILE + 8, o.y * TILE + 8, { aggro: true, leash: 999, hpMult: g.diff.enemyHp, tier: this.tier })); hasEnemies = true; }
+          if (!cleared) { this.spawnEnemy(new Enemy(o.archetype, this.family, o.x * TILE + 8, o.y * TILE + 8, { aggro: true, leash: 999, hpMult: g.diff.enemyHp, tier: this.tier, gloam: this.gloam })); hasEnemies = true; }
+          break;
+        case 'echo':
+          if (!this.pr.solved.includes(echoKey(room.theme))) {
+            this.spawnEnemy(new Elite(o.elite, o.x * TILE + 8, o.y * TILE + 8, { gloam: true, hpMult: g.diff.enemyHp })).echoWing = room.theme;
+            hasEnemies = true;
+          }
+          break;
+        case 'socket':
+          this.objs.push(this.spawn(new Socket(o, this, o.wing ? this.pr.solved.includes(echoKey(o.wing)) : true)));
+          this.map.extraSolid[o.y * ROOM_W + o.x] = 1;
           break;
         case 'chest': {
           const id = `d:${this.key()}:chest`;
@@ -514,6 +550,15 @@ export class DungeonArea extends Area {
     return false;
   }
 
+  // An echo falls: its wing's seal kindles in the hub.
+  enemyKilled(e) {
+    if (!e.echoWing || this.pr.solved.includes(echoKey(e.echoWing))) return;
+    this.pr.solved.push(echoKey(e.echoWing));
+    const n = this.litSeals();
+    this.game.audio.sfx('puzzle');
+    this.game.toast(n < 4 ? `An inner seal kindles in the hub. ${n} of four burn.` : 'All four inner seals burn. The descent stands open.');
+  }
+
   // A chest appearing out of thin air must not trap whoever is standing where it lands.
   revealChest(c) {
     c.hidden = false;
@@ -567,6 +612,7 @@ export class DungeonArea extends Area {
   drawGround(g, cam) {
     this.renderer.draw(g, cam);
     if (this.room.puzzle?.kind === 'tide') drawTide(g, cam, this);
+    if (this.room.role === 'hub') this.drawSeal(g, cam);
     // Muck stirs: now and then a bubble swells and pops on each bog or mire tile.
     for (let i = 0; i < this.map.tiles.length; i++) {
       const t = this.map.tiles[i];
@@ -580,6 +626,7 @@ export class DungeonArea extends Area {
     // Door frames and their states.
     for (const [dir, state] of Object.entries(this.doorState)) {
       const tiles = DOOR_TILES[dir];
+      if (state === 'sealed' && this.room.doors[dir].type === 'inner') { this.drawInnerDoor(g, cam, dir); continue; }
       for (const t of tiles) {
         const x = t.x * TILE - cam.left, y = t.y * TILE - cam.top;
         if (state === 'open' || state === 'exit') continue;
@@ -597,5 +644,34 @@ export class DungeonArea extends Area {
       g.fillStyle = `rgba(255,220,120,${0.15 + 0.15 * Math.sin(this.time * 20)})`;
       for (const t of this.room.puzzle.gate) g.fillRect(t.x * TILE - cam.left, t.y * TILE - cam.top + 14 - 12 * f, 16, 2);
     }
+  }
+
+  // The inner hub's floor seal: a spoke from its heart to each socket, glowing in the ward's colour once lit,
+  // and a ring that catches fire when all four are.
+  drawSeal(g, cam) {
+    const sockets = this.objs.filter((o) => o instanceof Socket);
+    if (!sockets.length) return;
+    const cx = 12 * TILE - cam.left, cy = 7.5 * TILE - cam.top, all = sockets.every((o) => o.lit);
+    g.lineWidth = 2;
+    for (const o of sockets) {
+      g.strokeStyle = o.lit ? `rgba(${o.rgb},${0.45 + 0.15 * Math.sin(this.time * 3 + o.obj.x)})` : 'rgba(20,14,28,0.55)';
+      g.beginPath(); g.moveTo(cx, cy); g.lineTo(o.x - cam.left, o.y - cam.top); g.stroke();
+    }
+    g.strokeStyle = all ? `rgba(255,176,96,${0.6 + 0.2 * Math.sin(this.time * 4)})` : 'rgba(20,14,28,0.55)';
+    g.beginPath(); g.arc(cx, cy, 14, 0, TAU); g.stroke();
+    g.fillStyle = all ? 'rgba(255,200,120,0.35)' : 'rgba(20,14,28,0.35)';
+    g.beginPath(); g.arc(cx, cy, 6, 0, TAU); g.fill();
+  }
+
+  // The inner door: a dark slab set with four embers, one burning for each echo beaten.
+  drawInnerDoor(g, cam, dir) {
+    const tiles = DOOR_TILES[dir], x = tiles[0].x * TILE - cam.left, y = tiles[0].y * TILE - cam.top, w = tiles.length * TILE;
+    R(g, x, y, w, 16, '#241a30'); R(g, x + 1, y + 1, w - 2, 14, '#3a2c4a');
+    WARDS.forEach((wing, k) => {
+      const ex = w > TILE ? x + 5 + k * 7 : x + 4 + (k % 2) * 7, ey = w > TILE ? y + 7 : y + 4 + (k >> 1) * 7;
+      const lit = this.pr.solved.includes(echoKey(wing));
+      R(g, ex - 1, ey - 1, 3, 3, lit ? `rgb(${AURA[ECHO[wing]]})` : '#140e1a');
+      if (lit) { g.fillStyle = `rgba(${AURA[ECHO[wing]]},0.3)`; g.beginPath(); g.arc(ex + 0.5, ey + 0.5, 3.5, 0, TAU); g.fill(); }
+    });
   }
 }

@@ -39,6 +39,7 @@ export class Enemy extends Actor {
     this.wanderT = 0;
     this.spawnId = opts.spawnId || null;
     this.group = opts.group || null;
+    this.gloam = !!opts.gloam;
     this.key = `${archetype}${biome}${opts.gloam ? 'g' : ''}`; // keys the sprite cache, so Gloam colours get their own
     this.dirX = 0; this.dirY = 0;
     this.hitDone = false;

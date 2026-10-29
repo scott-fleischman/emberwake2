@@ -19,7 +19,10 @@ export const DUNGEON_INFO = {
   ashen: { name: 'Ashen Reliquary', biome: 5, boss: 'cinder' },
   frost: { name: 'Frostbound Sanctuary', biome: 4, boss: 'rime' },
   drowned: { name: 'Drowned Fane', biome: 1, boss: 'tide' },
+  spire: { name: 'Emberwake Spire', biome: 3, boss: 'vesper' },
 };
+// The ward elite whose Gloam echo ends each of the Spire's wings.
+export const ECHO = { verdant: 'warchief', ashen: 'slagheart', frost: 'frostfang', drowned: 'bogking' };
 
 const TEMPLATES = {
   verdant: {
@@ -44,6 +47,20 @@ const TEMPLATES = {
     branches: [{ at: 1, roles: ['key'] }, { at: 4, roles: ['push', 'key'] },
       { at: 5, roles: ['combat', 'treasure'] }, { at: 8, roles: ['treasure'] }],
   },
+  // Two hubs, each with a ward wing either side; a wing's key hangs off it on a side room (`keyAt`), and
+  // its echo ends it. The inner door out of the second hub opens on the descent. The switches and
+  // ordered rooms after its tide room hold the places of the ember beam and the ember carry.
+  spire: {
+    main: ['entrance', 'combat', 'hub', 'hub', { role: 'combat', entry: 'inner' }, 'tide', 'switches', 'combat', 'ordered',
+      'switches', 'combat', 'bossdoor', 'boss'],
+    branches: [
+      { at: 1, roles: ['treasure'] },
+      { at: 2, wing: 'verdant', roles: ['combat', 'timed', { role: 'combat', entry: 'locked' }, 'ordered', 'echo'], keyAt: 1 },
+      { at: 2, wing: 'ashen', roles: ['combat', { role: 'switches', entry: 'locked' }, 'timed', 'echo'], keyAt: 0 },
+      { at: 3, wing: 'frost', roles: ['ordered', { role: 'push', entry: 'locked' }, 'echo'], keyAt: 0 },
+      { at: 3, wing: 'drowned', roles: ['combat', 'tide', { role: 'switches', entry: 'locked' }, 'echo'], keyAt: 0 },
+    ],
+  },
 };
 
 const ENTRANCE_LINES = {
@@ -51,6 +68,7 @@ const ENTRANCE_LINES = {
   ashen: 'The embers here have never gone out.',
   frost: 'Silence is the oldest guardian.',
   drowned: 'What the tide takes, it keeps.',
+  spire: 'The first fire burned here. Something drinks it still.',
 };
 
 const THEMES = {
@@ -58,6 +76,7 @@ const THEMES = {
   ashen: { hazard: T.HAZARD, ringHazard: T.HAZARD, enemies: [['brute', 3], ['lunger', 1], ['skirmisher', 2], ['ranged', 2]] },
   frost: { hazard: T.DWATER, ringHazard: null, enemies: [['brute', 1], ['lunger', 2], ['skirmisher', 3], ['ranged', 2]] },
   drowned: { hazard: T.BOG, ringHazard: T.MIRE, enemies: [['brute', 2], ['lunger', 3], ['skirmisher', 2], ['ranged', 2]] },
+  spire: { hazard: T.HAZARD, ringHazard: null, enemies: [['brute', 2], ['lunger', 2], ['skirmisher', 2], ['ranged', 2]] },
 };
 
 const DIRS = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
@@ -77,6 +96,9 @@ const PILLAR_LAYOUTS = [
   [[11, 3], [11, 10]],
 ];
 const SWITCH_LINKS = [[0, 1], [0, 1, 2], [1, 2, 3], [2, 3]];
+// The inner hub's four sockets about its middle, one per wing; the Spire arena's four near its corners.
+const HUB_SOCKETS = [[9, 5], [14, 5], [9, 9], [14, 9]];
+const RIM_SOCKETS = [[2, 2], [21, 2], [2, 12], [21, 12]];
 
 const idx = (x, y) => y * ROOM_W + x;
 const inInterior = (x, y) => x >= 1 && y >= 1 && x <= ROOM_W - 2 && y <= ROOM_H - 2;
@@ -101,8 +123,9 @@ export function generateDungeon(id, seed) {
   const pos = embed(graph, rng.fork('embed'));
   const minX = Math.min(...pos.map((p) => p.x)), minY = Math.min(...pos.map((p) => p.y));
 
+  // A room's theme: its wing's ward for a Spire wing, else the dungeon's own.
   const rooms = graph.nodes.map((n) => ({
-    id: n.id, gx: pos[n.id].x - minX, gy: pos[n.id].y - minY, role: n.role,
+    id: n.id, gx: pos[n.id].x - minX, gy: pos[n.id].y - minY, role: n.role, theme: n.theme ?? id,
     doors: {}, tiles: null, objects: [], puzzle: null, clearToOpen: false,
   }));
   rooms[0].doors.s = { to: null, type: 'exit', id: 'exit' };
@@ -111,7 +134,7 @@ export function generateDungeon(id, seed) {
     const p = graph.nodes[n.parent];
     const dx = pos[n.id].x - pos[p.id].x, dy = pos[n.id].y - pos[p.id].y;
     const dir = Object.keys(DIRS).find((d) => DIRS[d][0] === dx && DIRS[d][1] === dy);
-    const type = n.entry === 'locked' ? 'locked'
+    const type = n.entry !== 'open' ? n.entry
       : p.role === 'bossdoor' && n.role === 'boss' ? 'boss'
         : PUZZLE_ROLES.has(p.role) && p.next === n.id ? 'sealed' : 'open';
     const doorId = `${p.id}-${n.id}`;
@@ -124,7 +147,8 @@ export function generateDungeon(id, seed) {
     const { next, parent } = graph.nodes[room.id];
     const r = rng.fork(`room${room.id}`);
     const spec = {
-      theme: id, info, role: room.role, doors: room.doors, r,
+      theme: room.theme, info, role: room.role, doors: room.doors, r,
+      inner: Object.values(room.doors).some((d) => d.type === 'inner'),
       entryDir: Object.keys(room.doors).find((d) => room.doors[d].to === parent),
       exitDir: next === null ? null : Object.keys(room.doors).find((d) => room.doors[d].to === next),
       treasure: room.id === firstTreasure ? 'map' : r.pick(['heart', 'coins']),
@@ -144,9 +168,11 @@ export function generateDungeon(id, seed) {
 }
 
 // Key-collecting BFS over the room graph: sealed doors pass (puzzles are solvable in-room); a locked door
-// passes only when an unspent key is in hand, spending one key per distinct door id.
+// passes only when an unspent key is in hand, spending one key per distinct door id; the inner door once
+// every echo can be reached (and so beaten).
 export function solveDungeon(dungeon) {
   const byId = new Map(dungeon.rooms.map((r) => [r.id, r]));
+  const echoes = dungeon.rooms.filter((r) => r.role === 'echo').map((r) => r.id);
   const reachable = new Set([dungeon.entranceId]);
   const looted = new Set(), opened = new Set();
   let keys = 0;
@@ -161,6 +187,7 @@ export function solveDungeon(dungeon) {
       }
       for (const door of Object.values(room.doors)) {
         if (door.to === null || reachable.has(door.to)) continue;
+        if (door.type === 'inner' && !echoes.every((e) => reachable.has(e))) continue;
         if (door.type === 'locked' && !opened.has(door.id)) {
           if (keys <= opened.size) continue;
           opened.add(door.id);
@@ -177,18 +204,22 @@ export function solveDungeon(dungeon) {
 
 // Nodes get ids in template order (main path first). `next` is the following node in the same chain:
 // it is what a puzzle room seals and what a timed gate guards. A branch's first node is not its anchor's next.
+// A wing's nodes carry its ward as their theme, and its key room follows it in its group.
 function buildGraph({ main, branches }) {
   const nodes = [];
-  const chain = (specs, anchor) => specs.map((spec, i) => {
+  const chain = (specs, anchor, theme = null) => specs.map((spec, i) => {
     const { role, entry = 'open' } = typeof spec === 'string' ? { role: spec } : spec;
     const parent = i === 0 ? anchor : nodes.length - 1;
-    const node = { id: nodes.length, role, entry, parent, next: null };
+    const node = { id: nodes.length, role, entry, parent, next: null, theme };
     if (i > 0) nodes[parent].next = node.id;
     nodes.push(node);
     return node.id;
   });
   const mainIds = chain(main, null);
-  const groups = branches.map(({ at, roles }) => chain(roles, mainIds[at]));
+  const groups = branches.map(({ at, roles, wing, keyAt }) => {
+    const ids = chain(roles, mainIds[at], wing);
+    return keyAt === undefined ? ids : [...ids, ...chain(['key'], ids[keyAt], wing)];
+  });
   return { nodes, mainIds, groups };
 }
 
@@ -212,7 +243,27 @@ function embed({ nodes, mainIds, groups }, rng) {
     }
     if (ok) return pos;
   }
-  throw new Error('dungeon grid embedding failed');
+  return fallbackEmbed({ nodes, mainIds, groups });
+}
+
+// A fixed layout for a template the walk can't place (the Spire's thirty-odd rooms): the main path runs
+// north from the entrance, each branch runs west (else east) along its anchor's row, and a side room off a
+// branch steps south (else north) of it.
+function fallbackEmbed({ nodes, mainIds, groups }) {
+  const pos = [], taken = new Set();
+  const place = (id, cells) => {
+    const cell = cells.find((c) => c.y <= 0 && !taken.has(`${c.x},${c.y}`));
+    if (!cell) throw new Error('dungeon grid embedding failed');
+    pos[id] = cell;
+    taken.add(`${cell.x},${cell.y}`);
+  };
+  mainIds.forEach((id, i) => place(id, [{ x: 0, y: -i }]));
+  for (const id of groups.flat()) {
+    const n = nodes[id], p = pos[n.parent], gp = pos[nodes[n.parent].parent];
+    const dirs = mainIds.includes(n.parent) ? [DIRS.w, DIRS.e] : nodes[n.parent].next === id ? [[p.x - gp.x, p.y - gp.y]] : [DIRS.s, DIRS.n];
+    place(id, dirs.map(([dx, dy]) => ({ x: p.x + dx, y: p.y + dy })));
+  }
+  return pos;
 }
 
 // ---------------------------------------------------------------- room layout
@@ -274,7 +325,7 @@ function buildRoom(spec) {
     const pts = [...gaps, ...L.objects];
     const d = bfsDistances(ROOM_W, ROOM_H, walkable(L.tiles, true), [pts[0]]);
     if (pts.every((p) => d[idx(p.x, p.y)] >= 0)) {
-      const hasEnemies = L.objects.some((o) => o.type === 'enemy' || o.type === 'boss');
+      const hasEnemies = L.objects.some((o) => o.type === 'enemy' || o.type === 'boss' || o.type === 'echo');
       return { tiles: L.tiles, objects: L.objects, puzzle: L.puzzle, clearToOpen: hasEnemies };
     }
   }
@@ -398,10 +449,25 @@ const SETUP = {
     L.put({ type: 'chest', x: 12, y: 9, contents: 'shard' });
     L.put({ type: 'portal', x: 12, y: 5 });
     if (s.theme === 'drowned') cornerPools(L);
+    if (s.theme === 'spire') for (const [x, y] of RIM_SOCKETS) L.put({ type: 'socket', x, y });
     const tile = THEMES[s.theme].ringHazard;
     if (tile !== null && density > 0) ringHazards(L, tile, density);
   },
   tide: (L, s) => setupTide(L, s),
+  // The hub before the inner door rings its four sockets, one per wing; the other reads the wards.
+  hub(L, s) {
+    if (s.inner) Object.keys(ECHO).forEach((wing, i) => L.put({ type: 'socket', x: HUB_SOCKETS[i][0], y: HUB_SOCKETS[i][1], wing }));
+    else {
+      const c = L.r.pick(L.spots(3, (x, y) => onRing(x, y) && y < 7));
+      L.put({ type: 'plaque', x: c.x, y: c.y, text: 'Four wards keep their echoes here. Quiet every one, and the inner seal will burn.' });
+    }
+  },
+  // A wing's last room: its ward elite's Gloam echo waits in the middle, its ward's hazard round the walls.
+  echo(L, s, density) {
+    L.put({ type: 'echo', elite: ECHO[s.theme], x: 12, y: 7 });
+    const tile = THEMES[s.theme].ringHazard;
+    if (tile !== null && density > 0) ringHazards(L, tile, density);
+  },
   // A full gate line 3 tiles in front of the exit door; the switch sits 12–18 tiles of walking away.
   // For n/s exits a baffle wall forces the run around its ends so that distance is achievable.
   timed(L, s) {

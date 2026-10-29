@@ -5,16 +5,18 @@ import { ELITES } from './quests.js';
 import { R } from '../gfx/sprites.js';
 import { TAU } from '../core/math.js';
 
-const AURA = { warchief: '150,230,90', slagheart: '255,120,40', frostfang: '170,230,255', bogking: '110,210,170' };
+export const AURA = { warchief: '150,230,90', slagheart: '255,120,40', frostfang: '170,230,255', bogking: '110,210,170' };
+const GLOAM_AURA = '180,120,255';
 
-// A regular archetype, but bigger, tougher, always hunting, with a nameplate.
+// A regular archetype, but bigger, tougher, always hunting, with a nameplate. `opts.gloam` makes it a
+// Spire echo: Gloam colours and toughness, a violet aura with its ward's motes still about it.
 export class Elite extends Enemy {
   constructor(id, x, y, opts = {}) {
     const e = ELITES[id];
     super(e.archetype, e.biome, x, y, { ...opts, hpMult: e.hp * (opts.hpMult || 1), aggro: true, leash: 999 });
     this.eliteId = id;
     this.elite = true;
-    this.name = e.name;
+    this.name = opts.gloam ? `${e.name.split(/,| the /)[0]}'s Echo` : e.name;
     this.scale = 1.6;
     this.w = Math.round(this.w * 1.3); this.h = Math.round(this.h * 1.3);
     this.mass *= 2.5;
@@ -22,13 +24,13 @@ export class Elite extends Enemy {
   draw(g, cam) {
     if (this.hidden) return; // burrowed: no aura or nameplate to give it away
     const x = this.x - cam.left, y = this.y - cam.top + this.h / 2;
-    const c = AURA[this.eliteId] || '255,220,120';
+    const ward = AURA[this.eliteId] || '255,220,120', c = this.gloam ? GLOAM_AURA : ward;
     if (this.state !== 'dying') {
       const pulse = 0.18 + 0.08 * Math.sin(this.anim * 5);
       g.fillStyle = `rgba(${c},${pulse})`; g.beginPath(); g.ellipse(x, y - 2, this.w * 0.9, this.h * 0.55, 0, 0, TAU); g.fill();
       for (let k = 0; k < 3; k++) {
         const a = this.anim * 2 + (k * TAU) / 3, r = this.w * 0.8;
-        g.fillStyle = `rgba(${c},0.8)`; g.fillRect(Math.round(x + Math.cos(a) * r), Math.round(y - 14 - Math.sin(this.anim * 3 + k) * 6), 2, 2);
+        g.fillStyle = `rgba(${ward},0.8)`; g.fillRect(Math.round(x + Math.cos(a) * r), Math.round(y - 14 - Math.sin(this.anim * 3 + k) * 6), 2, 2);
       }
     }
     // The base draw, scaled about the feet; its own little health bar is replaced by the nameplate.

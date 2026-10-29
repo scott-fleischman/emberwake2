@@ -133,9 +133,11 @@ export function drawMinimap(u, area, game, big = false) {
   const cols = Math.max(...d.rooms.map((r) => r.gx)) + 1, rows = Math.max(...d.rooms.map((r) => r.gy)) + 1;
   const known = new Set(visited);
   for (const r of d.rooms) if (visited.has(r.id)) for (const door of Object.values(r.doors)) if (door.to !== null) known.add(door.to);
-  const cw = big ? Math.min(30, Math.floor(300 / cols)) : Math.max(4, Math.min(7, Math.floor(42 / cols)));
-  const ch = big ? Math.min(20, Math.floor(180 / rows)) : Math.max(3, Math.min(5, Math.floor(70 / rows)));
-  const ox = big ? 240 - (cols * cw) / 2 : 455 - (cols * cw) / 2, oy = big ? 60 : 34;
+  // Cells shrink to fit: the corner minimap stays within 64x72 (right-aligned once it outgrows its centre),
+  // and the full map's panel within the screen.
+  const cw = big ? Math.min(30, Math.floor(300 / cols)) : Math.max(2, Math.min(7, Math.max(4, Math.floor(42 / cols)), Math.floor(64 / cols)));
+  const ch = big ? Math.min(20, Math.floor(170 / rows)) : Math.max(2, Math.min(5, Math.max(3, Math.floor(70 / rows)), Math.floor(72 / rows)));
+  const ox = big ? 240 - (cols * cw) / 2 : Math.min(455 - (cols * cw) / 2, 477 - cols * cw), oy = big ? 60 : 34;
   if (big) {
     u.fillStyle = 'rgba(0,0,0,0.55)'; u.fillRect(0, 0, 480, 270);
     panel(u, ox - 20, oy - 34, cols * cw + 40, rows * ch + 70);

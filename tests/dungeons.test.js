@@ -1,15 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateDungeon, solveDungeon, ROOM_W, ROOM_H, DOOR_TILES, DUNGEON_INFO } from '../src/world/dungeons.js';
+import { generateDungeon, solveDungeon, ROOM_W, ROOM_H, DOOR_TILES, DUNGEON_INFO, ECHO } from '../src/world/dungeons.js';
 import { T, TILE_INFO } from '../src/world/tiles.js';
 import { bfsDistances } from '../src/core/grid.js';
 import { tideSolvable } from '../src/world/puzzles.js';
 import { enemyStats } from '../src/data/enemies.js';
 import { SFX_NAMES } from '../src/audio/audio.js';
 import { rectSolid } from '../src/game/physics.js';
-import { sandbox, botDo } from './helpers/sandbox.js';
+import { serialize, deserialize } from '../src/game/state.js';
+import { THEMES as PALETTES } from '../src/gfx/palette.js';
+import { sandbox, botDo, recorder } from './helpers/sandbox.js';
+import { Bot } from '../src/bot/bot.js';
 
-const IDS = ['verdant', 'ashen', 'frost', 'drowned'];
+const IDS = ['verdant', 'ashen', 'frost', 'drowned', 'spire'];
+const WINGS = ['verdant', 'ashen', 'frost', 'drowned'];
 const SEEDS = [1, 2, 3, 42, 'ember', 'wake', 'hearth', 9001];
 const OPP = { n: 's', s: 'n', e: 'w', w: 'e' };
 const STEP = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
@@ -45,8 +49,9 @@ test('different seeds remix the layout', () => {
   assert.notEqual(shape(get('frost', 1)), shape(get('frost', 2)));
 });
 
+// 's0' is a Spire the random walk can't place: it takes the fixed layout.
 for (const id of IDS) {
-  for (const seed of SEEDS) {
+  for (const seed of id === 'spire' ? [...SEEDS, 's0'] : SEEDS) {
     const label = `${id}/${seed}`;
 
     test(`${label}: deterministic`, () => {
@@ -98,7 +103,7 @@ for (const id of IDS) {
 
       for (const r of d.rooms) {
         for (const [dir, door] of Object.entries(r.doors)) {
-          assert.ok(['open', 'locked', 'sealed', 'boss', 'exit'].includes(door.type));
+          assert.ok(['open', 'locked', 'sealed', 'boss', 'exit', 'inner'].includes(door.type));
           if (door.to === null) { assert.equal(r.id, d.entranceId); continue; }
           const o = d.rooms[door.to];
           assert.equal(o.gx, r.gx + STEP[dir][0], `door ${door.id} direction`);
@@ -153,7 +158,7 @@ for (const id of IDS) {
           assert.ok(['brute', 'lunger', 'skirmisher', 'ranged'].includes(e.archetype));
           assert.ok(gaps.every((g) => cheb(g, e) >= 4), `${where} enemy too close to a door`);
         }
-        assert.equal(r.clearToOpen, enemies.length > 0 || r.role === 'boss');
+        assert.equal(r.clearToOpen, enemies.length > 0 || r.role === 'boss' || r.role === 'echo');
         assert.ok(r.objects.filter((o) => o.type === 'torch').length >= 2, `${where} torches`);
         const occupied = r.objects.map((o) => `${o.x},${o.y}`);
         assert.equal(new Set(occupied).size, occupied.length, `${where} overlapping objects`);
@@ -264,8 +269,10 @@ function checkTide(r, where) {
   for (const start of ['a', 'b']) assert.ok(tideSolvable(r, { start, back: true }), `${where} exit at tide ${start}`);
 }
 
-test('Fane tide rooms can always be crossed', () => {
-  for (const seed of SEEDS) for (const r of get('drowned', seed).rooms.filter((r) => r.puzzle?.kind === 'tide')) assert.ok(tideSolvable(r), `${seed}/${r.id}`);
+test('Fane and Spire tide rooms can always be crossed', () => {
+  for (const id of ['drowned', 'spire']) {
+    for (const seed of SEEDS) for (const r of get(id, seed).rooms.filter((r) => r.puzzle?.kind === 'tide')) assert.ok(tideSolvable(r), `${id}/${seed}/${r.id}`);
+  }
 });
 
 test('the tide checks catch a room that traps whoever comes back into it', () => {
@@ -414,7 +421,7 @@ test('every dungeon can be walked to its warden under the runtime door rules', a
   const app = await makeApp();
   for (const seed of ['d1', 'ember123', 'fen77', 'quests', 'zz9']) {
     const game = new GameScene(app, newGameState(seed, 'swordsman'));
-    for (const id of ['verdant', 'ashen', 'frost', 'drowned']) {
+    for (const id of IDS) {
       game.enterDungeon(id);
       const a = game.area, pr = game.state.progress;
       // Explore like a player: rooms you stand in get their puzzle solved and chests looted,
@@ -425,6 +432,8 @@ test('every dungeon can be walked to its warden under the runtime door rules', a
         for (const rid of [...seen]) {
           const room = a.byId.get(rid);
           if (room.puzzle && !pr.solved.includes(`${id}:${rid}`)) { pr.solved.push(`${id}:${rid}`); changed = true; }
+          // An echo reached is an echo beaten.
+          if (room.role === 'echo' && !pr.solved.includes(`spire:echo:${room.theme}`)) { pr.solved.push(`spire:echo:${room.theme}`); changed = true; }
           for (const o of room.objects) if (o.type === 'chest' && o.contents === 'key' && !pr.opened.includes(`d:${id}:${rid}:chest`)) { pr.opened.push(`d:${id}:${rid}:chest`); pr.keys[id] = (pr.keys[id] || 0) + 1; changed = true; }
           for (const door of Object.values(room.doors)) {
             if (door.to === null || seen.has(door.to) || a.isDoorSealed(door)) continue;
@@ -439,4 +448,172 @@ test('every dungeon can be walked to its warden under the runtime door rules', a
       assert.ok(seen.has(a.dungeon.bossId), `${seed}/${id}`);
     }
   }
+});
+
+test('the Spire is about twice the Sanctuary, with four wings and an inner seal', () => {
+  for (const seed of SEEDS) {
+    const d = get('spire', seed);
+    assert.ok(d.rooms.length >= 30 && d.rooms.length <= 34, `${seed}: ${d.rooms.length}`);
+    assert.deepEqual(new Set(d.rooms.filter((r) => r.role === 'echo').map((r) => r.theme)), new Set(['verdant', 'ashen', 'frost', 'drowned']));
+    assert.ok(d.rooms.some((r) => Object.values(r.doors).some((x) => x.type === 'inner')));
+    assert.ok(solveDungeon(d).bossReachable, seed);
+    for (const r of d.rooms) assert.ok(Object.keys(r.doors).length <= 4);
+  }
+});
+
+test('a Spire the walk can\'t place takes the fixed layout: a hub column north, a wing west and east of each hub', () => {
+  const d = get('spire', 's0'), main = d.rooms.filter((r) => r.theme === 'spire' && r.role !== 'treasure');
+  const ent = d.rooms[d.entranceId];
+  assert.ok(main.every((r) => r.gx === ent.gx), 'the main path runs straight north');
+  assert.deepEqual(main.map((r) => ent.gy - r.gy), main.map((_, i) => i));
+  for (const hub of d.rooms.filter((r) => r.role === 'hub')) {
+    const wings = ['w', 'e'].map((k) => d.rooms[hub.doors[k].to].theme);
+    assert.ok(wings.every((w) => WINGS.includes(w)), `hub ${hub.id}: ${wings}`);
+    for (const w of wings) assert.ok(d.rooms.filter((r) => r.theme === w && r.role !== 'key').every((r) => r.gy === hub.gy), `the ${w} wing runs along its hub's row`);
+  }
+});
+
+test('the inner seal needs every echo', async () => {
+  const s = await sandbox(); s.game.enterDungeon('spire'); const a = s.game.area, pr = s.game.state.progress;
+  const inner = a.dungeon.rooms.flatMap((r) => Object.values(r.doors)).find((d) => d.type === 'inner');
+  const room = a.dungeon.rooms.find((r) => Object.values(r.doors).includes(inner));
+  for (const w of ['verdant', 'ashen', 'frost']) pr.solved.push(`spire:echo:${w}`);
+  assert.ok(!a.isDoorOpen(room, inner));
+  pr.solved.push('spire:echo:drowned'); assert.ok(a.isDoorOpen(room, inner));
+});
+
+test('spire inner seals survive save and load', async () => {
+  const { GameScene } = await import('../src/scenes/game.js');
+  const s = await sandbox(); s.game.state.progress.solved.push('spire:echo:verdant', 'spire:echo:frost');
+  const g2 = new GameScene(s.app, deserialize(serialize(s.game.state))); g2.enterDungeon('spire');
+  assert.equal(g2.area.litSeals(), 2); // the hub's socket count, also used for drawing
+});
+
+test('the key-BFS keeps the descent shut until every echo can be reached', () => {
+  const d = get('spire', 1), echo = d.rooms.find((r) => r.role === 'echo');
+  const inner = d.rooms.flatMap((r) => Object.values(r.doors)).find((x) => x.type === 'inner');
+  const below = Number(inner.id.split('-')[1]); // door ids run parent-child
+  assert.ok(solveDungeon(d).reachable.has(below));
+  // Brick up one echo's doorway: the descent and the warden are out of reach.
+  const rooms = d.rooms.map((r) => ({ ...r, doors: Object.fromEntries(Object.entries(r.doors).filter(([, x]) => x.to !== echo.id)) }));
+  const { reachable, bossReachable } = solveDungeon({ ...d, rooms });
+  assert.ok(!reachable.has(below) && !bossReachable);
+});
+
+test('Spire rooms: themed wings, echoes of the ward elites, sockets in the hub and the arena', () => {
+  for (const seed of SEEDS) {
+    const d = get('spire', seed);
+    const wings = new Map(WINGS.map((w) => [w, d.rooms.filter((r) => r.theme === w)]));
+    for (const [w, rooms] of wings) {
+      assert.ok(rooms.length >= 4 && rooms.length <= 7, `${seed}/${w}: ${rooms.length} rooms`);
+      assert.equal(rooms.filter((r) => r.role === 'key').length, 1, `${seed}/${w}: one key`);
+      const echo = rooms.find((r) => r.role === 'echo');
+      assert.deepEqual(echo.objects.filter((o) => o.type === 'echo').map((o) => o.elite), [ECHO[w]]);
+      assert.equal(Object.keys(echo.doors).length, 1, 'an echo ends its wing');
+      // The wing's lock is inside the wing, behind its key.
+      const locks = rooms.flatMap((r) => Object.values(r.doors)).filter((x) => x.type === 'locked');
+      assert.equal(new Set(locks.map((x) => x.id)).size, 1, `${seed}/${w}: one lock`);
+    }
+    for (const r of d.rooms) if (!WINGS.includes(r.theme)) assert.equal(r.theme, 'spire');
+    const hub = d.rooms.find((r) => r.role === 'hub' && Object.values(r.doors).some((x) => x.type === 'inner'));
+    assert.deepEqual(hub.objects.filter((o) => o.type === 'socket').map((o) => o.wing).sort(), [...WINGS].sort());
+    for (const h of d.rooms.filter((r) => r.role === 'hub')) assert.equal(Object.keys(h.doors).length, 4, 'two wings branch off each hub');
+    const boss = d.rooms[d.bossId];
+    assert.equal(boss.theme, 'spire');
+    assert.equal(boss.objects.filter((o) => o.type === 'socket').length, 4);
+  }
+});
+
+test('an echo is its ward\'s elite steeped in Gloam, and beating it lights a seal for good', async () => {
+  const s = await sandbox(); s.game.enterDungeon('spire');
+  const a = s.game.area, pr = s.game.state.progress, room = a.dungeon.rooms.find((r) => r.role === 'echo' && r.theme === 'frost');
+  a.enterRoom(room.id, OPP[Object.keys(room.doors)[0]]);
+  assert.equal(a.litSeals(), 0);
+  const e = a.enemyList.find((q) => q.elite);
+  assert.equal(e.eliteId, 'frostfang');
+  assert.ok(e.gloam && e.key.endsWith('g'), 'Gloam colours');
+  assert.equal(e.maxHp, Math.max(1, Math.round(enemyStats('lunger', 4, { tier: 2.2 }).hp * 5.5 * s.game.diff.enemyHp)));
+  s.step(0.5);
+  e.damage(9999, s.game.player, a.ctx); s.step(1);
+  assert.ok(pr.solved.includes('spire:echo:frost'));
+  assert.equal(a.litSeals(), 1);
+  a.enterRoom(a.dungeon.entranceId, 'n'); a.enterRoom(room.id, OPP[Object.keys(room.doors)[0]]);
+  assert.ok(!a.enemyList.some((q) => q.elite), 'a beaten echo stays beaten');
+});
+
+test('Spire monsters are Gloam kin, and each room wears its own colours', async () => {
+  const s = await sandbox(); s.game.enterDungeon('spire');
+  const a = s.game.area, rooms = a.dungeon.rooms.filter((r) => r.role === 'combat');
+  const fam = { verdant: 0, ashen: 5, frost: 4, drowned: 1 };
+  for (const room of rooms) {
+    a.enterRoom(room.id, OPP[entryOf(room)]);
+    assert.deepEqual(a.theme.floor, PALETTES[room.theme].floor, `room ${room.id} palette`);
+    for (const e of a.enemyList) {
+      assert.ok(e.gloam && e.name.startsWith('Gloam '), e.name);
+      if (room.theme !== 'spire') assert.equal(e.biome, fam[room.theme], `room ${room.id}: the ${room.theme} wing's kin`);
+      else assert.ok(Object.values(fam).includes(e.biome), 'a ward\'s kin');
+      assert.equal(e.maxHp, Math.max(1, Math.round(enemyStats(e.archetype, e.biome, { tier: 2.2 }).hp * s.game.diff.enemyHp)));
+    }
+  }
+  assert.ok(new Set(rooms.map((r) => r.theme)).size >= 4, 'combat in the wings and in the Spire proper');
+});
+
+test('the Spire\'s hazard burns violet', async () => {
+  const { drawRoomTile } = await import('../src/gfx/render.js');
+  const { TileMap } = await import('../src/world/tilemap.js');
+  const m = new TileMap(3, 3); m.tiles.fill(T.HAZARD);
+  const paint = (th) => { const r = recorder(); drawRoomTile(r.g, m, 1, 1, 0, 0, { ...th, kind: 'dungeon' }); return r.fills; };
+  assert.ok(paint(PALETTES.ashen).includes('#ff6a20'));
+  const spire = paint(PALETTES.spire);
+  assert.ok(!spire.includes('#ff6a20'));
+  assert.ok(PALETTES.spire.hazard.every((c) => spire.includes(c)));
+});
+
+test('the dungeon minimap and map fit the screen, even for the Spire', async () => {
+  const { drawMinimap } = await import('../src/gfx/hud.js');
+  const s = await sandbox();
+  s.game.state.progress.dungeonMaps.push('spire');
+  // The widest walks found, and a grid bigger than any walk makes.
+  const huge = { id: 'spire', name: 'Emberwake Spire', rooms: [{ id: 0, gx: 0, gy: 0, role: 'entrance', doors: {} }, { id: 1, gx: 17, gy: 15, role: 'boss', doors: {} }] };
+  for (const seed of [...SEEDS, 's37', 's119', 'huge']) {
+    const d = seed === 'huge' ? huge : get('spire', seed), area = { dungeon: d, roomId: 0, isDoorSealed: () => false };
+    for (const big of [false, true]) {
+      const r = recorder();
+      drawMinimap(r.g, area, s.game, big);
+      const rects = r.calls.filter((c) => c[0] === 'fillRect');
+      assert.ok(rects.length >= d.rooms.length);
+      for (const [, x, y, w, h] of rects) assert.ok(x >= 0 && y >= 0 && x + w <= 480 && y + h <= 270, `${seed} ${big ? 'map' : 'minimap'}: ${x},${y} ${w}x${h}`);
+      // The small one keeps clear of the item box in the top corner.
+      if (!big) for (const [, x, y] of rects) assert.ok(y >= 22, `${seed}: minimap at ${x},${y}`);
+    }
+  }
+});
+
+test('the bot hunts the echoes, and takes the descent only once all four are beaten', async () => {
+  const s = await sandbox(); s.game.enterDungeon('spire');
+  const a = s.game.area, pr = s.game.state.progress, bot = new Bot(s.game, 'any');
+  // Everything else done: every room seen, every puzzle solved, every chest open and lock turned.
+  for (const r of a.dungeon.rooms) {
+    (pr.visited.spire ||= []).push(r.id);
+    if (r.puzzle) pr.solved.push(`spire:${r.id}`);
+    if (r.objects.some((o) => o.type === 'chest')) pr.opened.push(`d:spire:${r.id}:chest`);
+    for (const d of Object.values(r.doors)) if (d.type === 'locked') pr.unlocked.push(`spire:${d.id}`);
+  }
+  const hub = a.dungeon.rooms.find((r) => Object.values(r.doors).some((d) => d.type === 'inner'));
+  const inner = Object.keys(hub.doors).find((d) => hub.doors[d].type === 'inner');
+  a.enterRoom(hub.id, 's');
+  for (const w of ['verdant', 'ashen', 'frost']) pr.solved.push(`spire:echo:${w}`);
+  const plan = bot.planDungeon(false);
+  assert.ok(plan && plan.dir !== inner, 'not through the inner seal');
+  assert.equal(a.byId.get(plan.to).theme, 'drowned', 'into the wing whose echo still stands');
+  pr.solved.push('spire:echo:drowned');
+  assert.equal(bot.planDungeon(false).dir, inner);
+});
+
+test('walking out of the Spire\'s entrance sets you down at its door', async () => {
+  const s = await sandbox(); s.game.enterDungeon('spire');
+  s.game.exitDungeon();
+  const f = s.game.world.pois.spire.front;
+  assert.equal(s.game.area.kind, 'overworld');
+  assert.deepEqual([Math.floor(s.game.player.x / 16), Math.floor(s.game.player.y / 16)], [f.x, f.y]);
 });

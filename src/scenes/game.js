@@ -174,7 +174,7 @@ export class GameScene {
   }
 
   exitDungeon() {
-    const d = this.world.pois.dungeons[this.area.id];
+    const d = this.world.pois.dungeons[this.area.id] ?? this.world.pois.spire; // the Spire stands apart from the wards
     this.exitToOverworld(d.front.x, d.front.y);
   }
 
