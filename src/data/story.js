@@ -273,3 +273,26 @@ export function kindleShots(c) {
     { art: 'eyes', speaker: v.name, color: v.color, text: 'Come down, little ember.', wait: true, shakeText: true },
   ];
 }
+
+// The true ending, once Vesper lets go: the fire leaves the Spire, the four spirits take up their watch,
+// the fire comes home and the elder says what you are, the four wards heal in turn, then the credits.
+// ctx: {elder}
+export function endingShots(c) {
+  const E = { speaker: c.elder, color: '#f0c850', wait: true };
+  return [
+    { art: 'spiritsring', ghost: true, text: 'Far below, the ghost of the Kindler let go, and the fire he had hoarded for a thousand years poured up out of the Spire.', hold: 2.8, sfx: 'shrine' },
+    { art: 'spiritsring', text: 'The stag of the Grove, the phoenix of the Ash, the owl of the Rime and the whale of the Tide rose to meet it, and circled the Spire, guardians once more.', hold: 3 },
+    { art: 'rekindle', shards: 0, text: 'The fire ran south along every road, and came home to the Hearth.', sfx: 'levelup', hold: 2.6 },
+    { art: 'hearth', bright: true, ...E, text: 'Listen to it. Every spark he stole, home at last. Forty years I have tended this flame, and I never once heard it sing.' },
+    { art: 'hearth', bright: true, ...E, text: 'There is something I have kept from you since the night I found you. I think I was afraid that saying it would make it true.' },
+    { art: 'spark', ...E, text: 'When the Kindlers split the Firstflame, one spark slipped through their fingers. It fell for a thousand years, and on the night the Hearth burned brightest, it fell into our coals.' },
+    { art: 'spark', babe: true, ...E, text: 'In the morning I found you asleep in the ashes, warm as new bread, and smiling.' },
+    { art: 'hearth', bright: true, ...E, text: 'You are the Firstflame\'s last spark, child. That is why the shards never burned you, and why he called you little ember.' },
+    { art: 'hearth', bright: true, ...E, text: 'He wanted the whole fire, to keep. You carried every spark home and gave it away. That is the difference, and it is everything.' },
+    { art: 'healing4', region: 0, text: 'In the Grove, the last of the thorns crumbled away, and green ran back along every trail.', hold: 2.6 },
+    { art: 'healing4', region: 1, text: 'In the wastes, the ash stopped falling, and the sky over the ridge came clear and blue.', hold: 2.6 },
+    { art: 'healing4', region: 2, text: 'On the heights, the frost let go, and meltwater ran singing down the passes.', hold: 2.6 },
+    { art: 'healing4', region: 3, text: 'And in the west, the sea remembered its song. The flood drew back, and the tide came in again, gentle as a lullaby.', hold: 3 },
+    { art: 'credits', title: 'Emberwake', sub: 'Made by Scott Fleischman, with Claude', text: 'Thank you for playing.', hold: 4.5 },
+  ];
+}

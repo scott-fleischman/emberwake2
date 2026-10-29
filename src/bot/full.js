@@ -1,7 +1,7 @@
 // The 100% route: repeatedly take the nearest unfinished job the bot can reach right now — side
 // quests, standing stones, books, caves, caches, camps, and main-quest steps (which unlock bombs,
-// gloves and the charm). Dungeons are cleared of every chest. The kindling and the Spire come last:
-// beating Vesper ends the run.
+// gloves and the charm). Dungeons are cleared of every chest. The kindling and the Spire wait until
+// everything else is done: beating Vesper ends the run.
 import { generateDungeon } from '../world/dungeons.js';
 import { BOOKS, bookFor } from '../data/story.js';
 import { sideStatus } from '../game/quests.js';
@@ -117,11 +117,13 @@ export const fullMethods = {
         if (g.area.kind !== 'overworld') { yield* this.walkTo(g.area.layout.exit, { feet: 3 }); yield; continue; }
       }
       let job = this.pickJob();
-      // Before calling it done, give every job we gave up on one more round.
-      if (!job && !this.secondChance && this.tried && this.tried.size) { this.secondChance = true; this.tried.clear(); this.note('Second pass over skipped jobs'); job = this.pickJob(); }
+      // Before calling it done, give every job we gave up on another round.
+      if (!job && this.tried && this.tried.size) { this.tried.clear(); this.note('Another pass over skipped jobs'); job = this.pickJob(); }
       if (!job) {
-        if (s.quest.main === 'kindle') { this.status = 'Returning to the elder'; yield* this.mainStep(true); continue; }
-        if (s.quest.main === 'spire') { this.status = 'Descending the Spire'; yield* this.mainStep(true); continue; }
+        // Only Vesper left (the four wardens and every job beaten): kindle, then down the Spire.
+        const pr = this.progress(), last = pr.total - pr.done <= 1;
+        if (last && s.quest.main === 'kindle') { this.status = 'Returning to the elder'; yield* this.mainStep(true); continue; }
+        if (last && s.quest.main === 'spire') { this.status = 'Descending the Spire'; yield* this.mainStep(true); continue; }
         this.status = 'Nothing left in reach'; yield* this.wait(1); continue;
       }
       this.status = job.label;
@@ -250,7 +252,7 @@ export const fullMethods = {
       const blocker = { x: c.x, y: c.y + 1 };
       if (g.area.map.isSolid(blocker.x, blocker.y)) {
         if (c.kind === 'cracked') yield* this.bombTile(blocker);
-        else yield* this.useTile(blocker, { from: { x: c.x, y: c.y + 2 } });
+        else yield* this.useTile(blocker); // from any side we can reach: the stand below can be walled off
       }
     }
     for (let k = 0; k < 3 && !g.state.progress.caches.includes(c.id); k++) {

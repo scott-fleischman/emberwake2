@@ -174,7 +174,7 @@ export function mainObjective(state, W, here = null) {
     case 'fane': return { text: 'Enter the Drowned Fane and defeat the Tidewarden.', marker: D.drowned.front };
     case 'kindle': return { text: `Return to ${n('home', 'elder').name} with all four shards.`, marker: hallDoor(home) };
     case 'spire': return { text: 'Descend into the Emberwake Spire and face Vesper, the Unkindled.', marker: W.pois.spire.front };
-    default: return { text: 'The Unkindled has let go of the fire, and the wards are quiet. Explore freely.', marker: W.pois.spire.front };
+    default: return { text: 'The Hearth burns bright. Explore freely.', marker: null }; // the realm at peace: nowhere you must go
   }
 }
 

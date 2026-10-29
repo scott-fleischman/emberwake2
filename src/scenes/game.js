@@ -27,7 +27,7 @@ import { lookoutShots, sealShots } from '../data/wards.js';
 import { openSeal, freezePool } from '../world/wards.js';
 import { LoreJournal } from '../gfx/journal.js';
 import { LOOKS } from '../gfx/sprites.js';
-import { introShots, hearthShots, kindleShots, learnLore, LORE_ENTRIES, stonesRead } from '../data/story.js';
+import { introShots, hearthShots, kindleShots, endingShots, learnLore, LORE_ENTRIES, stonesRead } from '../data/story.js';
 import { HERBS } from '../data/sidequests.js';
 import { ROOM_W, ROOM_H } from '../world/dungeons.js';
 
@@ -588,7 +588,7 @@ export class GameScene {
         const town = W.settlements.find((q) => q.id === 'swamp').name;
         this.playCutscene(scene({ elder: elder.name, town }), { music: 'story', onDone: () => this.restoreMusic() });
       }
-      if (r.stage === 'end') this.showEnding();
+      if (r.stage === 'end') this.playEnding();
     }
   }
 
@@ -659,22 +659,27 @@ export class GameScene {
     this.audio.sfx('menu');
   }
 
+  // The true ending (endingShots), then the win screen.
+  playEnding() {
+    const elder = this.world.npcs.find((n) => n.role === 'elder' && n.settlementId === 'home');
+    this.playCutscene(endingShots({ elder: elder.name }), { music: 'title', onDone: () => this.showEnding() });
+  }
+
   showEnding() {
     const s = this.state;
     const mins = Math.floor(s.playTime / 60);
     this.saveGame(true);
     this.pushUI(new Menu('The Ember Rekindled', [
-      { label: 'Continue exploring', onSelect: () => { this.uiStack.pop(); } },
+      { label: 'Continue exploring', onSelect: () => { this.uiStack.pop(); this.restoreMusic(); } },
       { label: 'Return to title', onSelect: () => this.app.toTitle() },
     ], {
       width: 300,
       lines: [
-        'Four wardens quieted. Four shards returned to the Hearth.',
-        'The woods breathe, the ash and frost have lifted, and the fens drain.',
-        'And beneath the Spire, the Unkindled has let go of the fire at last.',
+        'Four wardens are guardians again, and Vesper has let go.',
+        'The Hearth burns bright from the Grove to the sea.',
         '',
         `${CLASSES[s.classId].name} · ${mins} min · ${s.stats.kills} foes defeated · ${s.stats.deaths} falls`,
-        'Thank you for playing this prototype of Emberwake.',
+        'Every road is open. Explore as long as you like.',
       ],
     }));
   }
@@ -742,6 +747,7 @@ export class GameScene {
     else lines.push('The woods feel lighter lately!', 'I heard birds this morning. Birds!');
     if (b.includes('ashen')) lines.push('No ash in the well today!');
     if (b.includes('frost')) lines.push('Is it me, or is it warmer?');
+    if (s.quest.main === 'end') lines.push('Have you seen the Hearth? Brighter than ever!', 'The Hearth sang last night. I heard it!');
     return lines[Math.floor(Math.random() * lines.length)];
   }
 

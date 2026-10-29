@@ -1,5 +1,6 @@
 // Runs the autoplay bot over a grid of seeds and classes, one child process per run, and exits 1
-// if any run stalls. Run it before and after anything that touches the main route or combat.
+// if any run stalls (or, for 100%, ends short of everything, or reaches Vesper with anything else left).
+// Run it before and after anything that touches the main route or combat.
 //   node tools/sweep.mjs [any|full] [--seeds a,b,…] [--classes mage,rogue,…]
 import { fork } from 'node:child_process';
 import { cpus } from 'node:os';
@@ -13,8 +14,11 @@ if (process.argv[2] === '--run') {
   // Child: one autoplay run, reported to the parent over IPC.
   const [, , , mode, seed, cls] = process.argv;
   const { autoplay } = await import('./autoplay.mjs');
+  const { SPLITS } = await import('../src/bot/bot.js');
   const r = await autoplay({ seed, cls, mode });
-  process.send({ done: r.done, time: r.time, stage: r.stage, status: r.status, deaths: r.deaths }, () => process.exit(0));
+  // 100%: the final count, and the count when the Spire opened (Vesper should be all that is left).
+  const full = mode === 'full' ? { ...r.bot.progress(), atSpire: r.splits.find((s) => s.label === SPLITS.spire)?.done } : null;
+  process.send({ done: r.done, time: r.time, stage: r.stage, status: r.status, deaths: r.deaths, full }, () => process.exit(0));
 } else {
   const args = process.argv.slice(2);
   const flag = (name, fallback) => { const i = args.indexOf(name); return i < 0 ? fallback : args.splice(i, 2)[1].split(','); };
@@ -37,9 +41,11 @@ if (process.argv[2] === '--run') {
   let passed = 0;
   const worker = async () => {
     for (let job; (job = queue.shift());) {
-      const r = await run(job.seed, job.cls);
-      if (r.done) passed++;
-      const result = r.done ? 'done' : `STALLED ${r.stage ? `at ${r.stage}: ` : ''}${r.status}`;
+      const r = await run(job.seed, job.cls), f = r.full;
+      const complete = !f || (f.done === f.total && f.atSpire === f.total - 1);
+      if (r.done && complete) passed++;
+      const result = !r.done ? `STALLED ${r.stage ? `at ${r.stage}: ` : ''}${r.status}`
+        : !complete ? `INCOMPLETE ${f.done}/${f.total}, ${f.atSpire} when the Spire opened` : f ? `done ${f.done}/${f.total}` : 'done';
       console.log(`${job.seed.padEnd(10)} ${job.cls.padEnd(10)} ${clock(r.time).padStart(7)}  ${result}`);
     }
   };

@@ -674,13 +674,17 @@ export class DungeonArea extends Area {
     this.applyDoors();
     for (const c of this.entities) if (c instanceof Chest && c.hidden) this.revealChest(c);
     g.audio.playMusic('victory');
-    // Vesper's fall ends the quest only once his ghost has let go.
+    // Vesper's fall ends the quest only once his ghost has let go. The fire he drained from the rim
+    // goes back into its sockets, as a revisit finds them: his chamber is empty, lit, its portal open.
     const finale = boss.kind === 'vesper', won = () => g.questEvent({ type: 'boss', kind: boss.kind });
+    if (finale) for (const o of this.objs) if (o instanceof Socket) o.lit = true;
     const celebrate = () => {
       if (finale) g.showBanner('The Unkindled Falls', 'The stolen fire is free. A return seal awakens.');
       else g.showBanner('Warden Quieted', 'A return seal awakens. Claim the Ember Shard.');
       g.toast('Heart vessel gained! Talent point gained!');
     };
+    // His win plays the true ending and the win screen; the banner waits for you behind them.
+    const cheer = () => (finale ? g.queueCutscene(celebrate, 0.5) : celebrate());
     const flags = g.state.quest.flags, key = `outro:${boss.kind}`;
     if (!flags[key] && WARDENS[boss.kind]) {
       flags[key] = true;
@@ -691,13 +695,13 @@ export class DungeonArea extends Area {
         onDone: () => {
           if (learnLore(g.state, `memory:${boss.kind}`)) g.toast(`Journal: “${MEMORIES[boss.kind].title}”`);
           if (g.area === this) g.audio.playMusic('dungeon');
-          celebrate();
+          cheer();
           if (finale) won();
           g.saveGame(true);
         },
       }), 1.3);
     } else {
-      celebrate();
+      cheer();
       if (finale) won();
       setTimeout(() => { if (g.area === this) g.audio.playMusic('dungeon'); }, 7000);
     }

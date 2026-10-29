@@ -63,7 +63,7 @@ test('every stage has an objective with text, and a marker until the end', () =>
     s.quest.main = stage;
     const o = mainObjective(s, W, W.pois.home);
     assert.ok(o.text.length > 10, stage);
-    assert.ok(o.marker, `${stage} has no marker`);
+    if (stage !== 'end') assert.ok(o.marker, `${stage} has no marker`);
   }
 });
 
@@ -214,6 +214,12 @@ test('a Vesper already beaten still ends the quest', () => {
   assert.equal(advanceMain(s, W, { type: 'load' }).stage, 'spire', 'not before he falls');
   s.progress.bosses.push('spire');
   assert.equal(advanceMain(s, W, { type: 'load' }).stage, 'end');
+});
+
+test('after the end the objective is peaceful', () => {
+  const W = generateOverworld('quests'), s = newGameState('quests', 'swordsman'); s.quest.main = 'end';
+  assert.equal(mainObjective(s, W).text, 'The Hearth burns bright. Explore freely.');
+  assert.equal(mainObjective(s, W).marker, null, 'nowhere you must go');
 });
 
 test('bells rung before anyone asks still count', () => {

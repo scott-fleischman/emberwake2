@@ -290,6 +290,170 @@ function bigBoss(g, paint, pose, x, y, S, flip = false, fx = null) {
   drawLights(g, L, 0, 0, 0.55);
 }
 
+// ---------------------------------------------------------------- the true ending
+// A hex colour part-way to another, for scenes that heal.
+function mix(a, b, k) {
+  const c = (h, i) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16);
+  return `rgb(${[0, 1, 2].map((i) => Math.round(c(a, i) + (c(b, i) - c(a, i)) * clamp01(k))).join(',')})`;
+}
+const mixAll = (as, bs, k) => as.map((a, i) => mix(a, bs[i], k));
+
+// The four spirits on their watch: where spirit k is, t seconds into the ring scene, coming in from
+// its own edge of the sky onto an ellipse round the Spire (depth < 0: behind it).
+const RING = { cx: 240, cy: 150, rx: 124, ry: 26 };
+const SPIRITS = [['stag', -50, 70], ['phoenix', 530, 40], ['owl', 530, 250], ['whale', -50, 240]];
+function ringPos(k, t) {
+  const [, sx, sy] = SPIRITS[k], a = (k / 4) * Math.PI * 2 + t * 0.7, p = easeOut(t / 1.9);
+  const ox = RING.cx + Math.cos(a) * RING.rx, oy = RING.cy + Math.sin(a) * RING.ry;
+  return { x: sx + (ox - sx) * p, y: sy + (oy - sy) * p, depth: Math.sin(a) * p };
+}
+function ringSpirit(g, k, t) {
+  const now = ringPos(k, t), was = ringPos(k, t - 0.05), s = 1.35 + 0.3 * now.depth;
+  g.save(); g.translate(Math.round(now.x), Math.round(now.y)); g.scale(now.x < was.x ? -s : s, s);
+  drawSpirit(g, SPIRITS[k][0], 0, 0, t + k * 1.7);
+  g.restore();
+}
+
+// Each ward as it heals, painted into a 480-wide strip (0 → 1: blighted → whole). The panorama runs
+// west to east, the way the healing travels.
+function forestScape(g, heal, t) {
+  sky(g, mixAll(['#0e0a18', '#22162c', '#3a2638'], ['#3a5a8a', '#8ab0c8', '#f0d8a0'], heal));
+  glow(g, 380, 150, 90 * heal, '255,230,170', 0.4);
+  hills(g, 170, 14, 0.011, mix('#1a1622', '#4a6a5a', heal), 1);
+  for (let i = 0; i < 9; i++) { // the far wood
+    const x = 10 + i * 56 + hash(i, 41) * 20, y = 186, r = 16 + hash(i, 42) * 8;
+    g.fillStyle = mix('#18141e', '#3e6a40', heal); g.beginPath(); g.arc(x, y - r, r, 0, Math.PI * 2); g.fill();
+  }
+  hills(g, 200, 8, 0.02, mix('#14101a', '#2e5a26', heal), 3);
+  for (let i = 0; i < 7; i++) { // the near trees
+    const x = 20 + i * 70 + hash(i, 43) * 26, y = 222 + hash(i, 44) * 14, h = 54 + hash(i, 45) * 26;
+    R(g, x - 3, y - h, 6, h, mix('#1a1210', '#4a3424', heal));
+    for (const [dx, dy, r] of [[-10, -h, 14], [10, -h - 4, 15], [0, -h - 16, 16]]) {
+      g.fillStyle = mix('#1c1a22', '#3a7a34', heal); g.beginPath(); g.arc(x + dx, y + dy, r, 0, Math.PI * 2); g.fill();
+      g.fillStyle = mix('#24202a', '#5aa048', heal); g.beginPath(); g.arc(x + dx - 3, y + dy - 4, r * 0.55, 0, Math.PI * 2); g.fill();
+    }
+  }
+  // The thorns draw back into the earth.
+  g.lineCap = 'round';
+  for (let i = 0; i < 16; i++) {
+    const x = hash(i, 46) * W, len = (60 + hash(i, 47) * 90) * (1 - heal), sw = Math.sin(t * 0.8 + i) * 6;
+    if (len < 2) continue;
+    g.strokeStyle = '#140a18'; g.lineWidth = 3 + hash(i, 48) * 3;
+    g.beginPath(); g.moveTo(x, H); g.quadraticCurveTo(x + 30 * (hash(i, 49) - 0.5) + sw, H - len * 0.6, x + 50 * (hash(i, 50) - 0.5), H - len); g.stroke();
+  }
+  for (let i = 0; i < 40; i++) { // flowers open
+    const a = clamp01(heal * 2.2 - hash(i, 51)); if (a <= 0) continue;
+    g.globalAlpha = a; R(g, hash(i, 52) * W, 214 + hash(i, 53) * 52, 2, 2, ['#ffe070', '#ff90b0', '#ffffff', '#b0a0ff'][i % 4]);
+  }
+  g.globalAlpha = 1;
+  for (let i = 0; i < 5 && heal > 0.6; i++) { // birds come back
+    const x = ((t * 22 + i * 90) % (W + 40)) - 20, y = 60 + i * 9 + Math.sin(t * 2 + i) * 4;
+    g.globalAlpha = clamp01((heal - 0.6) * 3); R(g, x - 3, y, 3, 1, '#2a2a30'); R(g, x + 1, y, 3, 1, '#2a2a30'); R(g, x, y + 1, 1, 1, '#2a2a30');
+  }
+  g.globalAlpha = 1;
+  g.fillStyle = `rgba(40,10,60,${0.35 * (1 - heal)})`; g.fillRect(0, 0, W, H);
+}
+
+function ashScape(g, heal, t) {
+  sky(g, mixAll(['#2a1a16', '#5a3a2a', '#8a5a3a'], ['#3a6aa0', '#90c0e0', '#f0e0b0'], heal));
+  // The ridge and its fire mountain, calming.
+  g.fillStyle = mix('#2a1a1a', '#7a5a4a', heal);
+  g.beginPath(); g.moveTo(0, 190); g.lineTo(120, 150); g.lineTo(200, 96); g.lineTo(232, 96); g.lineTo(320, 150); g.lineTo(W, 170); g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill();
+  glow(g, 216, 96, 40 * (1 - heal) + 6, '255,90,30', 0.7);
+  for (let k = 0; k < 6; k++) { // its smoke thins to a wisp
+    const p = (t * 0.25 + k / 6) % 1, x = 216 + Math.sin(p * 4 + k) * 10 + p * 60, y = 90 - p * 90;
+    g.fillStyle = `rgba(${heal > 0.5 ? '230,230,235' : '40,30,30'},${(1 - p) * (0.5 - 0.38 * heal)})`;
+    g.beginPath(); g.arc(x, y, 8 + p * 22, 0, Math.PI * 2); g.fill();
+  }
+  hills(g, 206, 10, 0.014, mix('#3a2e2a', '#b08048', heal), 2);
+  hills(g, 232, 6, 0.022, mix('#2a221e', '#d0a060', heal), 5);
+  if (heal > 0.2) { // an oasis catches the light again, and green comes up round it
+    const a = clamp01((heal - 0.2) * 1.6);
+    g.globalAlpha = a; g.fillStyle = '#3a8ac0'; g.beginPath(); g.ellipse(350, 218, 46, 7, 0, 0, Math.PI * 2); g.fill();
+    for (let i = 0; i < 5; i++) R(g, 320 + i * 14 + Math.sin(t * 2 + i) * 3, 216 + (i % 2) * 3, 4, 1, '#d0f0ff');
+    for (let i = 0; i < 14; i++) { const x = 296 + hash(i, 61) * 110, y = 210 + hash(i, 62) * 3; R(g, x, y - 4, 1, 4, '#4a8a3a'); R(g, x - 1, y - 3, 3, 1, '#5aa048'); }
+    g.globalAlpha = 1;
+  }
+  for (let i = 0; i < 90; i++) { // the ash stops falling
+    if (hash(i, 63) > 1 - heal) continue;
+    const x = (hash(i, 64) * W + Math.sin(t + i) * 10 + t * 8) % W, y = (hash(i, 65) * H + t * (14 + hash(i, 66) * 14)) % H;
+    R(g, x, y, 2, 1, i % 3 ? '#5a5050' : '#2a2424');
+  }
+  g.fillStyle = `rgba(90,60,40,${0.3 * (1 - heal)})`; g.fillRect(0, 0, W, H);
+}
+
+function frostScape(g, heal, t) {
+  sky(g, mixAll(['#8aa0b8', '#c0d0e0', '#e8f0f8'], ['#3a70b0', '#8ac0e8', '#e0f0f0'], heal));
+  glow(g, 90, 60, 70 * heal, '255,250,220', 0.6);
+  const peaks = [[60, 92, 120], [190, 58, 130], [320, 80, 120], [440, 104, 100]];
+  for (const [x, top, half] of peaks) {
+    const base = 210;
+    g.fillStyle = '#5a6a80'; g.beginPath(); g.moveTo(x - half, base); g.lineTo(x, top); g.lineTo(x + half, base); g.closePath(); g.fill();
+    g.fillStyle = '#4a586c'; g.beginPath(); g.moveTo(x, top); g.lineTo(x + half, base); g.lineTo(x + half * 0.35, base); g.closePath(); g.fill();
+    // The snow line climbs back up to the caps.
+    const line = top + (base - top) * (1 - 0.68 * heal), w = half * (line - top) / (base - top);
+    g.fillStyle = '#f4f8ff'; g.beginPath(); g.moveTo(x - w, line); g.lineTo(x, top); g.lineTo(x + w, line);
+    for (let k = 4; k >= 0; k--) g.lineTo(x - w + (k / 4) * w * 2, line + (k % 2 ? 4 : 0)); g.closePath(); g.fill();
+    if (heal > 0.3) { // meltwater runs down from it
+      g.strokeStyle = `rgba(150,210,255,${clamp01((heal - 0.3) * 2)})`; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(x + 4, line + 2);
+      for (let y = line + 2; y < 236; y += 6) g.lineTo(x + 4 + Math.sin(y * 0.15 + x) * 7, y);
+      g.stroke();
+      const sp = (t * 40 + x) % (236 - line); R(g, x + 4 + Math.sin((line + sp) * 0.15 + x) * 7, line + sp, 2, 2, '#ffffff');
+    }
+  }
+  hills(g, 214, 6, 0.02, mix('#e0e8f0', '#5a9a4a', heal), 4);
+  hills(g, 236, 5, 0.03, mix('#d0dce8', '#4a8a3a', heal), 6);
+  for (let i = 0; i < 30 && heal > 0.5; i++) { const a = clamp01(heal * 2 - 1 - hash(i, 71) * 0.5); g.globalAlpha = a; R(g, hash(i, 72) * W, 224 + hash(i, 73) * 40, 2, 2, i % 2 ? '#ffffff' : '#ffe080'); }
+  g.globalAlpha = 1;
+  for (let i = 0; i < 80; i++) { // the blizzard dies away
+    if (hash(i, 74) > 1 - heal) continue;
+    const sp = 260 + hash(i, 75) * 200, y = hash(i, 76) * H, x = ((hash(i, 77) * 640 + t * sp) % 640) - 80, len = 6 + hash(i, 78) * 14;
+    g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y); g.lineTo(x - len, y - len * 0.3); g.stroke();
+  }
+  g.fillStyle = `rgba(230,240,255,${0.3 * (1 - heal)})`; g.fillRect(0, 0, W, H);
+}
+
+function tideScape(g, heal, t) {
+  sky(g, mixAll(['#1a2228', '#2a3a40', '#4a5a5a'], ['#4a3a6a', '#d07a6a', '#f8c080'], heal));
+  glow(g, 300, 150, 110 * heal, '255,200,130', 0.55);
+  if (heal > 0) { g.fillStyle = `rgba(255,230,180,${heal})`; g.beginPath(); g.arc(300, 150, 14, 0, Math.PI * 2); g.fill(); }
+  // The Fane on its rise, and the beach the flood hid.
+  R(g, 0, 160, W, 110, '#c8b080');
+  for (const [x, h] of [[50, 70], [78, 56], [106, 74], [134, 48]]) { R(g, x, 196 - h, 12, h, '#8a8a94'); R(g, x - 2, 196 - h, 16, 4, '#a0a0aa'); }
+  for (let k = 0; k < 4; k++) R(g, 34 + k * 6, 196 + k * 6, 128 - k * 12, 6, k % 2 ? '#9a9aa4' : '#8a8a94');
+  // The sea draws back from its flood, then breathes in and out on the sand, slow as a lullaby.
+  const level = 120 + 74 * easeOut(heal) + Math.sin(t * 1.1) * (2 + 5 * heal);
+  const grd = g.createLinearGradient(0, level, 0, H);
+  grd.addColorStop(0, mix('#1a3038', '#3a7a9a', heal)); grd.addColorStop(1, mix('#0e1a20', '#2a5a7a', heal));
+  g.fillStyle = grd; g.beginPath(); g.moveTo(W, level - 40);
+  for (let x = W; x >= 0; x -= 8) g.lineTo(x, level + Math.sin(x * 0.03 + t * (3 - 2 * heal)) * (6 - 4 * heal) + (W - x) * 0.04);
+  g.lineTo(0, H); g.lineTo(W, H); g.closePath();
+  g.save(); g.clip(); g.fillRect(0, 0, W, H);
+  if (heal > 0) for (let k = 0; k < 10; k++) R(g, 290 + Math.sin(t * 2 + k) * 10 - k * 2, level + 6 + k * 7, 20 - k, 1, `rgba(255,220,160,${0.6 * heal})`);
+  g.restore();
+  g.strokeStyle = `rgba(240,250,255,${0.5 + 0.3 * heal})`; g.lineWidth = 1.5; g.beginPath(); // the foam line
+  for (let x = 0; x <= W; x += 8) { const y = level + Math.sin(x * 0.03 + t * (3 - 2 * heal)) * (6 - 4 * heal) + (W - x) * 0.04; if (x) g.lineTo(x, y); else g.moveTo(x, y); }
+  g.stroke();
+  for (let i = 0; i < 60; i++) { // the storm's rain
+    if (hash(i, 81) > 1 - heal) continue;
+    const x = (hash(i, 82) * W + t * 40) % W, y = (hash(i, 83) * H + t * 300) % H;
+    R(g, x, y, 1, 5, 'rgba(180,200,210,0.5)');
+  }
+  g.fillStyle = `rgba(20,30,36,${0.3 * (1 - heal)})`; g.fillRect(0, 0, W, H);
+}
+
+const SCAPES = [forestScape, ashScape, frostScape, tideScape];
+
+// A dark crag in the foreground, standing over the seam where one ward gives way to the next.
+function crag(g, x, seed) {
+  g.fillStyle = '#0a080c';
+  g.beginPath(); g.moveTo(x - 34, H);
+  for (let k = 0; k <= 6; k++) { const q = k / 6; g.lineTo(x - 34 + q * 22 + hash(k, seed) * 8, H - q * (200 + hash(seed, 5) * 40)); }
+  for (let k = 6; k >= 0; k--) { const q = k / 6; g.lineTo(x + 34 - q * 22 - hash(k, seed + 9) * 8, H - q * (190 + hash(seed, 6) * 40)); }
+  g.closePath(); g.fill();
+}
+
 export const ART = {
   stars(g, t) {
     sky(g, ['#04040e', '#0e0c22', '#221630', '#3a1e2a']);
@@ -464,13 +628,14 @@ export const ART = {
   },
 
   hearth(g, t, shot, ctx) {
-    const sput = shot.shards ? 0.35 + 0.05 * Math.sin(t * 3) : 0.12 + 0.08 * Math.abs(Math.sin(t * 5.3) * Math.sin(t * 1.7));
+    // Guttering; steadier with shards to feed it; roaring once every spark is home (`bright`).
+    const sput = shot.bright ? 1.5 + 0.06 * Math.sin(t * 3) : shot.shards ? 0.35 + 0.05 * Math.sin(t * 3) : 0.12 + 0.08 * Math.abs(Math.sin(t * 5.3) * Math.sin(t * 1.7));
     hall(g, t, sput, ctx, shot);
   },
 
   rekindle(g, t, shot, ctx) {
     const grow = easeOut((t - 0.4) / 1.2);
-    hall(g, t, 0.35 + grow * 1.2, ctx, { shards: t < 0.6 ? shot.shards || 3 : 0 });
+    hall(g, t, 0.35 + grow * 1.2, ctx, { shards: t < 0.6 ? shot.shards ?? 3 : 0 }); // shards: 0 when the fire comes home without them
     g.save(); g.globalCompositeOperation = 'lighter';
     for (let k = 0; k < 12; k++) {
       const a = (k / 12) * Math.PI * 2 + t * 0.3;
@@ -497,6 +662,135 @@ export const ART = {
     const blink = (t % 4.5) > 4.3 ? 0.15 : 1;
     eyes(g, 240, 118, clamp01(t / 0.5) * blink, 3.2);
     embers(g, t, 50, 60, 420, 280, '140,90,200', 12);
+    vignette(g, 0.6);
+  },
+
+  // ---------------------------------------------------------------- the true ending
+  // The Spire at daybreak. With `ghost`, the Kindler's ghost lets go above it and the stolen fire pours
+  // up out of it; then the four warden spirits fly in and take up their watch, circling it.
+  spiritsring(g, t, shot) {
+    const day = shot.ghost ? easeOut((t - 0.6) / 3) : 1;
+    sky(g, mixAll(['#0c0818', '#1e1030', '#3a1e3a', '#4a2436'], ['#2a2a5a', '#6a3a6a', '#d0705a', '#f0b060'], day));
+    stars(g, t, 90, 160, 1 - day, 13);
+    glow(g, 372, 206, 140 * day, '255,190,110', 0.45);
+    hills(g, 196, 14, 0.009, mix('#24141e', '#4a2a3a', day), 1);
+    hills(g, 214, 8, 0.016, mix('#160c14', '#2a1622', day), 2);
+    const sx = 240, base = 222, top = base - 134;
+    // The ring's back half, the spirits behind the Spire, the Spire, then whatever passes in front.
+    const ring = shot.ghost ? 0 : clamp01((t - 1.2) / 1.5);
+    const arc = (a0, a1) => { g.strokeStyle = `rgba(255,214,150,${0.35 * ring})`; g.lineWidth = 2; g.beginPath(); g.ellipse(RING.cx, RING.cy, RING.rx, RING.ry, 0, a0, a1); g.stroke(); };
+    if (!shot.ghost) { arc(Math.PI, Math.PI * 2); for (let k = 0; k < 4; k++) if (ringPos(k, t).depth < 0) ringSpirit(g, k, t); }
+    spireShape(g, sx, base, 120, '#1e1420', '#3a2a36');
+    if (shot.ghost) {
+      // Gold leaks from every seam, the Gloam round it thins, and the fire fountains up and out.
+      const pour = clamp01((t - 0.3) / 1.2);
+      for (let y = base - 18; y > top + 20; y -= 16) R(g, sx - 18 + (base - y) * 0.11, y, 36 - (base - y) * 0.22, 1, `rgba(255,200,110,${0.7 * pour})`);
+      for (let k = 0; k < 7; k++) {
+        g.fillStyle = `rgba(40,14,60,${0.5 * (1 - day)})`;
+        g.beginPath(); g.ellipse(sx + Math.sin(k * 2.3 + t * 0.4) * 50, top + 30 + Math.cos(k * 1.7) * 30, 46 - day * 30, 16, 0, 0, Math.PI * 2); g.fill();
+      }
+      glow(g, sx, top, 30 + 60 * pour, '255,210,130', 0.7 * pour);
+      for (let i = 0; i < 70; i++) {
+        const life = 1.6 + hash(i, 21) * 1.2, p = ((t + hash(i, 22) * life) % life) / life, born = t - p * life;
+        if (born < 0.3) continue;
+        const ang = -Math.PI / 2 + (hash(i, 23) - 0.5) * 2.6, v = 120 + hash(i, 24) * 120;
+        const x = sx + Math.cos(ang) * v * p * 1.6, y = top + Math.sin(ang) * v * p + 160 * p * p;
+        g.globalAlpha = (1 - p) * pour; R(g, x, y, hash(i, 25) < 0.3 ? 2 : 1, 2, hash(i, 26) < 0.5 ? '#ffe0a0' : '#ffb050');
+      }
+      g.globalAlpha = 1;
+      // His ghost, opening his hands, fades up into the light.
+      const a = clamp01(t / 0.5) * clamp01(1 - (t - 1.2) / 1.8);
+      if (a > 0) { g.save(); g.translate(sx, top - 26 - t * 5); g.scale(1.6, 1.6); drawSpirit(g, 'vesperghost', 0, 0, t, a); g.restore(); }
+    } else {
+      glow(g, sx, top + 4, 28 + Math.sin(t * 3) * 3, '255,200,110', 0.7);
+      flame(g, sx, top + 8, 5, t);
+      arc(0, Math.PI);
+      for (let k = 0; k < 4; k++) if (ringPos(k, t).depth >= 0) ringSpirit(g, k, t);
+      embers(g, t, 30, 120, 360, 230, '255,200,120', 14);
+    }
+    vignette(g, 0.5);
+  },
+
+  // The night of two fires, as the elder remembers it: a spark falls out of the stars into the Hearth
+  // and it flares. With `babe`, the morning after: a child asleep in the ashes, the spark warm inside.
+  spark(g, t, shot, ctx) {
+    if (!shot.babe) {
+      village(g, t, 0);
+      const fall = 2.2, p = clamp01(t / fall) ** 1.6;
+      if (t < fall) {
+        const x0 = 420, y0 = -10, x1 = 240, y1 = 210, hx = x0 + (x1 - x0) * p, hy = y0 + (y1 - y0) * p;
+        for (let k = 0; k < 40; k++) { g.globalAlpha = (1 - k / 40) * 0.8; R(g, hx + (x0 - x1) / 120 * k, hy + (y0 - y1) / 120 * k, 2, 2, k < 8 ? '#fff4d0' : '#ffb060'); }
+        g.globalAlpha = 1;
+        glow(g, hx, hy, 12 + p * 8, '255,230,170', 0.9);
+      } else {
+        const k = t - fall;
+        glow(g, 240, 204, 150 + Math.sin(t * 4) * 8, '255,200,120', 0.55);
+        flame(g, 240, 215, 16 + Math.sin(t * 5) * 1.5, t);
+        embers(g, t, 30, 220, 260, 212, '255,210,140', 24);
+        if (k < 0.6) { g.fillStyle = `rgba(255,240,210,${(1 - k / 0.6) * 0.85})`; g.fillRect(0, 0, W, H); }
+      }
+      vignette(g, 0.5);
+      return;
+    }
+    const look = ctx.look || LOOKS.swordsman, beat = Math.max(0, Math.sin(t * 2.6)) ** 6;
+    R(g, 0, 0, W, H, '#0c0706');
+    glow(g, 240, 230, 280, '255,140,60', 0.4);
+    for (let k = 0; k < 14; k++) { const a = Math.PI * (0.06 + k / 15 * 0.88); R(g, 240 - Math.cos(a) * 230 - 14, 268 - Math.sin(a) * 60, 28, 14, k % 2 ? '#2a201e' : '#342826'); }
+    g.fillStyle = '#3a2822'; g.beginPath(); g.ellipse(240, 228, 190, 40, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#4a3630'; g.beginPath(); g.ellipse(240, 214, 120, 18, 0, 0, Math.PI * 2); g.fill(); // the hollow it lay in
+    for (let i = 0; i < 70; i++) { // embers in the ash, breathing
+      const x = 240 + (hash(i, 91) - 0.5) * 340, y = 200 + hash(i, 92) * 50, f = 0.4 + 0.6 * Math.sin(t * (1 + hash(i, 93) * 2) + i);
+      g.globalAlpha = 0.4 + 0.6 * f; R(g, x, y, 2, 1, f > 0.6 ? '#ffb050' : '#a04020');
+    }
+    g.globalAlpha = 1;
+    // The child, swaddled and asleep, painted twice size.
+    g.save(); g.translate(240, 196); g.scale(2, 2);
+    glow(g, 0, 0, 36, '255,210,140', 0.18);
+    g.fillStyle = '#e8dcc8'; g.beginPath(); g.ellipse(6, 4, 26, 11, 0, 0, Math.PI * 2); g.fill(); // the swaddling
+    g.beginPath(); g.ellipse(-20, 0, 12, 11, 0, 0, Math.PI * 2); g.fill(); // its hood
+    g.fillStyle = '#c8baa4'; for (const x of [-4, 6, 16]) R(g, x, -4, 1, 14, '#c8baa4');
+    g.fillStyle = look.skin; g.beginPath(); g.ellipse(-21, 1, 7.5, 8, 0, 0, Math.PI * 2); g.fill();
+    R(g, -27, -7, 10, 3, look.hair); R(g, -24, -8, 4, 2, look.hair);
+    R(g, -25, 1, 3, 1, '#6a4030'); R(g, -19, 1, 3, 1, '#6a4030'); // eyes shut
+    R(g, -22, 5, 3, 1, '#b0605a'); // a small smile
+    g.globalAlpha = 0.5; R(g, -27, 3, 2, 1, '#f0a090'); R(g, -16, 3, 2, 1, '#f0a090'); g.globalAlpha = 1;
+    glow(g, 4, 2, 5 + beat * 4, '255,230,160', 0.45); R(g, 3, 1, 2, 2, '#fff8e0'); // the spark inside, beating
+    g.restore();
+    embers(g, t, 24, 120, 360, 232, '255,200,120', 10);
+    if (t < 0.7) { g.fillStyle = `rgba(255,240,210,${(1 - t / 0.7) * 0.8})`; g.fillRect(0, 0, W, H); }
+    vignette(g, 0.7);
+  },
+
+  // The four wards heal in turn: `region` (0 Grove, 1 Ash, 2 Rime, 3 Tide) pans in from the one before,
+  // which stays healed, and heals in its turn.
+  healing4(g, t, shot) {
+    const k = shot.region || 0, camX = (k - (k ? 1 - easeOut(t / 1.8) : 0)) * W;
+    for (let r = 0; r < SCAPES.length; r++) {
+      const ox = Math.round(r * W - camX);
+      if (ox >= W || ox <= -W) continue;
+      const heal = r < k ? 1 : r > k ? 0 : easeOut((t - (k ? 1.4 : 0.6)) / 2.4);
+      g.save(); g.beginPath(); g.rect(ox, 0, W, H); g.clip(); g.translate(ox, 0);
+      SCAPES[r](g, heal, t);
+      g.restore();
+    }
+    for (let r = 1; r < SCAPES.length; r++) crag(g, Math.round(r * W - camX), r * 7);
+    vignette(g, 0.5);
+  },
+
+  // A short credits card: night over the Spire, the four spirits' lights on their watch, the Hearth warm below.
+  credits(g, t) {
+    sky(g, ['#06040a', '#0e0a16', '#1c1222']);
+    stars(g, t, 120, 200, 0.8, 17);
+    hills(g, 238, 5, 0.02, '#0c0a12', 2);
+    spireShape(g, 240, 240, 46, '#140e1a', '#1e1626');
+    glow(g, 240, 182, 18 + Math.sin(t * 3) * 2, '255,200,110', 0.55);
+    for (let k = 0; k < 4; k++) {
+      const a = t * 0.5 + (k / 4) * Math.PI * 2, x = 240 + Math.cos(a) * 64, y = 196 + Math.sin(a) * 9;
+      const col = ['168,240,138', '255,176,112', '208,244,255', '160,232,255'][k];
+      glow(g, x, y, 10, col, 0.7); R(g, x - 1, y - 1, 2, 2, `rgb(${col})`);
+    }
+    glow(g, 240, 310, 210, '255,140,60', 0.35);
+    embers(g, t, 50, 80, 400, 280, '255,180,90', 18);
     vignette(g, 0.6);
   },
 

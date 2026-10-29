@@ -321,10 +321,21 @@ const RUMORS = [
   () => 'Old folks say the Kindlers left standing stones by the roads. Blue runes. Read one sometime.',
 ];
 
+// After the end: the Hearth burns bright, and everyone has something to say about it.
+const HEARTH_LINES = [
+  'Have you seen the Hearth? You can read by it from the far end of the village. My grandmother would have wept.',
+  'The Hearth burned all night and never once guttered. I sat up to watch. I wasn\'t the only one.',
+  'Folk walked in from every town to light a lamp at the Hearth and carry it home. The roads glowed like rivers.',
+  'The Hearth sang last night. I swear it. Low and sweet, like a kettle that knows a tune.',
+  'My little one asked if the Hearth will ever go out again. I told her: not while we keep sharing it.',
+  'Even the wind off the north is warm now. The Hearth reaches farther than it ever did.',
+];
+
 function roleLines(game, npc, c) {
   const W = game.world, s = game.state, d = npc.data, { S, page, stage } = c;
   const here = S(d.settlementId);
   const rng = makeRng(`${W.seed}/${d.id}/${Math.floor(game.time / 30)}`);
+  const rumor = () => (stage === 'end' ? rng.pick(HEARTH_LINES) : rng.pick(RUMORS)(W, here)); // old worries would ring false
   switch (d.role) {
     case 'merchant':
       return [page('Supplies for the road? Good prices, fair weights.', [
@@ -355,7 +366,7 @@ function roleLines(game, npc, c) {
         reveal(s, `cave:${cv.id}`);
         return [page(`Psst. There's a cave ${dirWord(here.center, cv)} of here. Folk say something shiny sits at the back of it. I've marked it on your map — you didn't hear it from me.`)];
       }
-      return [page(rng.pick(RUMORS)(W, here))];
+      return [page(rumor())];
     }
     case 'keeper':
       return [page({
@@ -372,7 +383,7 @@ function roleLines(game, npc, c) {
     default: {
       const love = game.sideQuests.find((q) => q.type === 'letters' && q.targetNpc === d.id && sideStatus(s, q) === 'done');
       if (love && rng.chance(0.6)) return [page(`Tell ${W.npcs.find((n) => n.id === love.giverId).name} the blue flowers are blooming. And... thank you, traveler.`)];
-      return [page(rng.pick(RUMORS)(W, here))];
+      return [page(rumor())];
     }
   }
 }

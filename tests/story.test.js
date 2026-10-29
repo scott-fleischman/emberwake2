@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateOverworld } from '../src/world/overworld.js';
 import { newGameState } from '../src/game/state.js';
-import { LORE_ENTRIES, STONE_LORE, BOOKS, WARDENS, learnLore, bookFor, introShots, elderShots, hearthShots, kindleShots, bossIntroShots, bossOutroShots } from '../src/data/story.js';
+import { LORE_ENTRIES, STONE_LORE, BOOKS, WARDENS, learnLore, bookFor, introShots, elderShots, hearthShots, kindleShots, endingShots, bossIntroShots, bossOutroShots } from '../src/data/story.js';
 import { ART_IDS } from '../src/gfx/cinema.js';
 import { Cutscene } from '../src/gfx/cutscene.js';
 
@@ -42,6 +42,7 @@ test('every cutscene shot uses known art and has something to show', () => {
     elderShots({ cls: 'Mage', elder: 'Odile', scout: 'Fenn', outpost: 'Elmford', dir: 'north', tip: 'mind your mana' }),
     hearthShots({ elder: 'Odile', town: 'Fenmoor' }),
     kindleShots({ elder: 'Odile' }),
+    endingShots({ elder: 'Odile' }),
     ...Object.keys(WARDENS).flatMap((k) => [bossIntroShots(k), bossOutroShots(k, { x: 10, y: 10 })]),
   ];
   for (const shots of scripts) {
@@ -52,6 +53,37 @@ test('every cutscene shot uses known art and has something to show', () => {
     }
   }
   assert.ok(W);
+});
+
+test('the true ending names all four spirits and reveals the spark', () => {
+  const shots = endingShots({ elder: 'Old Maren' }), text = JSON.stringify(shots);
+  for (const k of ['stag', 'phoenix', 'owl', 'whale']) assert.ok(text.includes(k), k);
+  assert.match(text, /last spark/i);
+  assert.ok(!/Chapter I/.test(text));
+});
+
+// Its five beats in order: the ghost, the spirit ring, the elder's reveal, the four wards healing, the credits.
+test('the true ending runs ghost, spirits, reveal, healing, credits', () => {
+  const shots = endingShots({ elder: 'Old Maren' }), arts = shots.map((s) => s.art);
+  const first = (a) => arts.indexOf(a);
+  assert.equal(arts[0], 'spiritsring'); assert.ok(shots[0].ghost);
+  assert.ok(first('spiritsring') < first('rekindle') && first('rekindle') < first('spark'));
+  assert.ok(shots.some((s) => s.speaker === 'Old Maren' && /last spark/i.test(s.text)), 'the elder says it');
+  assert.deepEqual(shots.filter((s) => s.art === 'healing4').map((s) => s.region), [0, 1, 2, 3]);
+  assert.ok(first('spark') < first('healing4'));
+  assert.equal(arts.at(-1), 'credits'); assert.ok(shots.at(-1).title);
+});
+
+// Painters are deterministic and draw every beat (the healing at each region and stage of its turn).
+test('the true ending\'s painted scenes draw without randomness', async () => {
+  const { ART } = await import('../src/gfx/cinema.js');
+  const { makeApp } = await import('../tools/headless.mjs');
+  await makeApp();
+  const g = document.createElement('canvas').getContext('2d'), rnd = Math.random;
+  Math.random = () => { throw new Error('a painter called Math.random'); };
+  try {
+    for (const s of endingShots({ elder: 'Old Maren' })) for (const t of [0, 0.5, 1.5, 3, 6]) ART[s.art](g, t, s, {});
+  } finally { Math.random = rnd; }
 });
 
 const fakeGame = () => {

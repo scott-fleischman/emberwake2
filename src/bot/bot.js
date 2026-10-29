@@ -104,7 +104,10 @@ export class Bot {
     const st = this.g.state.quest.main;
     if (st !== this.lastStage) {
       this.lastStage = st;
-      if (SPLITS[st]) { this.splits.push({ label: SPLITS[st], t: this.time }); this.note(`Split: ${SPLITS[st]}`); }
+      if (!SPLITS[st]) return;
+      const split = { label: SPLITS[st], t: this.time };
+      if (this.mode === 'full') split.done = this.progress().done; // how much of 100% was done by then
+      this.splits.push(split); this.note(`Split: ${SPLITS[st]}`);
     }
   }
 

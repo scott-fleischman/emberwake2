@@ -135,6 +135,16 @@ test('finished quest givers have an epilogue line', () => {
   }
 });
 
+test('after the end, villagers talk about the Hearth', () => {
+  const state = newGameState('talk', 'ranger');
+  state.quest.main = 'end';
+  const game = fakeGame(state);
+  for (const q of game.sideQuests) { state.quest.side[q.id] = 'done'; delete q.after; } // past their own epilogues
+  const folk = W.npcs.filter((n) => n.role === 'villager' && !game.sideQuests.some((q) => q.type === 'letters' && q.targetNpc === n.id));
+  assert.ok(folk.length > 3);
+  for (const npc of folk) for (let t = 0; t < 300; t += 30) { game.time = t; assert.match(conversation(game, { data: npc })[0].text, /Hearth/, npc.name); }
+});
+
 test('every NPC can call out a bark in every quest state', async () => {
   const { GameScene } = await import('../src/scenes/game.js');
   for (const status of [undefined, 'active', 'ready', 'done']) {

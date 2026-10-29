@@ -8,7 +8,7 @@ import { paintVesper, vesperCrown, VESPER_PALS } from '../src/gfx/art-vesper.js'
 import { tidePal } from '../src/gfx/art-tide.js';
 import { portraitPose } from '../src/gfx/bossart.js';
 import { AudioEngine, SFX_NAMES } from '../src/audio/audio.js';
-import { WARDENS, bossIntroShots, vesperRiseShots, vesperFallShots } from '../src/data/story.js';
+import { WARDENS, bossIntroShots, vesperRiseShots, vesperFallShots, endingShots } from '../src/data/story.js';
 import { ART_IDS } from '../src/gfx/cinema.js';
 import { generateDungeon } from '../src/world/dungeons.js';
 import { serialize, deserialize } from '../src/game/state.js';
@@ -213,6 +213,7 @@ test('his fall plays the ghost letting go, and only then does the quest end', as
   g.enterDungeon('spire'); const a = g.area; a.enterRoom(a.dungeon.bossId, 's');
   const v = a.boss;
   Object.assign(v, { phase: 3, maxHp: 180, hp: 5, breaks: 4, state: 'drift' });
+  for (const o of a.objs) if (o.obj.type === 'socket') o.lit = false; // as his rise left them
   v.damage(99, g.player, a.ctx);
   until(s, () => g.uiStack.length, 10);
   const scene = g.uiStack.at(-1);
@@ -222,6 +223,34 @@ test('his fall plays the ghost letting go, and only then does the quest end', as
   assert.equal(g.state.quest.main, 'end');
   assert.ok(g.state.progress.bosses.includes('spire'));
   assert.ok(g.state.progress.shards <= 4, 'no fifth shard');
+  // Then the true ending, then the win screen; carry on, and his chamber is empty and lit again.
+  until(s, () => g.uiStack.at(-1) !== scene, 1);
+  const ending = g.uiStack.at(-1);
+  assert.deepEqual(ending.shots.map((sh) => sh.art), endingShots({ elder: 'x' }).map((sh) => sh.art));
+  live(s, 4); ending.finish(g);
+  const win = g.uiStack.at(-1);
+  assert.equal(win.title, 'The Ember Rekindled');
+  assert.deepEqual(win.items.map((it) => it.label), ['Continue exploring', 'Return to title']);
+  win.items[0].onSelect();
+  assert.equal(g.uiStack.filter((ui) => !ui.done).length, 0);
+  live(s, 1);
+  assert.equal(g.banner?.title, 'The Unkindled Falls');
+  assert.ok(g.banner.t > 2, 'his banner waits until the ending is over');
+  assert.ok(!a.boss && !a.enemyList.some((e) => !e.dead), 'his chamber is empty');
+  assert.ok(a.portalActive, 'and the way home is open');
+  assert.ok(a.objs.filter((o) => o.obj.type === 'socket').every((o) => o.lit), 'the fire is back in the sockets');
+});
+
+// The Spire can be walked again: his chamber stays empty, with the portal lit.
+test('after the end, his chamber is empty and the portal is active', async () => {
+  const s = await sandbox(), g = s.game;
+  g.state.quest.main = 'end'; g.state.progress.bosses.push('verdant', 'ashen', 'frost', 'drowned', 'spire');
+  g.enterDungeon('spire'); const a = g.area; a.enterRoom(a.dungeon.bossId, 's');
+  live(s, 1);
+  assert.ok(!a.boss && !a.enemyList.length, 'no Vesper, no kin');
+  assert.ok(a.portalActive);
+  assert.ok(!a.entities.some((e) => e.contents === 'shard'), 'no fifth shard');
+  assert.equal(g.uiStack.length, 0, 'no scene replays');
 });
 
 // The game closed between his fall and the end of the ghost's scene: the save holds the spire stage
@@ -235,7 +264,10 @@ test('a save made during his fall scene loads into the ending', async () => {
   g.state.location = g.currentLocation();
   const g2 = new GameScene(s.app, deserialize(serialize(g.state)));
   assert.equal(g2.state.quest.main, 'end');
-  assert.ok(g2.uiStack.some((ui) => ui.title === 'The Ember Rekindled'), 'the ending shows');
+  const ending = g2.uiStack.at(-1);
+  assert.ok(ending.shots?.some((sh) => sh.art === 'credits'), 'the true ending plays');
+  ending.finish(g2);
+  assert.ok(g2.uiStack.some((ui) => ui.title === 'The Ember Rekindled'), 'then the win screen');
   assert.ok(!g2.area.boss, 'and he stays beaten');
 });
 
