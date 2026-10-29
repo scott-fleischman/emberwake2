@@ -97,7 +97,7 @@ export class OverworldRenderer {
   }
 
   // Push tall decoration and building/landmark props within view into the y-sorted list.
-  collectTall(cam, list, time, player = null) {
+  collectTall(cam, list, time, player = null, spireOpen = false) {
     const m = this.map;
     // Props that hide the player fade so they never lose sight of themselves.
     const fadeIf = (px, py, w, h, sortY) => player && sortY > player.y + 4 && player.x - cam.left > px - 2 && player.x - cam.left < px + w + 2 && player.y - cam.top - 10 > py && player.y - cam.top - 14 < py + h;
@@ -122,7 +122,7 @@ export class OverworldRenderer {
     for (const p of this.props) {
       const px = p.x * TILE - L, py = p.y * TILE - Tp;
       if (px > cam.vw + 16 || py > cam.vh + 16 || px + p.w * TILE < -16 || py + p.h * TILE < -120) continue;
-      const spr = p.kind === 'building' ? buildingSprite(p) : landmarkSprite(p);
+      const spr = p.kind === 'building' ? buildingSprite(p) : landmarkSprite(p, spireOpen);
       const top = (p.y + p.h) * TILE - spr.height - Tp;
       const fade = fadeIf(px, top, spr.width, spr.height, (p.y + p.h) * TILE - 1);
       list.push({ y: (p.y + p.h) * TILE - 1, draw: (g) => { if (fade) g.globalAlpha = 0.55; g.drawImage(spr, px, top); if (p.kind === 'building') drawShopSign(g, p, px, top, time); g.globalAlpha = 1; } });

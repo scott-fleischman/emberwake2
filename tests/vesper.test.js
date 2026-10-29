@@ -313,6 +313,31 @@ test('the Spire door opens at the spire stage, and not before', async () => {
   assert.equal(g.area.kind, 'dungeon'); assert.equal(g.area.id, 'spire');
 });
 
+test('the Spire door is drawn chained until the stage that opens it', async () => {
+  const s = await sandbox(), g = s.game, sp = g.world.pois.spire;
+  // Its own sprite cache, so nothing has painted these yet and the recorder sees every stroke.
+  const { landmarkSprite } = await import('../src/gfx/sprites.js?chains');
+  const made = new Map(), real = document.createElement;
+  document.createElement = () => { const r = recorder(), c = { width: 1, height: 1, getContext: () => r.g }; made.set(c, r); return c; };
+  let shut, open;
+  try { shut = landmarkSprite(sp); open = landmarkSprite(sp, true); } finally { document.createElement = real; }
+  assert.notEqual(shut, open);
+  assert.ok(made.get(shut).fills.includes('#8a8a90'), 'chain bars across the shut door');
+  assert.ok(!made.get(open).fills.includes('#8a8a90'), 'none once it is open');
+  assert.equal(landmarkSprite(sp, true), open, 'the open look is cached on its own');
+  // The overworld picks by quest stage, the same one tryDungeonDoor gates on.
+  g.exitToOverworld(sp.front.x, sp.front.y, true);
+  const { landmarkSprite: drawnFrom } = await import('../src/gfx/sprites.js');
+  const drawn = () => {
+    const list = []; g.area.collectTall(list, { left: sp.x * 16 - 120, top: sp.y * 16 - 100, vw: 480, vh: 270 });
+    const r = recorder(); list.find((it) => it.y === (sp.y + sp.h) * 16 - 1).draw(r.g);
+    return r.calls.find((c) => c[0] === 'drawImage')[1];
+  };
+  const stages = {};
+  for (const stage of ['hearth', 'kindle', 'spire', 'end']) { g.state.quest.main = stage; stages[stage] = drawn() === drawnFrom(sp, true); }
+  assert.deepEqual(stages, { hearth: false, kindle: false, spire: true, end: true });
+});
+
 test('a save inside the Spire reloads inside it', async () => {
   const { GameScene } = await import('../src/scenes/game.js');
   const s = await sandbox(), g = s.game;

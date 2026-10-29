@@ -407,8 +407,9 @@ export class GameScene {
     if (p.mode === 'dead') return;
     const floor = fx.dotFloor(p), dmg = fx.tickEffects(p, dt);
     if (dmg <= 0) return;
+    const hp0 = res.hp;
     res.hp = Math.min(res.hp, Math.max(floor, res.hp - dmg * this.diff.damageTaken));
-    this.audio.sfx('hurt', { volume: 0.5, pitch: 1.4 });
+    if (res.hp < hp0) this.audio.sfx('hurt', { volume: 0.5, pitch: 1.4 }); // poison at its floor takes nothing, so says nothing
     if (res.hp <= 0) this.die();
   }
 

@@ -251,6 +251,7 @@ export class DungeonArea extends Area {
     this.tokens.clear();
     this.boss = null;
     this.objs = [];
+    this.zones = []; // ground patches outlive their owners; none may follow you through a door
     this.gateTimer = 0;
     this.tickT = 0;
     this.shut = false;

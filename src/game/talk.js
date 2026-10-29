@@ -339,6 +339,8 @@ const KEEPER_LINES = {
   volcanic: 'The Cinder Warden flits between pillars, they say. Wait for it to vent its heat; that\'s when it\'s soft.',
   snow: 'The Rime Sovereign dashes like the blizzard itself. Dodge aside and let it hit the walls.',
 };
+// The swamp keeper once the Fane is cleared and the Tidewall is down, before the world is at peace.
+const KEEPER_AFTER_FANE = 'The water has stopped rising. The Tidewall is gone, the Fane stands quiet, and the fens only breathe in and out now, like something asleep. Whatever you did in there, you have this town\'s thanks. Mind the road north.';
 const KEEPER_PEACE = {
   swamp: 'The flood drew back the night the Hearth flared, and the tide comes in gentle now. Some evenings I\'d swear I hear singing out past the Fane.',
   desert: 'Clean water in every well, and not a fleck of ash. The eastern ridge is just a ridge again, and I\'d forgotten how blue the sky gets out here.',
@@ -392,8 +394,11 @@ function roleLines(game, npc, c) {
       }
       return [page(rumor())];
     }
-    case 'keeper':
-      return [page((stage === 'end' ? KEEPER_PEACE : KEEPER_LINES)[d.settlementId] || 'Keep the roads safe, traveler.')];
+    case 'keeper': {
+      const afterFane = d.settlementId === 'swamp' && (stage === 'kindle' || stage === 'spire');
+      const line = afterFane ? KEEPER_AFTER_FANE : (stage === 'end' ? KEEPER_PEACE : KEEPER_LINES)[d.settlementId];
+      return [page(line || 'Keep the roads safe, traveler.')];
+    }
     case 'ranger':
       return [page('The scout\'s been out on that ridge for days. Stubborn as an old oak.')];
     case 'elder':

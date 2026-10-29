@@ -502,12 +502,14 @@ const LANDMARK_STYLE = {
   spire: { stone: '#7a7488', dark: '#4e4a5a', light: '#a49eb4', glow: '#ffb060', moss: '#5e5a6a' },
 };
 
-export function landmarkSprite(lm) {
+// opened: the Spire's door has swung inward, its chains gone (no other landmark has an open look).
+export function landmarkSprite(lm, opened = false) {
   const st = LANDMARK_STYLE[lm.id];
   const W = lm.w * TILE, baseH = lm.h * TILE;
   const extra = lm.id === 'spire' ? 96 : 20;
   const H = baseH + extra;
-  return cached(`lm:${lm.id}`, W, H, (g) => {
+  const open = lm.id === 'spire' && opened;
+  return cached(open ? 'lm:spire:open' : `lm:${lm.id}`, W, H, (g) => {
     ellipse(g, W / 2, H - 3, W / 2, 5, 'rgba(0,0,0,0.3)');
     if (lm.id === 'spire') {
       R(g, 16, 6, W - 32, H - 20, st.stone);
@@ -528,7 +530,8 @@ export function landmarkSprite(lm) {
     const dx = (lm.door.x - lm.x) * TILE - 2;
     R(g, dx, H - 3 - 22, 20, 22, st.dark); R(g, dx + 2, H - 3 - 20, 16, 20, '#0c0a0c');
     R(g, dx - 2, H - 3 - 24, 24, 3, st.light);
-    if (lm.id === 'spire') {
+    if (open) R(g, dx + 4, H - 6, 12, 3, 'rgba(255,176,96,0.5)'); // ember light spilling over the sill
+    else if (lm.id === 'spire') {
       R(g, dx + 2, H - 15, 16, 2, '#8a8a90'); R(g, dx + 2, H - 21, 16, 2, '#8a8a90'); circle(g, dx + 10, H - 14, 3, st.glow);
     }
   });

@@ -251,3 +251,15 @@ test('a ground patch strikes again every second while the player stays in it', a
   q.step(3.5);
   assert.equal(hq - q.game.state.player.hp, 1);
 });
+// A ground patch outlives its owner, so it must not follow the player through a door to land at the
+// same pixels in the next room.
+test('a patch left in one room does not carry into the next', async () => {
+  const s = await sandbox(); s.game.enterDungeon('verdant');
+  const a = s.game.area, next = a.dungeon.rooms.find((r) => r.id !== a.roomId), p = s.game.player, struck = [];
+  s.game.damagePlayer = (...args) => { struck.push(args); return 'hit'; };
+  a.zones.push(makeZone('circle', { x: p.x, y: p.y, r: 600, t: 0, life: 4, dmg: 1, art: 'poison' }));
+  a.enterRoom(next.id, 's');
+  assert.equal(a.zones.length, 0);
+  s.step(1);
+  assert.equal(struck.length, 0);
+});

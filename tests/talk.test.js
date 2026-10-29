@@ -168,6 +168,24 @@ test('after the end, keepers and the seer speak of peace, not the old troubles',
   assert.match(before.seer, /cold one/);
 });
 
+test('the swamp keeper stops talking of rising water once the Fane is cleared', () => {
+  const keeper = W.npcs.find((n) => n.role === 'keeper' && n.settlementId === 'swamp');
+  const said = (stage) => {
+    const state = newGameState('talk', 'ranger');
+    state.quest.main = stage;
+    const game = fakeGame(state);
+    for (const q of game.sideQuests) { state.quest.side[q.id] = 'done'; delete q.after; } // past their own epilogues
+    return conversation(game, { data: keeper }).map((p) => p.text).join(' ');
+  };
+  assert.match(said('hearth'), /water rises/, 'before the Fane, the flood is the trouble');
+  const done = [said('kindle'), said('spire')], peace = said('end');
+  assert.equal(done[0], done[1]);
+  assert.doesNotMatch(done[0], /water rises|drowning|we'll need you/i);
+  assert.notEqual(done[0], peace, 'and the true ending still brings its own');
+  assert.ok(MAIN_STAGES.indexOf('fane') < MAIN_STAGES.indexOf('kindle'));
+  assert.match(said('fane'), /Tidewall is gone/, 'the Tidewall comes down at the Fane');
+});
+
 test('every NPC can call out a bark in every quest state', async () => {
   const { GameScene } = await import('../src/scenes/game.js');
   for (const status of [undefined, 'active', 'ready', 'done']) {

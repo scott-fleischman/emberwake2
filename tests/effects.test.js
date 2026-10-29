@@ -92,6 +92,14 @@ test('poison stops at half a heart', async () => {
   s.game.applyEffect('poison'); s.step(5.5);
   assert.equal(s.game.state.player.hp, 1);
 });
+test('poison at its floor takes nothing, and so makes no sound of being hurt', async () => {
+  const s = await sandbox(), heard = [];
+  s.app.audio.sfx = (name) => heard.push(name);
+  s.game.state.player.hp = 2;
+  s.game.applyEffect('poison'); s.step(5.5); // three ticks: the first takes the last hp it can, the others find the floor
+  assert.equal(s.game.state.player.hp, 1);
+  assert.equal(heard.filter((n) => n === 'hurt').length, 1);
+});
 test('a burning player can still die', async () => {
   const s = await sandbox(); s.game.state.player.hp = 1;
   s.game.applyEffect('burn'); s.step(1.5);

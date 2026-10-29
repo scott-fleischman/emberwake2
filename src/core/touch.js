@@ -80,7 +80,7 @@ export class TouchControls {
         return;
       }
     }
-    if (touch && this.mode !== 'play' && this.mode !== 'menu' && !this.bar()) {
+    if (touch && this.backShown()) {
       const b = this.backRect();
       if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) { this.tapAct(this.app.scene.touchBack || 'Escape'); this.lit.set('back', 0.2); return; }
     }
@@ -184,6 +184,8 @@ export class TouchControls {
   }
 
   backRect() { const s = this.safe; return { x: s.l + 10, y: s.t + 10, w: 64, h: 32 }; }
+  // Over menus and dialogs, unless the scene has its own bar. 'watch' is only watching: nothing to go back from.
+  backShown() { return this.mode === 'ui' && !this.bar(); }
 
   // Scene buttons, laid out in a centered row: under the game in portrait, else at the scene's edge.
   bar() {
@@ -237,7 +239,7 @@ export class TouchControls {
       d.strokeStyle = 'rgba(240,210,150,0.4)'; d.lineWidth = 2; d.stroke();
       const kx = s ? s.x : cx, ky = s ? s.y : cy;
       d.fillStyle = s ? 'rgba(240,200,110,0.7)' : 'rgba(240,210,150,0.3)'; d.beginPath(); d.arc(kx, ky, U * 0.7, 0, Math.PI * 2); d.fill();
-    } else if (this.mode !== 'menu' && !bar) {
+    } else if (this.backShown()) {
       const b = this.backRect();
       pill(d, b.x, b.y, b.w, b.h, '‹ Back', { font: 12, on: this.lit.has('back') });
     }

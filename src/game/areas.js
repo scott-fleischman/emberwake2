@@ -276,7 +276,7 @@ export class OverworldArea extends Area {
 
   drawGround(g, cam) { this.renderer.drawGround(g, cam, this.time); }
   collectTall(list, cam) {
-    this.renderer.collectTall(cam, list, this.time, this.game.player);
+    this.renderer.collectTall(cam, list, this.time, this.game.player, this.spireOpen());
     collectWardProps(list, cam, this.time, this.map, this.W, this.game.state.progress);
   }
 
@@ -583,6 +583,9 @@ export class OverworldArea extends Area {
     }
   }
 
+  // The Spire opens once the Hearth has all four shards (the kindling), and stays open.
+  spireOpen() { return MAIN_STAGES.indexOf(this.game.state.quest.main) >= MAIN_STAGES.indexOf('spire'); }
+
   tryDungeonDoor(tx, ty) {
     const g = this.game, W = this.W;
     const lm = Object.values(W.pois.dungeons).concat([W.pois.spire]).find((d) => d.door.x === tx && d.door.y === ty);
@@ -591,8 +594,7 @@ export class OverworldArea extends Area {
       g.message('A great stone door, sealed by a leaf-shaped lock of green bronze. It will not open without the matching sigil.', 'Verdant Vault');
       return false;
     }
-    // The Spire opens once the Hearth has all four shards (the kindling), and stays open.
-    if (lm.id === 'spire' && MAIN_STAGES.indexOf(g.state.quest.main) < MAIN_STAGES.indexOf('spire')) {
+    if (lm.id === 'spire' && !this.spireOpen()) {
       g.message(`Four empty sockets ring the Spire door. ${g.state.progress.shards} of them glow faintly. It will open only when all four shards burn in the Hearth.`, 'Emberwake Spire');
       return false;
     }

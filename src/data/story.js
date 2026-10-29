@@ -38,6 +38,7 @@ export const MEMORIES = {
   thornmaw: { title: 'Memory of the Grove', text: 'The Grove Spirit was a gardener before it was a warden. When the Hearth dimmed, a cold voice from the north told it to grow, and grow, and choke everything. The voice has a name: Vesper, the Unkindled.' },
   cinder: { title: 'Memory of the Ash', text: 'Vesper was the brightest of the Kindlers. He tried to swallow the Firstflame whole to live forever. The others split the fire five ways so no hand could ever hold it all, and sealed him beneath the Spire.' },
   rime: { title: 'Memory of the Rime', text: 'Some say a spark of the Firstflame itself fell into the Hearth the night it flared, and woke as a child. When all four shards return, the Spire door will open. The Rime Spirit begged you to be the one who walks through it.' },
+  tide: { title: 'Memory of the Tide', text: 'The Tide Spirit watched the spark fall. The night the Hearth flared, something small and bright dropped into the coals like a star into the sea, and the Tide Spirit sang it the lullaby it sang the whole coast. Vesper took that song and sang it backward, because he never learned how it ends.' },
 };
 
 // Every journal entry in reading order: id → {title, text, kind}.

@@ -3,7 +3,7 @@
 // gloves and the charm). Dungeons are cleared of every chest. The kindling and the Spire wait until
 // everything else is done: beating Vesper ends the run.
 import { generateDungeon } from '../world/dungeons.js';
-import { BOOKS, bookFor } from '../data/story.js';
+import { BOOKS, LORE_ENTRIES, bookFor } from '../data/story.js';
 import { sideStatus } from '../game/quests.js';
 import { WARDS } from '../world/wards.js';
 import { reachMap, tileOf, standableNear } from './nav.js';
@@ -17,7 +17,7 @@ export const fullMethods = {
     const dungeonChests = this.dungeonChestIds();
     const parts = [
       [g.sideQuests.length, g.sideQuests.filter((q) => sideStatus(s, q) === 'done').length],
-      [18, (pr.lore || []).length],
+      [LORE_ENTRIES.length, (pr.lore || []).length],
       [W.pois.caves.length, W.pois.caves.filter((c) => pr.opened.includes(`cave:${c.id}`)).length],
       [W.pois.caches.length, W.pois.caches.filter((c) => pr.caches.includes(c.id)).length],
       [W.pois.camps.length, W.pois.camps.filter((c) => pr.cleared.includes(c.id)).length],

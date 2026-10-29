@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { sandbox, recorder, sfxDuringFight } from './helpers/sandbox.js';
 import { WARDEN_MOVES, createBoss, viewFrom } from '../src/game/bosses.js';
 import { Enemy } from '../src/game/enemies.js';
+import { MEMORIES, LORE_ENTRIES } from '../src/data/story.js';
 import { Bomb, Projectile } from '../src/game/entities.js';
 import { makeZone } from '../src/game/zones.js';
 import { AudioEngine, SFX_NAMES, MUSIC_KEYS } from '../src/audio/audio.js';
@@ -263,6 +264,21 @@ test('the outro is focused on the arena centre', async () => {
   let shots = null; s.game.queueCutscene = (fn) => fn(); s.game.playCutscene = (sh) => { shots = sh; };
   b.damage(9999, s.game.player, s.game.area.ctx); s.step(4);
   assert.deepEqual(shots[0].focus, b.spawn);
+});
+// Each freed spirit leaves a page in the lore journal when its outro ends, the Tide Spirit's too.
+test('beating a warden leaves its memory in the journal', async () => {
+  for (const [id, kind] of [['verdant', 'thornmaw'], ['ashen', 'cinder'], ['frost', 'rime'], ['drowned', 'tide']]) {
+    const s = await sandbox(), toasts = [];
+    s.game.enterDungeon(id);
+    const a = s.game.area; s.game.state.quest.flags[`intro:${kind}`] = true; a.enterRoom(a.dungeon.bossId, 's');
+    const b = a.boss; assert.equal(b.kind, kind);
+    b.phase = 2; b.state = WARDEN_MOVES[kind].first;
+    s.game.toast = (t) => toasts.push(t); s.game.queueCutscene = (fn) => fn(); s.game.playCutscene = (shots, o) => o.onDone();
+    b.damage(9999, s.game.player, a.ctx); s.step(4);
+    assert.ok(s.game.state.progress.lore.includes(`memory:${kind}`), kind);
+    assert.ok(toasts.some((t) => t.includes(MEMORIES[kind].title)), `${kind}: ${toasts}`);
+  }
+  assert.ok(LORE_ENTRIES.some((e) => e.id === 'memory:tide' && e.kind === 'Warden\'s memory'), 'and it is a page of the journal');
 });
 test('each warden has its own phase and death sounds, and the fight a second theme', () => {
   const engine = new AudioEngine(), calls = [];
