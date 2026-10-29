@@ -941,10 +941,20 @@ export class Bot {
   *clearCamp(camp) {
     if (!camp) return;
     this.status = 'Clearing the warband camp';
-    const pr = this.g.state.progress;
+    const g = this.g, pr = g.state.progress;
     for (let tries = 0; tries < 6 && !pr.cleared.includes(camp.id); tries++) {
       yield* this.goTo({ kind: 'overworld', x: camp.x, y: camp.y, near: 2 });
       yield* this.wait(1.5);
+      // Archers keep their distance and brawls drift past the fight leash, so a lull doesn't mean the camp
+      // is empty. Go after whoever is left: walking out lets the warband muster again at full strength.
+      for (let k = 0; k < 30 && !pr.cleared.includes(camp.id); k++) {
+        const p = g.player, far = (e) => Math.hypot(e.x - p.x, e.y - p.y);
+        const left = g.area.enemyList.filter((e) => e.spawnId === camp.id && !e.dead && e.hp > 0);
+        // The camp tallies its dead a beat after the last one falls.
+        if (!left.length) { for (let t = 0; t < 0.6 && !pr.cleared.includes(camp.id); t += this.dt) yield; break; }
+        const e = left.filter((x) => ((this.ignore && this.ignore.get(x)) || 0) <= this.time).sort((a, b) => far(a) - far(b))[0];
+        if (e) yield* this.walkTo(tileOf(e.x, e.y), { near: 1, timeout: 3, until: () => e.hp <= 0 }); else yield* this.wait(0.5);
+      }
       if (pr.cleared.includes(camp.id)) break;
       // The warband musters as you approach; if it hasn't, walk out and back in.
       const W = this.g.world, home = W.settlements.find((s) => s.id === 'outpost').center;
