@@ -291,7 +291,7 @@ export class Bot {
     // Juggling several foes resets each give-up timer; if nobody takes damage for a while, move on.
     // Each foe is measured against itself, so a newcomer's health can't hide the damage being done.
     const a = this.g.area, was = this.calm?.hp;
-    if (!was || list.some((e) => e.hp < (was.get(e) ?? Infinity))) this.calm = { hp: new Map(list.map((e) => [e, e.hp])), t: 0 };
+    if (!was || list.some((e) => was.has(e) && e.hp < was.get(e))) this.calm = { hp: new Map(list.map((e) => [e, e.hp])), t: 0 };
     else {
       for (const e of list) if (!was.has(e)) was.set(e, e.hp);
       if (!(a.kind === 'dungeon' && (a.shut || a.shutPending || a.boss)) && (this.calm.t += this.dt) > 15) {

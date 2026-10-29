@@ -103,3 +103,16 @@ test('the bot rolls into a shot that is about to land, not away from it', async 
   bot.step(1 / 60); s.game.update(1 / 60); s.app.input.endFrame();
   assert.equal(p.mode, 'dodge'); assert.ok(p.dodgeX < 0, `rolled ${p.dodgeX},${p.dodgeY}`);
 });
+
+// The other side of the same check: foes arriving while nobody gets hurt is still a fight going nowhere.
+test('the bot breaks off a fight nobody is hurt in, even as foes keep joining', async () => {
+  const s = await sandbox(), p = s.game.player, bot = new Bot(s.game, 'any');
+  bot.task = (function* () { for (;;) yield; })();
+  const foe = (dx, dy) => Object.assign(s.spawn(new Enemy('brute', 5, p.x + dx, p.y + dy)), { aggro: true, cool: 999, specialCool: 999, state: 'idle' });
+  let broke = null;
+  for (let i = 0; i < 20 && broke === null; i++) {
+    if (i % 3 === 0 && i < 15) foe(i % 2 ? 20 : -20, i * 2 - 15);
+    for (let k = 0; k < 60 && broke === null; k++) { bot.step(1 / 60); s.app.input.endFrame(); if (bot.log.some((l) => l.includes('goes nowhere'))) broke = bot.time; }
+  }
+  assert.ok(broke !== null && broke < 16.5, `broke off at ${broke}`);
+});
