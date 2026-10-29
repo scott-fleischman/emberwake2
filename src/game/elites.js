@@ -5,7 +5,7 @@ import { ELITES } from './quests.js';
 import { R } from '../gfx/sprites.js';
 import { TAU } from '../core/math.js';
 
-const AURA = { warchief: '150,230,90', slagheart: '255,120,40', frostfang: '170,230,255' };
+const AURA = { warchief: '150,230,90', slagheart: '255,120,40', frostfang: '170,230,255', bogking: '110,210,170' };
 
 // A regular archetype, but bigger, tougher, always hunting, with a nameplate.
 export class Elite extends Enemy {

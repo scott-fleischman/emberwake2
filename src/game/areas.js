@@ -13,8 +13,8 @@ import { Enemy } from './enemies.js';
 import { meleeTargets, knockbackVector, isBehind } from './combat.js';
 import { findFreeSpot, rectSolid } from './physics.js';
 import { makeRng } from '../core/rng.js';
-import { openSeal } from '../world/wards.js';
-import { stageElite, stageRelics } from './quests.js';
+import { openSeal, freezePool, WARDS } from '../world/wards.js';
+import { stageElite, stageRelics, ELITE_SEAL } from './quests.js';
 import { Elite, SigilLeaf } from './elites.js';
 import { collectWardProps } from '../gfx/wards.js';
 import { tickZones, drawZones } from './zones.js';
@@ -202,6 +202,16 @@ export class Area {
 
 // ------------------------------------------------------------------ overworld
 const GATED_REGION = { [BIOME.VOLCANIC]: 'volcanic', [BIOME.SNOW]: 'snow' };
+const ELITE_RISE = {
+  slagheart: { color: ['#ff7030', '#ffd060', '#3a2a2a'], sub: 'Guardian of the firewall' },
+  frostfang: { color: ['#e0f8ff', '#ffffff', '#a8c8e0'], sub: 'Leader of the pale pack' },
+  bogking: { color: ['#6a8a4a', '#a0e0d0', '#2a4a3a'], sub: 'King of the drowned fens' },
+};
+const LOOKOUT_TEXT = {
+  lookout: ['The old watchtower creaks in the wind. From the top you can see clear to the Vault.', 'Watchtower'],
+  windcrest: ['A Kindler cairn on the Windcrest, its banner snapping in the wind. You can see the whole north from here.', 'The Windcrest'],
+  belfry: ['A bell tower sunk to its knees in the fen, its great bell long gone. Water laps at the stair, but the top is still dry.', 'Drowned Belfry'],
+};
 
 export class OverworldArea extends Area {
   constructor(game) {
@@ -227,6 +237,7 @@ export class OverworldArea extends Area {
   applyProgress() {
     const W = this.W, pr = this.game.state.progress;
     for (const key of pr.seals) openSeal(W, this.map, key);
+    for (const id of pr.frozen) freezePool(W, this.map, id);
     for (const v of W.pois.relics.vents) if (pr.relics.includes(v.id) && this.map.get(v.x, v.y) === T.VENT) this.map.set(v.x, v.y, T.ASH);
     for (const g of W.pois.gates) if (pr.gates.includes(g.region) && (this.map.get(g.x, g.y) === T.CRACKED || this.map.get(g.x, g.y) === T.BOULDER)) this.map.set(g.x, g.y, T.ROAD);
     for (const c of W.pois.caches) {
@@ -283,7 +294,7 @@ export class OverworldArea extends Area {
     const g = this.game, p = g.player, st = g.state.quest.main, W = this.W;
     if (p.mode === 'dead' || g.uiStack.length) return;
     const near = (t, r) => Math.hypot(p.x - (t.x * TILE + 8), p.y - (t.y * TILE + 8)) < r * TILE;
-    if (st === 'lookout' || st === 'windcrest') {
+    if (st === 'lookout' || st === 'windcrest' || st === 'belfry') {
       const l = W.pois.lookouts.find((x) => x.id === st);
       if (l && near(l, 1.7)) g.reachLookout(l.id);
     }
@@ -296,7 +307,7 @@ export class OverworldArea extends Area {
     if (this.defs) return this.defs;
     const defs = [];
     for (const c of W.pois.camps) defs.push({ id: c.id, kind: 'camp', x: c.x, y: c.y, biome: c.biome, count: c.size, data: c });
-    for (const k of ['verdant', 'ashen', 'frost']) {
+    for (const k of WARDS) {
       const d = W.pois.dungeons[k];
       defs.push({ id: `guard:${k}`, kind: 'guard', x: d.front.x, y: d.front.y + 3, biome: d.biome, count: 3, ward: k });
     }
@@ -363,16 +374,17 @@ export class OverworldArea extends Area {
     const live = this.entities.find((e) => e.elite && e.eliteId !== 'warchief' && !e.dead);
     if (live && live.eliteId !== id) { live.dead = true; this.tokens.delete(live); }
     if (!id || live || pr.elites.includes(id)) return;
-    const key = id === 'slagheart' ? 'ashen' : 'frost', seal = this.W.pois.seals[key];
+    const seal = this.W.pois.seals[ELITE_SEAL[id]];
     if (!seal || Math.hypot(seal.arena.x - ptx, seal.arena.y - pty) > 20) return;
     const e = new Elite(id, seal.arena.x * TILE + 8, seal.arena.y * TILE + 8, { hpMult: g.diff.enemyHp });
     e.state = 'spawn'; e.timer = 0.9;
     if (!findFreeSpot(this.map, e, 5)) return;
     this.spawnEnemy(e);
-    this.spawn(new Particles(e.x, e.y, { count: 24, color: id === 'slagheart' ? ['#ff7030', '#ffd060', '#3a2a2a'] : ['#e0f8ff', '#ffffff', '#a8c8e0'], speed: 90, life: 0.8 }));
+    const rise = ELITE_RISE[id];
+    this.spawn(new Particles(e.x, e.y, { count: 24, color: rise.color, speed: 90, life: 0.8 }));
     g.cam.shake(3, 0.5);
     g.audio.sfx('boss', { pitch: 1.2 });
-    g.showBanner(e.name.split(',')[0], id === 'slagheart' ? 'Guardian of the firewall' : 'Leader of the pale pack');
+    g.showBanner(e.name.split(',')[0], rise.sub);
   }
 
   groupCleared(def) {
@@ -380,7 +392,7 @@ export class OverworldArea extends Area {
     if (def.kind === 'wild' || def.kind === 'patrol') { def.down = true; def.downAt = performance.now(); return; }
     if (pr.cleared.includes(def.id)) return;
     pr.cleared.push(def.id);
-    if (def.kind === 'relic') { g.toast({ leaves: 'The shrine\'s guardians scatter.', vents: 'The vent\'s guardians are beaten.', beacons: 'The beacon\'s guardians are beaten.' }[def.relicKind]); return; }
+    if (def.kind === 'relic') { g.toast({ leaves: 'The shrine\'s guardians scatter.', vents: 'The vent\'s guardians are beaten.', beacons: 'The beacon\'s guardians are beaten.', bells: 'The bell\'s guardians are beaten.' }[def.relicKind]); return; }
     if (def.kind === 'camp') {
       g.toast('Camp cleared! A supply chest is left behind.');
       g.audio.sfx('puzzle');
@@ -463,6 +475,30 @@ export class OverworldArea extends Area {
     g.questEvent({ type: 'relic', kind: 'beacons', id: b.id });
   }
 
+  // A Tide Bell rings from the ice in front of it, and the fens remember the Tidewarden's song.
+  ringBell(b) {
+    const g = this.game, pr = g.state.progress;
+    if (pr.rung.includes(b.id)) { g.message('The bronze still hums under your hand, singing a note the water seems to remember.', 'Tide Bell'); return; }
+    pr.rung.push(b.id);
+    if (!pr.relics.includes(b.id)) pr.relics.push(b.id);
+    const x = b.x * TILE + 8, y = b.y * TILE + 8;
+    this.spawn(new Particles(x, y - 10, { count: 22, color: ['#e8b048', '#ffe090', '#a0e8f0'], speed: 70, life: 0.9, up: 20 }));
+    g.audio.sfx('shrine', { pitch: 0.5 });
+    g.cam.shake(1.5, 0.3);
+    const n = this.W.pois.relics.bells.filter((q) => pr.relics.includes(q.id)).length;
+    g.toast(`The Tide Bell tolls, deep and green, across the fens. (${n}/${this.W.pois.relics.bells.length} rung)`);
+    g.questEvent({ type: 'relic', kind: 'bells', id: b.id });
+  }
+
+  // The Rime Charm, held over a pool from its edge, freezes the whole pool into a path.
+  freezeAt(tx, ty) {
+    const g = this.game, bell = this.W.pois.relics.bells.find((b) => b.pool.some((q) => q.x === tx && q.y === ty));
+    if (!g.state.tools.charm || !bell) { g.message('Dark floodwater, cold and far too deep to wade. Something bronze glints out in the middle.', 'Flooded Pool'); return; }
+    for (const q of g.freezePool(bell.id)) this.spawn(new Particles(q.x * TILE + 8, q.y * TILE + 8, { count: 5, color: ['#e0f8ff', '#ffffff', '#a8d8f0'], speed: 40, life: 0.6 }));
+    g.audio.sfx('splash', { pitch: 1.3 }); g.audio.sfx('shrine', { pitch: 1.5 });
+    g.toast('The Rime Charm flares, and the pool freezes into a path of ice.');
+  }
+
   interact() {
     if (super.interact()) return true;
     const g = this.game, p = g.player, W = this.W;
@@ -470,10 +506,12 @@ export class OverworldArea extends Area {
     if (deco0 === D.LOOKOUT) {
       const l = W.pois.lookouts.find((q) => q.x === ft0.x && q.y === ft0.y);
       if (l && g.state.quest.main === l.id) g.reachLookout(l.id);
-      else g.message(l?.id === 'windcrest' ? 'A Kindler cairn on the Windcrest, its banner snapping in the wind. You can see the whole north from here.' : 'The old watchtower creaks in the wind. From the top you can see clear to the Vault.', l?.id === 'windcrest' ? 'The Windcrest' : 'Watchtower');
+      else g.message(...(LOOKOUT_TEXT[l?.id] || LOOKOUT_TEXT.lookout));
       return true;
     }
     if (deco0 === D.BEACON) { const b = W.pois.relics.beacons.find((q) => q.x === ft0.x && q.y === ft0.y); if (b) this.lightBeacon(b); return true; }
+    if (deco0 === D.BELL) { const b = W.pois.relics.bells.find((q) => q.x === ft0.x && q.y === ft0.y); if (b) this.ringBell(b); return true; }
+    if (tile0 === T.FLOOD) { this.freezeAt(ft0.x, ft0.y); return true; }
     if (deco0 === D.ALTAR) { g.message(g.state.progress.relics.includes(W.pois.relics.leaves.find((q) => q.x === ft0.x && q.y === ft0.y)?.id) ? 'An empty leaf-shrine, its moss pressed flat where the bronze leaf lay.' : 'A leaf-shrine of the Kindlers, overgrown and broken open. Thorn-beasts have been nesting here.', 'Leaf-shrine'); return true; }
     if (tile0 === T.VENT) { g.message('A magma vent, spitting heat straight up into the sky. A bomb thrown down its throat might bring it crashing in.', 'Magma Vent'); return true; }
     if (tile0 === T.SEAL) {
@@ -483,7 +521,8 @@ export class OverworldArea extends Area {
         verdant: 'A wall of black thorns, thick as your arm and still growing. Your blade can\'t even scratch them. They part for no one... no one without the Sigil.',
         ashen: 'A wall of roaring fire, taller than a house. It doesn\'t burn down; it burns up, fed from somewhere deep below.',
         frost: 'A wall of ancient blue ice. Your reflection stares back at you, warped and tiny. Nothing short of Kindler fire will melt this.',
-      }[key] || 'An unnatural barrier bars the way.', { verdant: 'Thornwall', ashen: 'Firewall', frost: 'Ice Wall' }[key]);
+        drowned: 'A wall of churning floodwater, standing upright where no water should stand. It roars like surf and pulls at your sleeves. The old song held it once.',
+      }[key] || 'An unnatural barrier bars the way.', { verdant: 'Thornwall', ashen: 'Firewall', frost: 'Ice Wall', drowned: 'Tidewall' }[key]);
       return true;
     }
     const cache = this.entities.find((e) => e instanceof Cache && Math.hypot(e.x - p.x, e.y - p.y) < 16);
@@ -552,7 +591,6 @@ export class OverworldArea extends Area {
       g.message('A great stone door, sealed by a leaf-shaped lock of green bronze. It will not open without the matching sigil.', 'Verdant Vault');
       return false;
     }
-    if (lm.id === 'drowned') { g.message('Water seeps from beneath a door bound in rusted chains. Something deep within is still sleeping. (The fourth region arrives in a future chapter.)', 'Drowned Fane'); return false; }
     if (lm.id === 'spire') { g.message(`Four empty sockets ring the Spire door. ${g.state.progress.shards} of them glow faintly. It will open only when all four wards are quieted.`, 'Emberwake Spire'); return false; }
     g.enterDungeon(lm.id);
     return true;

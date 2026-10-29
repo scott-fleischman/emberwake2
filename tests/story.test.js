@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateOverworld } from '../src/world/overworld.js';
 import { newGameState } from '../src/game/state.js';
-import { LORE_ENTRIES, STONE_LORE, BOOKS, WARDENS, learnLore, bookFor, introShots, elderShots, endingShots, bossIntroShots, bossOutroShots } from '../src/data/story.js';
+import { LORE_ENTRIES, STONE_LORE, BOOKS, WARDENS, learnLore, bookFor, introShots, elderShots, hearthShots, kindleShots, bossIntroShots, bossOutroShots } from '../src/data/story.js';
 import { ART_IDS } from '../src/gfx/cinema.js';
 import { Cutscene } from '../src/gfx/cutscene.js';
 
@@ -40,7 +40,8 @@ test('every cutscene shot uses known art and has something to show', () => {
   const scripts = [
     introShots('Mage'),
     elderShots({ cls: 'Mage', elder: 'Odile', scout: 'Fenn', outpost: 'Elmford', dir: 'north', tip: 'mind your mana' }),
-    endingShots({ elder: 'Odile' }),
+    hearthShots({ elder: 'Odile', town: 'Fenmoor' }),
+    kindleShots({ elder: 'Odile' }),
     ...Object.keys(WARDENS).flatMap((k) => [bossIntroShots(k), bossOutroShots(k, { x: 10, y: 10 })]),
   ];
   for (const shots of scripts) {

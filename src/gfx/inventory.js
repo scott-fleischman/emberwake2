@@ -55,6 +55,7 @@ function artifactIcon(u, id, x, y) {
     case 'verdantSigil': u.fillStyle = '#5ab04a'; u.beginPath(); u.ellipse(0, 0, 3, 5, 0.6, 0, Math.PI * 2); u.fill(); u.strokeStyle = '#2e6b2e'; u.lineWidth = 0.6; u.beginPath(); u.moveTo(-2, 3); u.lineTo(2, -3); u.stroke(); break;
     case 'satchel': u.fillStyle = '#8a5a2a'; u.fillRect(-4, -2, 8, 6); u.fillStyle = '#6a4220'; u.fillRect(-4, -3, 8, 2); u.fillStyle = '#24242c'; u.beginPath(); u.arc(1.5, 1, 1.8, 0, Math.PI * 2); u.fill(); break;
     case 'gloves': u.fillStyle = '#c8a050'; u.fillRect(-3.5, -1, 7, 5); u.fillRect(-3.5, -4, 1.6, 3); u.fillRect(-1.5, -4.5, 1.6, 3.5); u.fillRect(0.5, -4.5, 1.6, 3.5); u.fillRect(2.4, -4, 1.4, 3); u.fillStyle = '#8a6a30'; u.fillRect(-3.5, 3, 7, 1.2); break;
+    case 'charm': u.strokeStyle = '#c8a050'; u.lineWidth = 0.6; u.beginPath(); u.arc(0, -3, 2.2, Math.PI, 0); u.stroke(); u.fillStyle = '#a8e4ff'; u.beginPath(); u.moveTo(0, -3); u.lineTo(3, 1); u.lineTo(0, 5); u.lineTo(-3, 1); u.closePath(); u.fill(); u.fillStyle = '#ffffff'; u.fillRect(-1, -1, 1, 3); break;
     default: u.fillStyle = '#f0c850'; u.fillRect(-2, -2, 4, 4);
   }
   u.restore();
@@ -184,10 +185,10 @@ export class ItemMenu {
     const rx = X + 222;
     u.strokeStyle = 'rgba(200,160,96,0.35)'; u.lineWidth = 0.6; u.beginPath(); u.moveTo(rx - 10, Y + 26); u.lineTo(rx - 10, Y + H - 18); u.stroke();
     text(u, 'Key items', rx, Y + 32, { size: 6.5, bold: true, color: UI.gold });
-    const keyItems = ['verdantSigil', 'satchel', 'gloves'];
+    const keyItems = ['verdantSigil', 'satchel', 'gloves', 'charm'];
     keyItems.forEach((id, k) => {
       const have = s.artifacts.includes(id);
-      const y = Y + 46 + k * 15;
+      const y = Y + 46 + k * 13;
       if (have) artifactIcon(u, id, rx + 5, y - 2);
       else { u.fillStyle = 'rgba(160,150,180,0.25)'; u.fillRect(rx + 2, y - 5, 6, 6); }
       text(u, have ? ARTIFACTS[id].name : '???', rx + 14, y, { size: 6, color: have ? UI.text : UI.dim });

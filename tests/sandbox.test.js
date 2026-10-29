@@ -34,6 +34,17 @@ test('the bot never dodge-rolls into lava', async () => {
   assert.equal(bot.safeRoll([0, 1]), true); // the wall stops the roll short of the lava
 });
 
+// d1's swordsman fell to the Tidewarden again and again, poisoned by the mire along the Fane's walls:
+// its rolls ended in it, and it fought on it.
+test('the bot treats mire as danger and never ends a roll in it', async () => {
+  const s = await sandbox(), bot = new Bot(s.game, 'any'), map = s.area.map, p = s.game.player, t = tileOf(p.x, p.y);
+  for (let dx = 2; dx <= 4; dx++) map.set(t.x + dx, t.y, T.MIRE);
+  assert.equal(bot.safeRoll([1, 0]), false);
+  assert.equal(bot.safeRoll([-1, 0]), true);
+  assert.equal(bot.danger((t.x + 3) * TILE + 8, t.y * TILE + 8, []).lv, 1);
+  assert.equal(bot.danger(p.x, p.y, []).lv, 0);
+});
+
 // A lull isn't an empty camp: hearth's 100% run kept walking out on members it wasn't fighting, and
 // each walk-out let the warband muster again at full strength.
 test('clearing a camp goes after its stragglers', async () => {

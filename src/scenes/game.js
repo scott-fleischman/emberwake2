@@ -2,7 +2,7 @@
 import { generateOverworld } from '../world/overworld.js';
 import { TILE } from '../world/tiles.js';
 import { derivedStats, decodeBits, encodeBits, applyDeathPenalty, DIFFICULTY } from '../game/state.js';
-import { generateSideQuests, advanceMain, mainObjective, sideObjective, sideStatus, recordKill, reveal, trackedObjective, trackableQuests, cycleTracked, questTitle } from '../game/quests.js';
+import { generateSideQuests, advanceMain, mainObjective, sideObjective, sideStatus, recordKill, reveal, trackedObjective, trackableQuests, cycleTracked, questTitle, ELITE_SEAL } from '../game/quests.js';
 import { Player } from '../game/player.js';
 import * as fx from '../game/effects.js';
 import { OverworldArea, InteriorArea, CaveArea } from '../game/areas.js';
@@ -24,10 +24,10 @@ import { ItemMenu } from '../gfx/inventory.js';
 import { Cutscene } from '../gfx/cutscene.js';
 import { hot } from '../core/touch.js';
 import { lookoutShots, sealShots } from '../data/wards.js';
-import { openSeal } from '../world/wards.js';
+import { openSeal, freezePool } from '../world/wards.js';
 import { LoreJournal } from '../gfx/journal.js';
 import { LOOKS } from '../gfx/sprites.js';
-import { introShots, endingShots, learnLore, LORE_ENTRIES, stonesRead } from '../data/story.js';
+import { introShots, hearthShots, kindleShots, learnLore, LORE_ENTRIES, stonesRead } from '../data/story.js';
 import { HERBS } from '../data/sidequests.js';
 import { ROOM_W, ROOM_H } from '../world/dungeons.js';
 
@@ -570,6 +570,7 @@ export class GameScene {
   }
 
   questEvent(ev) {
+    const from = this.state.quest.main;
     const r = advanceMain(this.state, this.world, ev);
     if (r.advanced) {
       if (r.stage === 'leaves' && this.overworld) this.overworld.spawnWardItems();
@@ -577,9 +578,12 @@ export class GameScene {
       this.audio.sfx('levelup');
       this.updateObjective();
       this.toast(`New objective: ${this.objective}`);
-      if (r.stage === 'end') {
-        const elder = this.world.npcs.find((n) => n.role === 'elder' && n.settlementId === 'home');
-        this.playCutscene(endingShots({ elder: elder.name }), { music: 'story', onDone: () => { this.restoreMusic(); this.showEnding(); } });
+      // Shards brought home: the Hearth takes three, then four, and the Spire answers.
+      const scene = { hearth: hearthShots, kindle: kindleShots }[from];
+      if (scene) {
+        const W = this.world, elder = W.npcs.find((n) => n.role === 'elder' && n.settlementId === 'home');
+        const town = W.settlements.find((q) => q.id === 'swamp').name;
+        this.playCutscene(scene({ elder: elder.name, town }), { music: 'story', onDone: () => { this.restoreMusic(); if (r.stage === 'end') this.showEnding(); } });
       }
     }
   }
@@ -602,7 +606,7 @@ export class GameScene {
     const open = () => {
       pr.seals.push(key);
       const tiles = openSeal(W, this.overworldMap, key);
-      const color = { verdant: ['#3a2a1a', '#6a5a3a', '#2e4a1e'], ashen: ['#ff7030', '#ffd060', '#3a2a2a'], frost: ['#e0f8ff', '#ffffff', '#a8d8f0'] }[key];
+      const color = { verdant: ['#3a2a1a', '#6a5a3a', '#2e4a1e'], ashen: ['#ff7030', '#ffd060', '#3a2a2a'], frost: ['#e0f8ff', '#ffffff', '#a8d8f0'], drowned: ['#5ac8d8', '#a0e8f0', '#2a5a6a'] }[key];
       if (this.area === this.overworld) for (const t of tiles) this.area.spawn(new Particles(t.x * TILE + 8, t.y * TILE + 4, { count: 10, color, speed: 70, life: 1.1, up: 30 }));
     };
     this.playCutscene(sealShots(W, key, open), {
@@ -618,8 +622,14 @@ export class GameScene {
     if (!pr.elites.includes(e.eliteId)) pr.elites.push(e.eliteId);
     this.audio.sfx('levelup');
     if (e.eliteId === 'warchief') { this.toast('Gorrak the Warchief falls! The warband breaks.'); return; }
-    const key = e.eliteId === 'slagheart' ? 'ashen' : 'frost';
-    this.queueCutscene(() => this.breakSeal(key), 1.2);
+    this.queueCutscene(() => this.breakSeal(ELITE_SEAL[e.eliteId]), 1.2);
+  }
+
+  // The Rime Charm turns a bell's pool to ice, for good.
+  freezePool(bellId) {
+    const pr = this.state.progress;
+    if (!pr.frozen.includes(bellId)) pr.frozen.push(bellId);
+    return this.overworldMap ? freezePool(this.world, this.overworldMap, bellId) : [];
   }
 
   onSideQuestAccepted(q) {
@@ -655,9 +665,9 @@ export class GameScene {
     ], {
       width: 300,
       lines: [
-        'Three wardens quieted. Three shards returned to the Hearth.',
-        'The woods have stopped creeping; frost lifts from the high roads.',
-        'But the western fane still drowns, and the Spire waits sealed.',
+        'Four wardens quieted. Four shards returned to the Hearth.',
+        'The woods breathe, the ash and frost have lifted, and the fens drain.',
+        'And far to the north, the Spire door stands open on the dark.',
         '',
         `${CLASSES[s.classId].name} · ${mins} min · ${s.stats.kills} foes defeated · ${s.stats.deaths} falls`,
         'Thank you for playing this prototype of Emberwake.',
@@ -733,10 +743,10 @@ export class GameScene {
 
   isMainTarget(n) {
     const st = this.state.quest.main, d = n.data;
-    return (d.role === 'elder' && d.settlementId === 'home' && (st === 'wake' || st === 'drowned'))
+    return (d.role === 'elder' && d.settlementId === 'home' && (st === 'wake' || st === 'hearth' || st === 'kindle'))
       || (d.role === 'scout' && (st === 'scout' || st === 'sigil'))
       || (d.role === 'smith' && d.settlementId === 'home' && st === 'smith')
-      || (d.role === 'keeper' && ({ desert: 'ashpass', mountain: 'frostpass', volcanic: 'cinderwatch', snow: 'rimewatch' })[d.settlementId] === st);
+      || (d.role === 'keeper' && ({ desert: 'ashpass', mountain: 'frostpass', volcanic: 'cinderwatch', snow: 'rimewatch', swamp: 'fenkeep' })[d.settlementId] === st);
   }
 
   showBanner(title, sub) { this.banner = { title, sub, t: 3, max: 3 }; }

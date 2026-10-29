@@ -5,7 +5,7 @@ import { GameScene } from './game.js';
 import { Particles } from '../game/entities.js';
 import { newGameState } from '../game/state.js';
 import { CLASSES } from '../data/classes.js';
-import { introShots, elderShots, endingShots, bossIntroShots, bossOutroShots, WARDENS } from '../data/story.js';
+import { introShots, elderShots, hearthShots, kindleShots, bossIntroShots, bossOutroShots, WARDENS } from '../data/story.js';
 import { dirWord } from '../game/quests.js';
 import { DUNGEON_INFO } from '../world/dungeons.js';
 import { lookoutShots, sealShots } from '../data/wards.js';
@@ -51,7 +51,9 @@ export class TheaterScene extends GameScene {
       list.push({ label: `${WARDENS[kind].title} awakens`, run: () => { this.toBossRoom(id); play(bossIntroShots(kind), { letterbox: true, music: 'boss' }); } });
       list.push({ label: `${WARDENS[kind].title} falls`, run: () => { this.toBossRoom(id); const focus = this.quietBoss(); play(bossOutroShots(kind, focus), { letterbox: true, music: 'story' }); } });
     }
-    list.push({ label: 'Rekindled', run: () => play(endingShots({ elder: N('home', 'elder').name }), { music: 'story' }) });
+    const elder = N('home', 'elder').name, town = W.settlements.find((s) => s.id === 'swamp').name;
+    list.push({ label: 'Rekindled', run: () => play(hearthShots({ elder, town }), { music: 'story' }) });
+    list.push({ label: 'The Spire opens', run: () => play(kindleShots({ elder }), { music: 'story' }) });
     return list;
   }
 

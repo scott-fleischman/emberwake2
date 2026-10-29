@@ -24,6 +24,7 @@ export const ARTIFACTS = {
   emberShard: { name: 'Ember Shard', desc: 'A splinter of the Hearth Ember, still warm.' },
   gloves: { name: 'Titan Gloves', desc: 'Gauntlets that make boulders feel like baskets of wool.' },
   satchel: { name: 'Bomb Satchel', desc: 'Forged by the village smith around a warm ember shard.' },
+  charm: { name: 'Rime Charm', desc: 'A shard of the Sovereign\'s ice. Hold it over deep water and the water freezes.' },
 };
 
 // Cave chest contents → what the player gains (class convergence items).

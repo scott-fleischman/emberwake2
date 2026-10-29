@@ -170,7 +170,7 @@ function hall(g, t, fireScale, ctx, shot) {
   for (let k = 0; k < n; k++) {
     const a = t * 1.2 + (k / n) * Math.PI * 2;
     const sx = fx + Math.cos(a) * 26, sy = fy - 30 + Math.sin(a) * 8;
-    const col = ['120,240,120', '255,150,70', '170,230,255'][k];
+    const col = ['120,240,120', '255,150,70', '170,230,255', '90,220,200'][k];
     glow(g, sx, sy, 14, col, 0.7);
     g.fillStyle = `rgb(${col})`;
     g.beginPath(); g.moveTo(sx, sy - 5); g.lineTo(sx + 3, sy); g.lineTo(sx, sy + 5); g.lineTo(sx - 3, sy); g.closePath(); g.fill();
@@ -232,6 +232,51 @@ function burstLines(g, cx, cy, t, rgb, a) {
     g.beginPath(); g.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0); g.lineTo(cx + Math.cos(ang - w) * 640, cy + Math.sin(ang - w) * 640); g.lineTo(cx + Math.cos(ang + w) * 640, cy + Math.sin(ang + w) * 640); g.closePath(); g.fill();
   }
   g.restore();
+}
+
+// The Spire's great door and its four sockets: `lit` of them catch one by one (the rest wait dark), and
+// `open` (0..1) grinds the two leaves apart into the walls, on the dark and the one who waits in it.
+const SOCKETS = [[240, 112, '120,240,120', -1], [200, 152, '255,140,60', -1], [280, 152, '170,230,255', 1], [240, 192, '90,220,200', 1]];
+function spireDoor(g, t, lit, open) {
+  R(g, 0, 0, W, H, '#0c0810');
+  const arch = () => { g.beginPath(); g.moveTo(130, H); g.lineTo(130, 90); g.quadraticCurveTo(240, -10, 350, 90); g.lineTo(350, H); g.closePath(); };
+  g.fillStyle = '#2a2232'; arch(); g.fill();
+  g.save(); arch(); g.clip();
+  const gap = open * 112, jolt = open > 0 && open < 1 ? Math.round(Math.sin(t * 40) * 0.8) : 0;
+  if (open > 0) {
+    R(g, 130, 0, 220, H, '#050208');
+    glow(g, 240, 150, 40 + 120 * open, '150,100,220', 0.35 * open);
+    eyes(g, 240, 128, clamp01((open - 0.6) / 0.4), 1.3, 0.8);
+  }
+  for (const side of [-1, 1]) {
+    const x0 = (side < 0 ? 130 : 240) + side * gap + jolt;
+    g.save(); g.beginPath(); g.rect(x0, 0, 110, H); g.clip();
+    R(g, x0, 0, 110, H, '#2a2232');
+    for (let y = 46; y < H; y += 18) for (let x = 136 + ((y / 18) % 2) * 14; x < 344; x += 28) R(g, x + side * gap + jolt, y, 26, 1, '#1e1826');
+    g.restore();
+    R(g, side < 0 ? x0 + 108 : x0, 40, 2, 230, '#1a1420'); // the seam where the leaves meet
+  }
+  SOCKETS.forEach(([x0, y, col, side], k) => {
+    const x = x0 + side * gap + jolt, at = 0.4 + k * 0.6;
+    R(g, x - 9, y - 9, 18, 18, '#16101c'); R(g, x - 7, y - 7, 14, 14, '#0a060c');
+    if (k < lit && t > at) {
+      // Ablaze with all four; their light goes with the leaves into the walls.
+      const a = clamp01((t - at) * 2) * (1 - open), blaze = lit === 4 ? 1.3 + 0.2 * Math.sin(t * 6 + k) : 1;
+      glow(g, x, y, 26 * a * blaze, col, 0.8); R(g, x - 4, y - 4, 8, 8, `rgb(${col})`);
+    } else if (k >= lit) glow(g, x, y, 8 + Math.sin(t * 4) * 3, col, 0.15);
+  });
+  g.restore();
+  for (let k = 0; k < 8; k++) {
+    const x = ((k * 70 + t * 14) % 600) - 60;
+    g.fillStyle = 'rgba(110,60,150,0.12)';
+    g.beginPath(); g.ellipse(x, 252 + Math.sin(t + k) * 4, 70, 16, 0, 0, Math.PI * 2); g.fill();
+  }
+  if (open > 0 && open < 1) for (let i = 0; i < 16; i++) { // grit shaken loose from the lintel
+    const p = (t * 0.9 + hash(i, 31)) % 1;
+    g.globalAlpha = 1 - p; R(g, 140 + hash(i, 32) * 200, 20 + p * 230, 2, 2, '#4a4052');
+  }
+  g.globalAlpha = 1;
+  vignette(g, 0.65);
 }
 
 // A warden painted big: (x,y) is where its feet would be, S the zoom, flip to face left.
@@ -424,7 +469,7 @@ export const ART = {
 
   rekindle(g, t, shot, ctx) {
     const grow = easeOut((t - 0.4) / 1.2);
-    hall(g, t, 0.35 + grow * 1.2, ctx, { shards: t < 0.6 ? 3 : 0 });
+    hall(g, t, 0.35 + grow * 1.2, ctx, { shards: t < 0.6 ? shot.shards || 3 : 0 });
     g.save(); g.globalCompositeOperation = 'lighter';
     for (let k = 0; k < 12; k++) {
       const a = (k / 12) * Math.PI * 2 + t * 0.3;
@@ -439,27 +484,9 @@ export const ART = {
   realm(g, t, shot, ctx) { realmMap(g, t, ctx, -1); },
   healing(g, t, shot, ctx) { realmMap(g, t, ctx, t / 2.6); },
 
-  spiredoor(g, t) {
-    R(g, 0, 0, W, H, '#0c0810');
-    g.fillStyle = '#2a2232';
-    g.beginPath(); g.moveTo(130, H); g.lineTo(130, 90); g.quadraticCurveTo(240, -10, 350, 90); g.lineTo(350, H); g.closePath(); g.fill();
-    g.save(); g.clip();
-    for (let y = 46; y < H; y += 18) for (let x = 136 + ((y / 18) % 2) * 14; x < 344; x += 28) R(g, x, y, 26, 1, '#1e1826');
-    R(g, 238, 40, 4, 230, '#1a1420');
-    g.restore();
-    const sockets = [[240, 112, '120,240,120', 0.4], [200, 152, '255,140,60', 1.0], [280, 152, '170,230,255', 1.6], [240, 192, '90,220,200', -1]];
-    for (const [x, y, col, at] of sockets) {
-      R(g, x - 9, y - 9, 18, 18, '#16101c'); R(g, x - 7, y - 7, 14, 14, '#0a060c');
-      if (at >= 0 && t > at) { const a = clamp01((t - at) * 2); glow(g, x, y, 26 * a, col, 0.8); R(g, x - 4, y - 4, 8, 8, `rgb(${col})`); }
-      else if (at < 0) { glow(g, x, y, 8 + Math.sin(t * 4) * 3, col, 0.15); }
-    }
-    for (let k = 0; k < 8; k++) {
-      const x = ((k * 70 + t * 14) % 600) - 60;
-      g.fillStyle = 'rgba(110,60,150,0.12)';
-      g.beginPath(); g.ellipse(x, 252 + Math.sin(t + k) * 4, 70, 16, 0, 0, Math.PI * 2); g.fill();
-    }
-    vignette(g, 0.65);
-  },
+  sockets3(g, t) { spireDoor(g, t, 3, 0); },
+  sockets4(g, t) { spireDoor(g, t, 4, 0); },
+  spireopen(g, t) { const k = clamp01((t - 0.6) / 2.6); spireDoor(g, t + 3, 4, k * k * (3 - 2 * k)); }, // sockets already ablaze
 
   eyes(g, t) {
     const grd = g.createRadialGradient(240, 130, 10, 240, 130, 300);

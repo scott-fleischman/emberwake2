@@ -5,14 +5,17 @@ import { BIOME_NAMES } from '../world/tiles.js';
 import { isPassable } from '../world/overworld.js';
 import { PETS, HERBS, RIDDLES, FETCH_TEXT, HUNT_TEXT, DELIVER_TEXT, RESCUE_TEXT, fill, cap } from '../data/sidequests.js';
 
-export const MAIN_STAGES = ['wake', 'scout', 'lookout', 'camp', 'sigil', 'leaves', 'thornwall', 'vault', 'smith', 'ashpass', 'ridge', 'cinderwatch', 'vents', 'slagheart', 'reliquary', 'frostpass', 'boulder', 'rimewatch', 'windcrest', 'beacons', 'frostfang', 'sanctuary', 'drowned', 'end'];
+export const MAIN_STAGES = ['wake', 'scout', 'lookout', 'camp', 'sigil', 'leaves', 'thornwall', 'vault', 'smith', 'ashpass', 'ridge', 'cinderwatch', 'vents', 'slagheart', 'reliquary', 'frostpass', 'boulder', 'rimewatch', 'windcrest', 'beacons', 'frostfang', 'sanctuary', 'hearth', 'fenkeep', 'belfry', 'bells', 'bogking', 'fane', 'kindle', 'end'];
 
 // The named guardians of the quest chains.
 export const ELITES = {
   warchief: { name: 'Gorrak the Warchief', archetype: 'brute', biome: 0, hp: 4 },
   slagheart: { name: 'Slagheart', archetype: 'brute', biome: 5, hp: 3.5 },
   frostfang: { name: 'Frostfang, the Pale Alpha', archetype: 'lunger', biome: 4, hp: 5.5 },
+  bogking: { name: 'Bogmaw, the Drowned King', archetype: 'ranged', biome: 1, hp: 6 },
 };
+// The ward seal each chain's guardian climbs out of, and whose fall breaks it.
+export const ELITE_SEAL = { slagheart: 'ashen', frostfang: 'frost', bogking: 'drowned' };
 
 const settlement = (W, id) => W.settlements.find((s) => s.id === id);
 const npcBy = (W, settlementId, role) => W.npcs.find((n) => n.settlementId === settlementId && n.role === role);
@@ -68,8 +71,20 @@ export function advanceMain(state, W, ev) {
     case 'windcrest': if (ev.type === 'reach' && ev.id === 'windcrest') go('beacons'); break;
     case 'beacons': if (ev.type === 'relic' && allRelics(state, W, 'beacons')) go('frostfang', 'The beacons blaze on the heights...'); break;
     case 'frostfang': if (sealed('frost')) go('sanctuary'); break;
-    case 'sanctuary': if (ev.type === 'boss' && ev.kind === 'rime') go('drowned'); break;
-    case 'drowned': if (talk('elder', 'home')) go('end'); break;
+    case 'sanctuary':
+      if (ev.type === 'boss' && ev.kind === 'rime') {
+        state.tools.charm = true;
+        if (!state.artifacts.includes('charm')) state.artifacts.push('charm');
+        go('hearth', 'Received the Rime Charm!');
+      }
+      break;
+    case 'hearth': if (talk('elder', 'home')) go('fenkeep'); break;
+    case 'fenkeep': if (talk('keeper', 'swamp')) go('belfry'); break;
+    case 'belfry': if (ev.type === 'reach' && ev.id === 'belfry') go('bells'); break;
+    case 'bells': if (ev.type === 'relic' && allRelics(state, W, 'bells')) go('bogking', 'The bells ring out across the fens...'); break;
+    case 'bogking': if (sealed('drowned')) go('fane'); break;
+    case 'fane': if (ev.type === 'boss' && ev.kind === 'tide') go('kindle'); break;
+    case 'kindle': if (talk('elder', 'home')) go('end'); break;
   }
   // Things done out of order (a camp cleared before the scout asked, gates opened early, vents
   // capped before anyone explained them) should not strand the quest.
@@ -84,19 +99,23 @@ export function advanceMain(state, W, ev) {
     if (st === 'boulder' && pr.gates.includes('snow')) q.main = 'rimewatch';
     if (st === 'windcrest' && !W.pois.lookouts.some((l) => l.id === 'windcrest')) q.main = 'beacons';
     if (st === 'beacons' && allRelics(state, W, 'beacons')) q.main = 'frostfang';
+    if (st === 'belfry' && !W.pois.lookouts.some((l) => l.id === 'belfry')) q.main = 'bells';
+    if (st === 'bells' && allRelics(state, W, 'bells')) q.main = 'bogking';
+    if (st === 'bogking' && pr.seals.includes('drowned')) q.main = 'fane';
     if (q.main === st) break;
   }
   const past = (stage) => MAIN_STAGES.indexOf(q.main) >= MAIN_STAGES.indexOf(stage);
   if (past('lookout')) reveal(state, 'dungeon:verdant');
   if (past('vents')) reveal(state, 'dungeon:ashen');
   if (past('beacons')) reveal(state, 'dungeon:frost');
+  if (past('bells')) reveal(state, 'dungeon:drowned');
   return { advanced: q.main !== before, stage: q.main, notes };
 }
 
 // Which elite (if any) the current stage is waiting on.
-export function stageElite(stage) { return { slagheart: 'slagheart', frostfang: 'frostfang' }[stage] || null; }
+export function stageElite(stage) { return { slagheart: 'slagheart', frostfang: 'frostfang', bogking: 'bogking' }[stage] || null; }
 // Which ward's relics the current stage is gathering.
-export function stageRelics(stage) { return { leaves: 'leaves', vents: 'vents', beacons: 'beacons' }[stage] || null; }
+export function stageRelics(stage) { return { leaves: 'leaves', vents: 'vents', beacons: 'beacons', bells: 'bells' }[stage] || null; }
 
 export function reveal(state, id) {
   if (!state.progress.revealed) state.progress.revealed = [];
@@ -144,8 +163,14 @@ export function mainObjective(state, W, here = null) {
     case 'beacons': return { text: `Break the ice off the old signal beacons and light them (${count('beacons')}).`, marker: relic('beacons') };
     case 'frostfang': return { text: 'Defeat Frostfang, the Pale Alpha, at the ice wall.', marker: arena('frost') };
     case 'sanctuary': return { text: 'Reach the Frostbound Sanctuary and face the Rime Sovereign.', marker: D.frost.front };
-    case 'drowned': return { text: `Return to ${n('home', 'elder').name} with three shards.`, marker: hallDoor(home) };
-    default: return { text: 'The fourth ward sleeps beneath the drowned west. Explore freely.', marker: D.drowned.front };
+    case 'hearth': return { text: `Return to ${n('home', 'elder').name} with three shards.`, marker: hallDoor(home) };
+    case 'fenkeep': return { text: `Ask the keeper of ${s('swamp').name} about the drowning fane.`, marker: hallDoor(s('swamp')) };
+    case 'belfry': return { text: 'Climb the Drowned Belfry and look out over the flooded fens.', marker: look('belfry') };
+    case 'bells': return { text: `Freeze a path with the Rime Charm and ring the sunken Tide Bells (${count('bells')}).`, marker: relic('bells') };
+    case 'bogking': return { text: 'Defeat Bogmaw, the Drowned King, at the Tidewall.', marker: arena('drowned') };
+    case 'fane': return { text: 'Enter the Drowned Fane and defeat the Tidewarden.', marker: D.drowned.front };
+    case 'kindle': return { text: `Return to ${n('home', 'elder').name} with all four shards.`, marker: hallDoor(home) };
+    default: return { text: 'All four wards are quiet, and the Spire stands open. Explore freely.', marker: W.pois.spire.front };
   }
 }
 
@@ -419,7 +444,7 @@ export function questTitle(q, W) {
 }
 
 // ---------------------------------------------------------------- tracking
-const MAIN_DUNGEON = { vault: 'verdant', reliquary: 'ashen', sanctuary: 'frost' };
+const MAIN_DUNGEON = { vault: 'verdant', reliquary: 'ashen', sanctuary: 'frost', fane: 'drowned' };
 
 // Quests the player can track: the main quest plus every accepted, unfinished side quest.
 export function trackableQuests(state, sideQuests) {

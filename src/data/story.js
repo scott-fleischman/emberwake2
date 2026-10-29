@@ -214,16 +214,28 @@ export function bossOutroShots(kind, focus) {
   ];
 }
 
-// The Hearth is rekindled with three shards. ctx: {elder}
-export function endingShots(c) {
-  const v = VOICE.unkindled;
+// The Hearth takes three shards; the Spire door shows the fourth socket dark. ctx: {elder, town}
+export function hearthShots(c) {
+  const v = VOICE.unkindled, E = { speaker: c.elder, color: '#f0c850', wait: true };
   return [
-    { art: 'hearth', speaker: c.elder, color: '#f0c850', text: 'Three shards... Set them in the coals, child. Gently.', wait: true, shards: 3 },
+    { art: 'hearth', ...E, text: 'Three shards... Set them in the coals, child. Gently.', shards: 3 },
     { art: 'rekindle', text: 'The Hearth Ember roared back to life, and its warmth ran out along every road.', sfx: 'levelup', hold: 2.6 },
     { art: 'healing', text: 'In the forest, the thorns drew back. The ash stopped falling. The frost let go of the high passes.', hold: 2.8 },
-    { art: 'spiredoor', text: 'But far to the north, three sockets glowed on the Spire\'s great door... and the fourth stayed dark.', hold: 2.8 },
+    { art: 'sockets3', text: 'But far to the north, three sockets glowed on the Spire\'s great door... and the fourth stayed dark.', hold: 2.8 },
     { art: 'eyes', speaker: v.name, color: v.color, text: 'Three, little ember. The last shard sleeps beneath the drowning water of the western fane.', wait: true, shakeText: true },
     { art: 'eyes', speaker: v.name, color: v.color, text: 'Bring it to me. I will leave the door open.', wait: true, shakeText: true },
-    { art: 'titlecard', title: 'Emberwake', sub: 'Chapter I complete. The Drowned Fane awaits.', hold: 3 },
+    { art: 'hearth', ...E, text: `The water keeps the fourth from us. Go to ${c.town}. Its keeper has watched that water rise longer than anyone.`, shards: 3 },
+  ];
+}
+
+// Four shards: the Hearth roars, every socket blazes and the Spire opens. ctx: {elder}
+export function kindleShots(c) {
+  const v = VOICE.unkindled;
+  return [
+    { art: 'hearth', speaker: c.elder, color: '#f0c850', text: 'Four. The last one still smells of the sea. Set it beside the others, child, and stand back.', wait: true, shards: 4 },
+    { art: 'rekindle', text: 'The Hearth roared up to the rafters, brighter than anyone living had ever seen it.', sfx: 'levelup', hold: 2.6, shards: 4 },
+    { art: 'sockets4', text: 'Far to the north, all four sockets on the Spire\'s door blazed at once.', hold: 2.8, sfx: 'shrine' },
+    { art: 'spireopen', text: 'Stone ground on stone, and the great door swung inward on the dark.', hold: 3, sfx: [['gate', { pitch: 0.6 }]], shake: 2 },
+    { art: 'eyes', speaker: v.name, color: v.color, text: 'Come down, little ember.', wait: true, shakeText: true },
   ];
 }

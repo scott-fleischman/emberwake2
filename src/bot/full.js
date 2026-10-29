@@ -1,9 +1,10 @@
 // The 100% route: repeatedly take the nearest unfinished job the bot can reach right now — side
-// quests, standing stones, books, caves, caches, camps, and main-quest steps (which unlock bombs
-// and gloves). Dungeons are cleared of every chest. The last talk with the elder comes last.
+// quests, standing stones, books, caves, caches, camps, and main-quest steps (which unlock bombs,
+// gloves and the charm). Dungeons are cleared of every chest. The last talk with the elder comes last.
 import { generateDungeon } from '../world/dungeons.js';
 import { BOOKS, bookFor } from '../data/story.js';
 import { sideStatus } from '../game/quests.js';
+import { WARDS } from '../world/wards.js';
 import { reachMap, tileOf, standableNear } from './nav.js';
 
 const SHELF_TYPES = ['home', 'house', 'shop', 'seer'];
@@ -20,7 +21,7 @@ export const fullMethods = {
       [W.pois.caches.length, W.pois.caches.filter((c) => pr.caches.includes(c.id)).length],
       [W.pois.camps.length, W.pois.camps.filter((c) => pr.cleared.includes(c.id)).length],
       [dungeonChests.length, dungeonChests.filter((id) => pr.opened.includes(id)).length],
-      [3, pr.bosses.length],
+      [WARDS.length, pr.bosses.length],
     ];
     return { total: parts.reduce((a, p) => a + p[0], 0), done: parts.reduce((a, p) => a + p[1], 0) };
   },
@@ -42,7 +43,7 @@ export const fullMethods = {
   dungeonChestIds() {
     if (!this.chestIds) {
       this.chestIds = [];
-      for (const id of ['verdant', 'ashen', 'frost']) {
+      for (const id of WARDS) {
         const area = this.g.area.kind === 'dungeon' && this.g.area.id === id ? this.g.area : null;
         const rooms = (area ? area.dungeon : this.dungeonData(id)).rooms;
         for (const r of rooms) if (r.objects.some((o) => o.type === 'chest')) this.chestIds.push(`d:${id}:${r.id}:chest`);
@@ -92,12 +93,12 @@ export const fullMethods = {
     }
     for (const c of W.pois.camps) if (!pr.cleared.includes(c.id)) out.push({ label: 'Clearing a camp', site: { x: c.x, y: c.y }, run: () => this.clearCamp(c) });
     // A fall or a hasty exit can leave a chest behind in a cleared dungeon: go back for it.
-    for (const id of ['verdant', 'ashen', 'frost']) {
+    for (const id of WARDS) {
       if (!pr.bosses.includes(id)) continue;
       if (this.dungeonChestIds().some((cid) => cid.startsWith(`d:${id}:`) && !pr.opened.includes(cid))) out.push({ label: 'Revisiting a dungeon for its last chest', site: W.pois.dungeons[id].front, run: () => this.runDungeon(id, true) });
     }
     const st = s.quest.main;
-    if (st !== 'end' && st !== 'drowned') out.push({ label: 'Main quest', site: this.mainSite(), run: () => this.mainStep(true), main: true });
+    if (st !== 'end' && st !== 'kindle') out.push({ label: 'Main quest', site: this.mainSite(), run: () => this.mainStep(true), main: true });
     return out;
   },
 
@@ -118,7 +119,7 @@ export const fullMethods = {
       // Before calling it done, give every job we gave up on one more round.
       if (!job && !this.secondChance && this.tried && this.tried.size) { this.secondChance = true; this.tried.clear(); this.note('Second pass over skipped jobs'); job = this.pickJob(); }
       if (!job) {
-        if (s.quest.main === 'drowned') { this.status = 'Returning to the elder'; yield* this.mainStep(true); continue; }
+        if (s.quest.main === 'kindle') { this.status = 'Returning to the elder'; yield* this.mainStep(true); continue; }
         this.status = 'Nothing left in reach'; yield* this.wait(1); continue;
       }
       this.status = job.label;
@@ -151,13 +152,13 @@ export const fullMethods = {
 
   *mainStep(full) {
     const g = this.g, W = g.world, st = g.state.quest.main;
-    if (['vault', 'reliquary', 'sanctuary', 'vents', 'slagheart', 'frostfang'].includes(st) && g.area.kind !== 'dungeon' && this.needsSupplies()) yield* this.resupply();
+    if (['vault', 'reliquary', 'sanctuary', 'vents', 'slagheart', 'frostfang', 'bells', 'bogking', 'fane'].includes(st) && g.area.kind !== 'dungeon' && this.needsSupplies()) yield* this.resupply();
     switch (st) {
-      case 'wake': case 'drowned': yield* this.talkTo(this.npc('home', 'elder').id); break;
+      case 'wake': case 'hearth': case 'kindle': yield* this.talkTo(this.npc('home', 'elder').id); break;
       case 'scout': case 'sigil': yield* this.talkTo(this.npc('outpost', 'scout').id); break;
-      case 'lookout': case 'windcrest': yield* this.climbLookout(st); break;
+      case 'lookout': case 'windcrest': case 'belfry': yield* this.climbLookout(st); break;
       case 'camp': yield* this.clearCamp(W.pois.camps.find((c) => c.quest)); break;
-      case 'leaves': case 'vents': case 'beacons': yield* this.gatherRelics(st); break;
+      case 'leaves': case 'vents': case 'beacons': case 'bells': yield* this.gatherRelics(st); break;
       case 'thornwall': yield* this.atSeal('verdant', 'Carrying the leaves to the thornwall'); break;
       case 'vault': yield* this.runDungeon('verdant', full); break;
       case 'smith': yield* this.talkTo(this.npc('home', 'smith').id); break;
@@ -171,6 +172,9 @@ export const fullMethods = {
       case 'rimewatch': yield* this.talkTo(this.npc('snow', 'keeper').id); break;
       case 'frostfang': yield* this.atSeal('frost', 'Facing Frostfang'); break;
       case 'sanctuary': yield* this.runDungeon('frost', full); break;
+      case 'fenkeep': yield* this.talkTo(this.npc('swamp', 'keeper').id); break;
+      case 'bogking': yield* this.atSeal('drowned', 'Facing Bogmaw'); break;
+      case 'fane': yield* this.runDungeon('drowned', full); break;
     }
   },
 

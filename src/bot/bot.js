@@ -26,7 +26,8 @@ export const SPLITS = {
   thornwall: 'Sigil leaves', vault: 'Thornwall withered', smith: 'Thornmaw quieted', ashpass: 'Bomb Satchel', ridge: 'Ash captain',
   cinderwatch: 'Ridge blasted', vents: 'Cinderwatch', slagheart: 'Vents capped', reliquary: 'Firewall fallen', frostpass: 'Cinder Warden quieted',
   boulder: 'Mountain keeper', rimewatch: 'Boulder lifted', windcrest: 'Rimewatch', beacons: 'Windcrest', frostfang: 'Beacons lit',
-  sanctuary: 'Ice wall shattered', drowned: 'Rime Sovereign quieted', end: 'Hearth rekindled',
+  sanctuary: 'Ice wall shattered', hearth: 'Rime Sovereign quieted', fenkeep: 'Hearth rekindled', belfry: 'Swamp keeper',
+  bells: 'Drowned Belfry', bogking: 'Tide Bells rung', fane: 'Tidewall drained', kindle: 'Tidewarden quieted', end: 'Spire opened',
 };
 
 const segDist = (px, py, ax, ay, bx, by) => {
@@ -364,6 +365,8 @@ export class Bot {
       const r = pr.rolling ? pr.zone.w / 2 + 8 : 12, lane = (k) => segDist(x, y, pr.x, pr.y, pr.x + pr.vx * k, pr.y + pr.vy * k) < r;
       if (lane(0.22)) { if (lv <= 2) shot = pr; bump(2, !pr.rolling); } else if (lane(0.45)) bump(1, !pr.rolling);
     }
+    // Mire poisons whoever stands in it: ground to leave, never to fight on.
+    if (this.g.area.map.tileAtPixel(x, y + 2) === T.MIRE) bump(1, false);
     return { lv, block, shot: lv === 2 ? shot || wave : null };
   }
 
@@ -423,8 +426,8 @@ export class Bot {
   }
 
   // A dodge carries us ~46px, far past the step bestMove checked; landing in lava hurts more than the
-  // blow, and so does sliding round a corner into a pocket we can't walk back out of. So the roll is
-  // played out frame by frame, sliding along walls as the real one will.
+  // blow, and so does sliding round a corner into a pocket we can't walk back out of, or stopping in
+  // mire. So the roll is played out frame by frame, sliding along walls as the real one will.
   safeRoll([dx, dy]) {
     const p = this.g.player, a = this.g.area, map = a.map, l = Math.hypot(dx, dy) || 1, reach = this.reach?.area === a ? this.reach.map : null;
     const q = { x: p.x, y: p.y, w: p.w, h: p.h }, step = DODGE_SPEED / 60;
@@ -433,7 +436,7 @@ export class Bot {
       const t = tileOf(q.x, q.y);
       if (!walkable(map, t.x, t.y) || (reach && reach[t.y * map.w + t.x] < 0)) return false;
     }
-    return true;
+    return map.tileAtPixel(q.x, q.y + 2) !== T.MIRE;
   }
 
   // Square out of a warden's charge lane, to the side we're already on unless that side is wall.
@@ -533,7 +536,7 @@ export class Bot {
       // Brambles prick from beside the tile too (Player's contact probes), not only underfoot.
       if ([[-7, 0], [7, 0], [0, -6], [0, 6]].some(([ox, oy]) => map.tileAtPixel(qx + ox, qy + oy) === T.THORNS)) s -= 8;
       const under = map.tileAtPixel(qx, qy + 2);
-      if (under === T.BOG || under === T.MIRE) s -= 4;
+      if (under === T.BOG) s -= 4;
       s -= Math.abs(Math.hypot(focus.x - qx, focus.y - (qy - 2)) - desired) * 0.25;
       for (const e of list) if (e !== focus && Math.hypot(e.x - qx, e.y - qy) < 22) s -= 1.5;
       if (g.area.kind === 'dungeon') s -= Math.hypot(qx - ROOM_W * 8, qy - ROOM_H * 8) * 0.006;
@@ -1134,7 +1137,7 @@ export class Bot {
   *climbLookout(id) {
     const l = this.g.world.pois.lookouts.find((x) => x.id === id);
     if (!l) return;
-    this.status = id === 'lookout' ? 'Climbing the watchtower' : 'Climbing the Windcrest';
+    this.status = { lookout: 'Climbing the watchtower', windcrest: 'Climbing the Windcrest', belfry: 'Climbing the Drowned Belfry' }[id];
     yield* this.goTo({ kind: 'overworld', x: l.x, y: l.y + 1, near: 1 });
     if (this.g.state.quest.main === id && this.g.area.kind === 'overworld' && !this.g.uiStack.length) yield* this.useTile({ x: l.x, y: l.y });
     yield* this.wait(0.5);
@@ -1153,6 +1156,12 @@ export class Bot {
         this.status = 'Capping a magma vent';
         yield* this.goTo({ kind: 'overworld', x: r.x, y: r.y, near: 3 });
         if (g.area.kind === 'overworld' && !done()) yield* this.bombTile({ x: r.x, y: r.y });
+      } else if (kind === 'bells') {
+        // Out over the water: freeze a path first, then ring from the ice in front of the bell.
+        this.status = 'Ringing a Tide Bell';
+        yield* this.goTo({ kind: 'overworld', x: r.x, y: r.y, near: 4 });
+        if (g.area.kind === 'overworld' && !done()) yield* this.freezePoolAt(r);
+        if (g.area.kind === 'overworld' && !done()) yield* this.useTile({ x: r.x, y: r.y });
       } else {
         this.status = 'Lighting a signal beacon';
         yield* this.goTo({ kind: 'overworld', x: r.x, y: r.y + 1, near: 2 });
@@ -1160,6 +1169,24 @@ export class Bot {
       }
       yield;
     }
+  }
+
+  // Stand on the nearest dry tile with the bell's pool straight ahead and hold the Rime Charm over it.
+  *freezePoolAt(bell) {
+    const g = this.g, map = g.area.map;
+    const frozen = () => !bell.pool.some((q) => map.get(q.x, q.y) === T.FLOOD);
+    for (let tries = 0; tries < 4 && !frozen(); tries++) {
+      const cur = tileOf(g.player.x, g.player.y), reach = reachMap(map, cur);
+      let best = null;
+      for (const q of bell.pool) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const x = q.x - dx, y = q.y - dy, d = reach[y * map.w + x];
+        if (map.get(q.x, q.y) === T.FLOOD && walkable(map, x, y) && d >= 0 && (!best || d < best.d)) best = { x, y, d, water: q };
+      }
+      if (!best) return false;
+      this.status = 'Freezing a flooded pool';
+      yield* this.useTile(best.water, { from: best });
+    }
+    return frozen();
   }
 
   // Walk up to a seal's arena: the thornwall ritual triggers there, and the elites climb out there.

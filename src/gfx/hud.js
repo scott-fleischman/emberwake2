@@ -250,8 +250,8 @@ export function drawWorldMap(u, game) {
     u.strokeStyle = { verdant: '#7a5a3a', ashen: '#ff6a20', frost: '#b8ecff', drowned: '#5adcc8' }[k]; u.lineWidth = 1.2;
     u.beginPath(); u.arc(ox + (seal.center.x + 0.5) * scale, oy + (seal.center.y + 0.5) * scale, Math.max(3, seal.r * scale), 0, Math.PI * 2); u.stroke();
   }
-  const kind = { leaves: 'leaves', vents: 'vents', beacons: 'beacons' }[stage];
-  if (kind) for (const r of W.pois.relics[kind]) if (!pr.relics.includes(r.id)) mark(r.x, r.y, { leaves: '#8aff6a', vents: '#ff6a20', beacons: '#b8ecff' }[kind], 'diamond', 1.6);
+  const kind = { leaves: 'leaves', vents: 'vents', beacons: 'beacons', bells: 'bells' }[stage];
+  if (kind) for (const r of W.pois.relics[kind]) if (!pr.relics.includes(r.id)) mark(r.x, r.y, { leaves: '#8aff6a', vents: '#ff6a20', beacons: '#b8ecff', bells: '#e8b048' }[kind], 'diamond', 1.6);
   for (const l of W.pois.lookouts || []) if (seen(l.x, l.y) || stage === l.id) mark(l.x, l.y, '#e8c050', 'square', 1.3);
   // Quest markers: faint for other quests, a pulsing pin for the tracked one.
   for (const m of game.otherMarkers || []) {

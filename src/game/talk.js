@@ -75,15 +75,19 @@ export function conversation(game, npc) {
 function mainLines(game, npc, c) {
   const W = game.world, s = game.state, d = npc.data, { S, N, home, out, cls, stage, page, event } = c;
   const scout = N('outpost', 'scout');
-  const vol = S('volcanic'), snw = S('snow');
+  const vol = S('volcanic'), snw = S('snow'), fen = S('swamp');
   if (d.role === 'elder' && d.settlementId === 'home') {
     if (stage === 'wake') {
       event();
       return { cutscene: elderShots({ cls, elder: d.name, scout: scout.name, outpost: out.name, dir: dirWord(home.center, out.center), tip: CLASS_TIP[s.classId] }) };
     }
-    if (stage === 'drowned') {
+    if (stage === 'hearth') {
       event();
       return [page('You did it. Three shards! Look how the Hearth leans toward them, like a cat toward a warm lap. Come. Let us give them back to the flame.')];
+    }
+    if (stage === 'kindle') {
+      event();
+      return [page('The Tidewarden\'s shard. Four... all four. I never thought I would live to see them together. Come, child. The Hearth has waited long enough.')];
     }
     const hint = {
       scout: `Scout ${scout.name} waits at ${out.name}. Follow the road ${dirWord(home.center, out.center)}.`,
@@ -107,7 +111,12 @@ function mainLines(game, npc, c) {
       beacons: 'The old beacons. We lit them for festivals, before the frost. Light them for us again.',
       frostfang: 'Wolves follow the strongest. Show them who that is.',
       sanctuary: 'The Rime Sovereign is quick as a blizzard. Make it miss, and make it pay.',
-      end: 'The Hearth holds, for now. The last shard lies under the western fane, and when the waters fall we will need you again. Until then, the realm is yours to wander.',
+      fenkeep: `The keeper of ${fen.name} has watched the western water rise longer than anyone. Start there.`,
+      belfry: 'A drowned bell tower? Then climb it. High places have served you well so far.',
+      bells: 'Bells, sunk in the fens. The Sovereign\'s charm should make short work of the water. Cold is only cruel when it forgets what it is for.',
+      bogking: 'Something lives under that wall of water. Keep moving; a still target is a drowned one.',
+      fane: 'The Fane is open. The Tidewarden sang for the whole coast once. Listen for the song under the noise.',
+      end: 'Four shards, and the Spire door stands open. Rest a while first. Whatever waits below has waited a thousand years; it can wait for you to eat.',
     }[stage];
     return [page(hint)];
   }
@@ -187,6 +196,22 @@ function mainLines(game, npc, c) {
       if (stage === 'windcrest') return [page('The Windcrest. Up, up, always up. You\'ll see the beacons from the top.')];
       if (stage === 'beacons') return [page('Those beacons are capped with old ice, heavy as a cart. You\'d need hands like a giant\'s. ...Huh. You do have hands like a giant\'s.')];
       if (stage === 'frostfang') return [page('The wolves are howling at the ice wall. Frostfang leads them. Pale as the snow and twice as cold. Go carefully.')];
+    }
+    if (d.settlementId === 'swamp') {
+      const belfry = W.pois.lookouts.find((l) => l.id === 'belfry');
+      if (stage === 'fenkeep') {
+        event();
+        return [
+          page('The elder sent you? Then the Hearth must be burning again. Good. Sit, and mind the puddle; there\'s always a puddle now.'),
+          page('The water rises a hand\'s breadth every week, and it never falls back. Out west the Fane is ringed by the Tidewall: floodwater standing on end, churning round and round. Boats that go near it don\'t come back.'),
+          page('The Tidewarden\'s song once commanded the tides. Three bronze Tide Bells along the fens echoed it, so the whole coast could hear. When the waters rose, the bells were sunk where they stood.'),
+          page(`Climb the Drowned Belfry ${belfry ? dirWord(fen.center, belfry) : 'out in the fens'} of here and you'll see them glinting. And that charm at your neck is breathing frost. Hold it over the deep water and see what it does.`),
+        ];
+      }
+      if (stage === 'belfry') return [page('The Belfry leans, but the stair holds. Climb above the water line and look west.')];
+      if (stage === 'bells') return [page('Each bell sits in a pool far too deep to wade. Stand at the edge with that charm of yours. And mind what nests round them; the fen beasts guard the bells like their own spawn.')];
+      if (stage === 'bogking') return [page('The bells woke something under the Tidewall. The old folk called it Bogmaw, the Drowned King. It spits, so keep moving.')];
+      if (stage === 'fane') return [page('The Tidewall is gone! I can see the Fane\'s steps from the roof. Go, before the water changes its mind.')];
     }
   }
   return null;

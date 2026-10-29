@@ -19,6 +19,16 @@ export function lookoutShots(W, id) {
       { look: me, text: 'Thorns you cannot cut. A warband in the way. The scout was not exaggerating.', hold: 2.4 },
     ].filter(Boolean);
   }
+  if (id === 'belfry') {
+    const bells = W.pois.relics.bells;
+    const lines = ['There: a glint of green bronze, out on an island in a black pool.', 'Another, half drowned in reeds, its crown just breaking the water.', 'And a third, alone in the flood, ringed by water too deep to wade.'];
+    return [
+      { look: me, text: 'You climb the Drowned Belfry\'s crooked stair, above the water line. The fens stretch away grey and silver, all reed and still water.', hold: 2.8, sfx: 'menu' },
+      { look: px(center(W.pois.seals.drowned)), text: 'The Drowned Fane, ringed by the Tidewall: floodwater standing upright, churning round and round where no water should stand.', hold: 3.2, sfx: 'boss' },
+      ...bells.map((b, k) => ({ look: px(b), text: lines[k] || lines[0], hold: 2.2 })),
+      { look: me, text: 'Three Tide Bells, sunk where the song left them. Ring them again, and the water might remember.', hold: 2.6 },
+    ];
+  }
   const beacons = W.pois.relics.beacons;
   const lines = ['A beacon on a far ridge, buried to its brim in old blue ice.', 'Another, crusted white, high above the road.', 'And a third, a black shape against the snow.'];
   return [
@@ -44,6 +54,12 @@ export function sealShots(W, key, open) {
       { look: a, text: 'Slagheart slumps, and its molten heart cools to black glass.', hold: 2.4, sfx: 'explode' },
       { look: c, text: 'Starved of its vents and its guardian, the firewall gutters, sputters... and goes out.', hold: 3, sfx: 'gate', run: open, shake: 5 },
       { look: c, text: 'Ash drifts down like snow over the open road to the Ashen Reliquary.', hold: 2.4 },
+    ];
+    case 'drowned': return [
+      { look: a, text: 'Bogmaw sinks into the mire with a last gurgling croak, and the fens fall silent.', hold: 2.4, sfx: 'splash' },
+      { look: a, text: 'Then, far off across the water, the Tide Bells begin to ring on their own: the old song, the one the Tidewarden sang.', hold: 3.2, sfx: [['shrine', { pitch: 0.5 }]] },
+      { look: c, text: 'The Tidewall shudders, slows... and slumps, pouring away into the reeds like a wave going home.', hold: 3, sfx: 'gate', run: open, shake: 4 },
+      { look: c, text: 'Black stone steps rise dripping out of the mud. The Drowned Fane stands open.', hold: 2.4 },
     ];
     default: return [
       { look: a, text: 'Frostfang\'s last howl rolls away across the snow. High above, the three beacons flare as one.', hold: 2.8, sfx: 'shrine' },
