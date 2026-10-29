@@ -17,6 +17,7 @@ import { openSeal } from '../world/wards.js';
 import { stageElite, stageRelics } from './quests.js';
 import { Elite, SigilLeaf } from './elites.js';
 import { collectWardProps } from '../gfx/wards.js';
+import { tickZones, drawZones } from './zones.js';
 
 const overlap = (a, b, pad = 0) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 + pad && Math.abs(a.y - b.y) < (a.h + b.h) / 2 + pad;
 
@@ -26,6 +27,7 @@ export class Area {
     this.kind = kind;
     this.entities = [];
     this.enemyList = [];
+    this.zones = []; // telegraphed hazards, see zones.js
     this.tokens = new Set();
     this.tokenMax = 2;
     this.time = 0;
@@ -55,6 +57,7 @@ export class Area {
     }
     this.entities = this.entities.filter((e) => !e.dead);
     this.enemyList = this.enemyList.filter((e) => !e.dead);
+    this.zones = tickZones(this.zones, dt, ctx);
     for (const t of this.tokens) if (t.dead) this.tokens.delete(t);
     this.afterUpdate(dt, ctx);
   }
@@ -68,6 +71,7 @@ export class Area {
 
   draw(g, cam) {
     this.drawGround(g, cam);
+    drawZones(g, cam, this.zones, this.time);
     const list = [];
     this.collectTall(list, cam);
     const ctx = this.ctx;

@@ -9,6 +9,7 @@ import { RIDDLES } from '../data/sidequests.js';
 import { Dialog, Menu } from '../gfx/ui.js';
 import { Cutscene } from '../gfx/cutscene.js';
 import { fullMethods } from './full.js';
+import { zoneDanger, HIT_PAD } from '../game/zones.js';
 import { findPath, reachMap, walkable, tileOf, center, besideTile, standableNear, isBush } from './nav.js';
 
 const K = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', attack: 'KeyJ', item: 'KeyK', shield: 'KeyL', dodge: 'Space', sprint: 'ShiftLeft', interact: 'KeyE', cycle: 'KeyQ', lock: 'KeyR', eat: 'KeyF', confirm: 'Enter', back: 'Escape' };
@@ -315,6 +316,10 @@ export class Bot {
           if (segDist(x, y, e.x, e.y, e.x + Math.cos(e.shotA) * 220, e.y + Math.sin(e.shotA) * 220) < 10) bump(1, true);
           break;
       }
+    }
+    for (const z of this.g.area.zones) {
+      const v = zoneDanger(z, x, y, HIT_PAD);
+      if (v) bump(v, z.blockable);
     }
     for (const pr of this.g.area.entities) {
       if (pr.team !== 'enemy' || pr.vx === undefined || pr.dead || !pr.hitSet) continue;

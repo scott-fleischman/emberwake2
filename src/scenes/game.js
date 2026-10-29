@@ -309,6 +309,7 @@ export class GameScene {
   pushUI(c) { this.uiStack.push(c); return c; }
 
   // ---------------------------------------------------------------- combat outcomes
+  // Zones pass opts.effect and opts.knock too; nothing acts on them until status effects land.
   damagePlayer(dmg, src, opts = {}) {
     const p = this.player, res = this.state.player;
     if (p.mode === 'dead' || this.deathT > 0) return 'ignored';
@@ -341,6 +342,9 @@ export class GameScene {
     if (res.hp <= 0) this.die();
     return 'hit';
   }
+
+  // Status effects arrive later; zones already call this for zero-damage hazards.
+  applyEffect(kind, src) {}
 
   die() {
     const p = this.player;
