@@ -160,6 +160,38 @@ test('the bot crosses a wave from any side, pressing an opening or not', async (
   }
   assert.deepEqual(caught, []);
 });
+// Only a wave or a ring is crossed by rolling against the way it comes: a spreading pool is filled, so
+// rolling at its middle lands in it, and a widening line has no way it comes from.
+test('a spreading pool or a widening line is no wave to roll through; a ring is', async () => {
+  const s = await sandbox(), p = s.game.player, bot = new Bot(s.game, 'any');
+  const pool = makeZone('circle', { x: p.x - 28.5, y: p.y, r: 24, t: -0.1, life: 6, dmg: 0, effect: 'burn', art: 'fire', grow: 4 });
+  s.area.zones = [pool];
+  let d = bot.danger(p.x, p.y, []);
+  assert.equal(d.lv, 2, 'read where it will spread to');
+  assert.equal(d.shot, null, 'but not as a wave');
+  s.area.zones = [makeZone('segment', { x1: p.x - 40, y1: p.y - 12, x2: p.x + 40, y2: p.y - 12, w: 10, t: -0.1, life: 3, dmg: 1, grow: 30 })];
+  d = bot.danger(p.x, p.y, []);
+  assert.equal(d.lv, 2); assert.equal(d.shot, null, 'a line widening in place');
+  s.area.zones = [makeZone('ring', { x: p.x - 30, y: p.y, r: 12, width: 8, t: -0.1, life: 3, dmg: 1, grow: 90 })];
+  d = bot.danger(p.x, p.y, []);
+  assert.ok(d.shot?.wave && d.shot.vx > 0 && d.shot.vy === 0, `a ring comes outward from its middle: ${JSON.stringify(d.shot)}`);
+});
+test('the bot won\'t roll into the middle of a spreading pool', async () => {
+  const s = await sandbox(), p = s.game.player;
+  const bot = new Bot(s.game, 'any'); bot.task = (function* () { for (;;) yield; })();
+  const { createBoss } = await import('../src/game/bosses.js');
+  const b = Object.assign(s.spawn(createBoss('thornmaw', p.x + 60, p.y)), { state: 'parked', aggro: true });
+  bot.threats = () => [b];
+  const pool = makeZone('circle', { x: p.x - 28.5, y: p.y, r: 24, t: -0.1, life: 6, dmg: 0, effect: 'burn', art: 'fire', grow: 4 });
+  s.area.zones.push(pool);
+  let into = null;
+  for (let t = 0; t < 1; t += 1 / 60) {
+    bot.step(1 / 60); s.game.update(1 / 60); s.app.input.endFrame();
+    if (p.mode === 'dodge' && p.dodgeX < 0 && !into) into = { x: p.x, dodgeX: p.dodgeX };
+  }
+  assert.equal(into, null, `rolled toward the pool's middle: ${JSON.stringify(into)}`);
+  assert.ok(!p.effects.burn, 'and never set alight');
+});
 test('the bot treats blockable zones as shield-stoppable', async () => {
   const s = await sandbox();
   const bot = new Bot(s.game), { x, y } = s.center;

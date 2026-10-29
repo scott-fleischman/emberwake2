@@ -351,8 +351,10 @@ export class Bot {
       const v = zoneDanger(z, x, y, HIT_PAD);
       if (!v) continue;
       bump(v, z.blockable);
-      // A wave or a ring on its way is crossed like a shot, rolling against the way it comes.
-      if (v === 2 && z.t <= 0 && !inZone(z, x, y, HIT_PAD)) wave = z.vx || z.vy ? { vx: z.vx, vy: z.vy, wave: true } : { vx: x - z.x, vy: y - z.y, wave: true };
+      // A wave (a line on the move) or a ring on its way is crossed like a shot, rolling against the way
+      // it comes; a filled pool spreading, or a line widening in place, has no far side to roll to.
+      const ring = z.shape === 'ring' && z.grow > 0, line = z.shape === 'segment' && (z.vx || z.vy);
+      if (v === 2 && z.t <= 0 && (ring || line) && !inZone(z, x, y, HIT_PAD)) wave = ring ? { vx: x - z.x, vy: y - z.y, wave: true } : { vx: z.vx, vy: z.vy, wave: true };
     }
     for (const pr of this.g.area.entities) {
       if (pr.team !== 'enemy' || pr.vx === undefined || pr.dead || !pr.hitSet || pr.lob) continue; // a lob's landing is a zone
