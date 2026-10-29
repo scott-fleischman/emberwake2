@@ -402,6 +402,36 @@ test('the hands move continuously through a salvo, into the vent and into the Un
     assert.ok(worst <= 4, `turn ${turn}: moved ${worst.toFixed(1)} px in a frame (${at})`);
   }
 });
+// Most kills land in the vent, facing front (always Unbound: phase 1 holds at half health). Set back
+// at the centre behind the black, it shows its own pose through the fade-in, bobbing, and carries
+// straight on into the dissolve.
+test('killed in the vent, its hands neither freeze through the fade-in nor jump into the dissolve', async () => {
+  for (const phase of [2]) {
+    const s = await sandbox(), p = s.game.player;
+    const b = s.spawn(createBoss('cinder', p.x, p.y - 70)); Object.assign(b, { phase, phaseT: 9, state: 'vent', timer: 1.6, view: 'front', cdx: 0, cdy: 1 });
+    s.step(0.2);
+    b.damage(9999, p, s.area.ctx);
+    const world = () => [...cinderHands(b).map((h) => [h.x, cinderHover(b) + h.y]), ...(phase > 1 ? [(({ x, y }) => [x, cinderHover(b) + y])(cinderSword(b))] : [])];
+    const fadein = [];
+    let last = null, lastStep = null, boundary = null;
+    for (let t = 0; t < 2.2 && s.game.bossDeath; t += 1 / 60) {
+      s.step(1 / 60);
+      const step = s.game.bossDeath?.step, now = world();
+      if (step === 'fadein') {
+        fadein.push(cinderHands(b).map((h) => [h.x, h.y]));
+        const own = cinderHands({ ...b, poseFrom: null, poseNow: null }); // the 'defeated' pose itself, no easing
+        cinderHands(b).forEach((h, i) => assert.ok(Math.hypot(h.x - own[i].x, h.y - own[i].y) < 1e-9, `the fade-in draws its own pose (${h.x.toFixed(1)},${h.y.toFixed(1)})`));
+      }
+      if (lastStep === 'fadein' && step === 'dissolve') boundary = Math.max(...now.map(([x, y], i) => Math.hypot(x - last[i][0], y - last[i][1])));
+      last = now; lastStep = step;
+    }
+    assert.equal(b.view, 'front');
+    assert.ok(fadein.length > 20, `phase ${phase}: watched the fade-in`);
+    const travel = Math.max(...fadein[0].map(([x, y], i) => Math.max(...fadein.map((f) => Math.hypot(f[i][0] - x, f[i][1] - y)))));
+    assert.ok(travel > 0.5, `phase ${phase}: the hands hang frozen through the fade-in (${travel.toFixed(2)} px of their own)`);
+    assert.ok(boundary !== null && boundary <= 4, `phase ${phase}: jumped ${boundary?.toFixed(1)} px into the dissolve`);
+  }
+});
 test('the embers leave from the palms, along the aim', async () => {
   for (const [view, px, py] of [['side', 90, -10], ['front', 10, 70], ['back', -10, -90]]) {
     const s = await sandbox(), p = s.game.player;

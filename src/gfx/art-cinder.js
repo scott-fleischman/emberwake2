@@ -61,10 +61,11 @@ export function cinderPoseTick(b, dt) {
 
 // What a pose eases from, and how far: the pose drawn when the state changed (this very frame if the
 // tick hasn't seen the change yet). A vent holds the release a beat, then settles; a salvo's first
-// throw eases in over its draw-back. A death happens behind a fade, and takes no ticks.
+// throw eases in over its draw-back. The death flow's states take no ticks, so they never ease: it
+// sets the boss down 'defeated' behind its fade, in the same pose it then dies in.
 function blendFrom(b, key) {
   const st = b.state, fresh = b.poseState !== st;
-  if (st === 'dying' || b.poseView !== b.view) return null;
+  if (st === 'defeated' || st === 'dying' || b.poseView !== b.view) return null;
   const from = (fresh ? b.poseNow : b.poseFrom)?.[key];
   if (!from) return null;
   const [hold, dur] = st === 'vent' ? [0.05, 0.4] : st === 'volley' ? [0, 0.6 * (b.cast ?? CAST)] : st === 'sweep' ? [0, 0.4] : [0, 0.25];
