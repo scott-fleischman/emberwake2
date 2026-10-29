@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sandbox, botDo } from './helpers/sandbox.js';
 import { Enemy } from '../src/game/enemies.js';
-import { Projectile } from '../src/game/entities.js';
+import { NPC, Projectile } from '../src/game/entities.js';
 import { Bot } from '../src/bot/bot.js';
 import { tileOf } from '../src/bot/nav.js';
+import { rectSolid } from '../src/game/physics.js';
 import { T, TILE } from '../src/world/tiles.js';
 
 test('sandbox runs a fight in an open arena', async () => {
@@ -115,4 +116,33 @@ test('the bot breaks off a fight nobody is hurt in, even as foes keep joining', 
     for (let k = 0; k < 60 && broke === null; k++) { bot.step(1 / 60); s.app.input.endFrame(); if (bot.log.some((l) => l.includes('goes nowhere'))) broke = bot.time; }
   }
   assert.ok(broke !== null && broke < 16.5, `broke off at ${broke}`);
+});
+
+// R21: a villager on a door's exit spot shoved the player back up into the doorway, and in again.
+test('an NPC never shoves the player onto a door, cave mouth or dungeon gate', async () => {
+  const s = await sandbox(), g = s.game, W = g.world;
+  const b = W.props.find((q) => q.kind === 'building'), villager = W.npcs.find((n) => n.role === 'villager');
+  const spots = { door: { x: b.door.x, y: b.door.y + 1 }, cave: W.pois.caves[0].front, gate: W.pois.dungeons.ashen.front };
+  for (const [what, at] of Object.entries(spots)) {
+    g.exitToOverworld(at.x, at.y, true);
+    const area = g.area, p = g.player;
+    area.entities = area.entities.filter((e) => !(e instanceof NPC));
+    area.spawn(new NPC(villager, p.x, p.y + 0.5)); // as near level as it gets: the biggest shove, straight up
+    s.step(1);
+    assert.ok(g.area === area, `${what}: no area change`); // not equal(): a failure would diff two whole worlds
+    assert.equal(g.uiStack.length, 0, `${what}: no door message`);
+    assert.ok(!area.exitsAt(p.x, p.y), `${what}: the player is not in the doorway`);
+  }
+});
+
+test('an NPC shoves the player sideways, not into a wall', async () => {
+  const s = await sandbox(), p = s.game.player, map = s.area.map;
+  const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
+  for (let k = -1; k <= 1; k++) map.set(tx + 1, ty + k, T.DWALL);
+  p.x = tx * TILE + 8; p.y = ty * TILE + 8;
+  s.area.spawn(new NPC(s.game.world.npcs[0], p.x - 3, p.y)); // overlapping more across than down: the shove would go right, into the wall
+  s.step(0.2);
+  assert.equal(p.x, tx * TILE + 8);
+  assert.ok(!rectSolid(map, p.x, p.y, p.w, p.h, (a, b) => map.isSolid(a, b)));
+  assert.ok(p.y > ty * TILE + 8, 'out of the NPC another way');
 });

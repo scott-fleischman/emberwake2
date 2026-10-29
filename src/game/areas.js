@@ -11,7 +11,7 @@ import { HERBS } from '../data/sidequests.js';
 import { bookFor } from '../data/story.js';
 import { Enemy } from './enemies.js';
 import { meleeTargets, knockbackVector, isBehind } from './combat.js';
-import { findFreeSpot } from './physics.js';
+import { findFreeSpot, rectSolid } from './physics.js';
 import { makeRng } from '../core/rng.js';
 import { openSeal } from '../world/wards.js';
 import { stageElite, stageRelics } from './quests.js';
@@ -42,6 +42,9 @@ export class Area {
   spawnEnemy(e) { this.entities.push(e); this.enemyList.push(e); return e; }
   targetables() { return this.enemyList.filter((e) => !e.dead && e.hp > 0 && e.state !== 'dying' && !e.untargetable); }
   npcs() { return this.entities.filter((e) => e instanceof NPC); }
+  // Would the player standing here be carried out of the area? Nothing may shove them into it.
+  exitsAt(x, y) { return this.map.tileAtPixel(x, y + 3) === T.EXIT; }
+  canStand(a, x, y) { return !this.exitsAt(x, y) && !rectSolid(this.map, x, y, a.w, a.h, (tx, ty) => this.map.isSolid(tx, ty)); }
 
   update(dt) {
     this.time += dt;
@@ -49,11 +52,15 @@ export class Area {
     const p = this.game.player;
     p.update(dt, ctx);
     for (const e of this.entities) if (!e.dead) e.update(dt, ctx);
-    // NPCs are solid to the player.
+    // NPCs are solid to the player: shoved out along the shallower overlap, else sideways, else not at
+    // all. Never into a wall or a doorway: a villager on a door's exit spot would shove whoever stepped
+    // out back in.
     for (const n of this.entities) {
       if (!(n instanceof NPC) || !overlap(n, p)) continue;
       const ox = (n.w + p.w) / 2 - Math.abs(p.x - n.x), oy = (n.h + p.h) / 2 - Math.abs(p.y - n.y);
-      if (ox < oy) p.x += Math.sign(p.x - n.x || 1) * ox; else p.y += Math.sign(p.y - n.y || 1) * oy;
+      const dx = Math.sign(p.x - n.x || 1) * ox, dy = Math.sign(p.y - n.y || 1) * oy;
+      const shove = (ox < oy ? [[dx, 0], [0, dy]] : [[0, dy], [dx, 0]]).find(([sx, sy]) => this.canStand(p, p.x + sx, p.y + sy));
+      if (shove) { p.x += shove[0]; p.y += shove[1]; }
     }
     this.entities = this.entities.filter((e) => !e.dead);
     this.enemyList = this.enemyList.filter((e) => !e.dead);
@@ -509,11 +516,20 @@ export class OverworldArea extends Area {
     return false;
   }
 
+  // The feet sit 2px below the body's centre; their tile is the one a doorway, cave mouth or gate catches.
+  footTile(x, y) {
+    const tx = Math.floor(x / TILE), ty = Math.floor((y - 2) / TILE);
+    return { tx, ty, t: this.map.get(tx, ty) };
+  }
+  exitsAt(x, y) {
+    const { t } = this.footTile(x, y);
+    return t === T.DOOR || t === T.CAVE || t === T.DUNGEON;
+  }
+
   checkTransitions() {
     const g = this.game, p = g.player;
     if (p.mode === 'dead' || g.doorGrace > 0) return;
-    const tx = Math.floor(p.x / TILE), ty = Math.floor((p.y - 2) / TILE);
-    const t = this.map.get(tx, ty);
+    const { tx, ty, t } = this.footTile(p.x, p.y);
     if (t === T.DOOR) {
       const b = this.W.props.find((q) => q.kind === 'building' && q.door.x === tx && q.door.y === ty);
       if (b) g.enterInterior(b);
@@ -610,7 +626,7 @@ export class InteriorArea extends Area {
   }
   afterUpdate() {
     const p = this.game.player;
-    if (this.game.doorGrace <= 0 && this.map.tileAtPixel(p.x, p.y + 3) === T.EXIT) this.game.exitToOverworld(this.building.door.x, this.building.door.y + 1);
+    if (this.game.doorGrace <= 0 && this.exitsAt(p.x, p.y)) this.game.exitToOverworld(this.building.door.x, this.building.door.y + 1);
   }
   interact() {
     if (super.interact()) return true;
@@ -666,6 +682,6 @@ export class CaveArea extends Area {
   }
   afterUpdate() {
     const p = this.game.player;
-    if (this.game.doorGrace <= 0 && this.map.tileAtPixel(p.x, p.y + 3) === T.EXIT) this.game.exitToOverworld(this.cave.front.x, this.cave.front.y);
+    if (this.game.doorGrace <= 0 && this.exitsAt(p.x, p.y)) this.game.exitToOverworld(this.cave.front.x, this.cave.front.y);
   }
 }
