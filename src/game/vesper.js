@@ -300,6 +300,7 @@ export class Vesper extends Boss {
     // The wardens' world effects read their palettes off whoever runs their moves.
     this.thornPal = VESPER_PALS.thornmaw; this.cinderPal = VESPER_PALS.cinder; this.rimePal = VESPER_PALS.rime; this.tidePal = VESPER_PALS.tide;
     this.tidePhase = 1; // its floor is drawn apart from him, so it can't see draw()'s phase 1
+    this.tideRhythm = ['jets', 'dive', 'wave']; // R47: dive and resurface, and a tidal wave that leaves it spent
   }
   get ownOrder() { return OWN[this.phase]; }
   get roarSfx() { return 'vesper_laugh'; }

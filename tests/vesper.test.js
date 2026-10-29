@@ -224,6 +224,44 @@ test('his fall plays the ghost letting go, and only then does the quest end', as
   assert.ok(g.state.progress.shards <= 4, 'no fifth shard');
 });
 
+// The game closed between his fall and the end of the ghost's scene: the save holds the spire stage
+// with him beaten. Loading it ends the quest and shows the ending.
+test('a save made during his fall scene loads into the ending', async () => {
+  const { GameScene } = await import('../src/scenes/game.js');
+  const s = await sandbox(), g = s.game;
+  g.state.quest.main = 'spire'; g.state.quest.flags['outro:vesper'] = true;
+  g.state.progress.bosses.push('verdant', 'ashen', 'frost', 'drowned', 'spire');
+  g.enterDungeon('spire'); g.area.enterRoom(g.area.dungeon.bossId, 's');
+  g.state.location = g.currentLocation();
+  const g2 = new GameScene(s.app, deserialize(serialize(g.state)));
+  assert.equal(g2.state.quest.main, 'end');
+  assert.ok(g2.uiStack.some((ui) => ui.title === 'The Ember Rekindled'), 'the ending shows');
+  assert.ok(!g2.area.boss, 'and he stays beaten');
+});
+
+// R47: borrowed, the Tidewarden dives, resurfaces and rolls its tidal wave, all inside the 12 s, the
+// wave ending spent (a punish window), without flooding the room, and two hits still break it.
+test('the borrowed Tidewarden dives and resurfaces, rolls a tidal wave, and still breaks', async () => {
+  const { s, v, hit } = await phase3();
+  v.cycle = ['tide', 'cinder', 'rime', 'thornmaw'];
+  until(s, () => v.borrowed === 'tide');
+  const seen = [], t0 = v.formT;
+  let waved = false;
+  for (let t = 0; t < 11.5 && v.borrowed === 'tide' && !(seen.includes('spent') && v.state === 'jets'); t += 1 / 60) {
+    live(s, 1 / 60);
+    if (seen.at(-1) !== v.state) seen.push(v.state);
+    waved ||= s.area.zones.some((z) => z.owner === v && z.tideWave);
+  }
+  assert.equal(v.borrowed, 'tide', `still borrowed (${seen.join(' ')})`);
+  for (const st of ['dive', 'surface', 'wave', 'spent']) assert.ok(seen.includes(st), `${st} in ${seen.join(' ')}`);
+  assert.ok(seen.indexOf('wave') < seen.indexOf('spent'), 'the wave ends spent');
+  assert.ok(waved, 'a wave rolls'); assert.equal(v.state, 'jets', 'and it moves on');
+  assert.ok(v.formT - t0 < 12, `inside the form's 12 s (${(v.formT - t0).toFixed(1)})`);
+  assert.equal(v.tidePhase, 1, 'its floor keeps its first look: no flood');
+  hit(1); hit(1);
+  assert.equal(v.borrowed, null); assert.equal(v.breaks, 1);
+});
+
 test('the Spire\'s arena gives no fifth shard', () => {
   for (const seed of [1, 'ember', 'quests']) {
     const d = generateDungeon('spire', seed), boss = d.rooms[d.bossId];

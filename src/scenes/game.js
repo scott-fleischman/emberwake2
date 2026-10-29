@@ -71,6 +71,8 @@ export class GameScene {
     this.lastOverworld = null;
     this.restoreLocation(state.location);
     this.updateObjective();
+    // A save made mid-advance catches up: one from during Vesper's fall scene opens on the ending.
+    this.questEvent({ type: 'load' });
   }
 
   get diff() { return DIFFICULTY[this.app.options.difficulty] || DIFFICULTY.normal; }

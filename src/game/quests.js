@@ -103,6 +103,8 @@ export function advanceMain(state, W, ev) {
     if (st === 'belfry' && !W.pois.lookouts.some((l) => l.id === 'belfry')) q.main = 'bells';
     if (st === 'bells' && allRelics(state, W, 'bells')) q.main = 'bogking';
     if (st === 'bogking' && pr.seals.includes('drowned')) q.main = 'fane';
+    // Vesper beaten, but the game closed before his fall scene ended and fired the quest event.
+    if (st === 'spire' && pr.bosses.includes('spire')) q.main = 'end';
     if (q.main === st) break;
   }
   const past = (stage) => MAIN_STAGES.indexOf(q.main) >= MAIN_STAGES.indexOf(stage);

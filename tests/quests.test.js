@@ -207,6 +207,15 @@ test('the fourth ward chain runs from the Hearth to the kindling', () => {
   assert.deepEqual(MAIN_STAGES.slice(-3), ['kindle', 'spire', 'end']);
 });
 
+// The game closed during Vesper's fall scene: he is beaten and saved so, but the quest event never fired.
+test('a Vesper already beaten still ends the quest', () => {
+  const W = generateOverworld('quests'), s = newGameState('quests', 'swordsman');
+  s.quest.main = 'spire';
+  assert.equal(advanceMain(s, W, { type: 'load' }).stage, 'spire', 'not before he falls');
+  s.progress.bosses.push('spire');
+  assert.equal(advanceMain(s, W, { type: 'load' }).stage, 'end');
+});
+
 test('bells rung before anyone asks still count', () => {
   const W = generateOverworld('quests'), s = newGameState('quests', 'swordsman');
   s.quest.main = 'hearth';

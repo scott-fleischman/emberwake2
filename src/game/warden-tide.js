@@ -77,10 +77,11 @@ const BEGIN = {
 
 // Its rhythm, one step after another: phase 1 the jets, the sweep, the dive; in the Wail, a Wail
 // attack after the jets and after the sweep, each followed by the dive. Surfacing leads on to the next.
+// A body that borrows its moves may bring its own rhythm (b.tideRhythm).
 const RHYTHM = [['jets', 'sweep', 'dive'], ['jets', 'wail', 'dive', 'sweep', 'wail', 'dive']];
 const WAIL = ['wave', 'whirl', 'rings'];
 function next(b, ctx, me, dt) {
-  const r = RHYTHM[b.phase > 1 ? 1 : 0];
+  const r = b.tideRhythm ?? RHYTHM[b.phase > 1 ? 1 : 0];
   let st = r[b.tideStep++ % r.length];
   if (st === 'wail') st = WAIL[b.tideTurn++ % WAIL.length];
   b.state = st; b.cdx = me.dx / me.d; b.cdy = me.dy / me.d;
@@ -137,10 +138,11 @@ export const moves = {
       surface(b, ctx, me);
     },
     surface: done,
-  },
-  phase2: {
+    // The wave leaves it spent; phase 1 holds these so a borrower's rhythm can reach them too.
     wave(b) { if (b.timer <= 0) { b.state = 'spent'; b.timer = SPENT; } },
     spent: done,
+  },
+  phase2: {
     whirl(b, dt, ctx, me) { pull(b, dt, ctx); done(b, dt, ctx, me); },
     rings: done,
   },
