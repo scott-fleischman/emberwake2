@@ -528,7 +528,7 @@ export function landmarkSprite(lm) {
     const dx = (lm.door.x - lm.x) * TILE - 2;
     R(g, dx, H - 3 - 22, 20, 22, st.dark); R(g, dx + 2, H - 3 - 20, 16, 20, '#0c0a0c');
     R(g, dx - 2, H - 3 - 24, 24, 3, st.light);
-    if (lm.id === 'drowned' || lm.id === 'spire') {
+    if (lm.id === 'spire') {
       R(g, dx + 2, H - 15, 16, 2, '#8a8a90'); R(g, dx + 2, H - 21, 16, 2, '#8a8a90'); circle(g, dx + 10, H - 14, 3, st.glow);
     }
   });

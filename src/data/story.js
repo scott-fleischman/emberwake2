@@ -181,7 +181,7 @@ export const WARDENS = {
       'You carry all four shards now, and still they do not burn you. Every socket on the Spire\'s door is lit. He is waiting behind it.',
       'Go up, little flame. Sing him the song he never learned: that fire shared is warmer than fire kept.',
     ],
-    taunt: { voice: 'unkindled', lines: ['Four. Every socket burns, and the door stands open.', 'Climb, little ember. I have waited a thousand years to be warm.'] },
+    taunt: { voice: 'unkindled', lines: ['Four. Carry it home, and the last socket will burn.', 'Climb, little ember. I have waited a thousand years to be warm.'] },
   },
 };
 
