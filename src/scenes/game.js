@@ -7,6 +7,7 @@ import { Player } from '../game/player.js';
 import * as fx from '../game/effects.js';
 import { OverworldArea, InteriorArea, CaveArea } from '../game/areas.js';
 import { DungeonArea } from '../game/dungeon.js';
+import { BossDeath } from '../game/bossdeath.js';
 import { Poof, Particles, FloatText } from '../game/entities.js';
 import { shieldBlocks, knockbackVector } from '../game/combat.js';
 import { findFreeSpot } from '../game/physics.js';
@@ -113,6 +114,7 @@ export class GameScene {
     this.player.lock = null;
     this.player.mode = this.player.mode === 'dead' ? 'dead' : 'normal';
     this.player.kbT = 0;
+    this.bossDeath = null;
     this.clearEffects();
   }
 
@@ -204,6 +206,7 @@ export class GameScene {
       return;
     }
     if (this.deathT > 0) { this.updateDeath(dt); return; }
+    if (this.bossDeath) { if (this.bossDeath.update(dt)) this.bossDeath = null; return; }
     if (this.pending && (this.pending.t -= dt) <= 0) { const fn = this.pending.fn; this.pending = null; fn(); return; }
     if (this.hitstop > 0) { this.hitstop -= dt; return; }
     if (this.doorGrace > 0) this.doorGrace -= dt;
@@ -217,15 +220,20 @@ export class GameScene {
     }
     this.area.update(dt);
     this.tickEffects(dt);
-    const p = this.player;
-    if (this.area.kind === 'dungeon') this.cam.follow(ROOM_W * 8, ROOM_H * 8, ROOM_W * TILE, ROOM_H * TILE, dt, true);
-    else this.cam.follow(p.x, p.y, this.area.map.pixelW, this.area.map.pixelH, dt);
+    this.followCamera(dt);
     if (this.area.kind === 'overworld') this.revealFog();
     if (this.objT === undefined || (this.objT -= dt) <= 0) { this.objT = 1; this.updateObjective(); }
   }
 
-  // What the touch layer should offer: the stick and buttons in play, a back button over menus.
-  touchMode() { return this.uiStack.length || this.deathT > 0 || this.player.mode === 'dead' ? 'ui' : 'play'; }
+  followCamera(dt, snap = false) {
+    const p = this.player;
+    if (this.area.kind === 'dungeon') this.cam.follow(ROOM_W * 8, ROOM_H * 8, ROOM_W * TILE, ROOM_H * TILE, dt, true);
+    else this.cam.follow(p.x, p.y, this.area.map.pixelW, this.area.map.pixelH, dt, snap);
+  }
+
+  // What the touch layer should offer: the stick and buttons in play, a back button over menus,
+  // nothing but watching while a warden dies.
+  touchMode() { return this.uiStack.length || this.deathT > 0 || this.player.mode === 'dead' ? 'ui' : this.bossDeath ? 'watch' : 'play'; }
 
   drawWorld(g) {
     g.fillStyle = '#08060a';
@@ -233,6 +241,7 @@ export class GameScene {
     this.area.draw(g, this.cam);
     if (this.blindK > 0) drawBlind(g, this.player, this.cam, this.blindK);
     for (const ui of this.uiStack) if (ui.drawWorld) ui.drawWorld(g, this);
+    if (this.bossDeath) this.bossDeath.draw(g);
     if (this.fade > 0) { g.fillStyle = `rgba(0,0,0,${Math.min(1, this.fade)})`; g.fillRect(0, 0, 480, 270); }
     if (this.deathT > 0) { g.fillStyle = `rgba(20,0,0,${Math.min(0.7, (2.2 - this.deathT) * 0.5)})`; g.fillRect(0, 0, 480, 270); }
   }
@@ -254,6 +263,14 @@ export class GameScene {
   }
 
   queueCutscene(fn, delay) { this.pending = { t: delay, fn }; }
+
+  // A warden's hp hit 0: the centered death flow takes the scene over until it hands the victory to
+  // the area. Nothing may hold the player through it.
+  beginBossDeath(boss, opts = {}) {
+    if (this.bossDeath) return;
+    this.clearEffects();
+    this.bossDeath = new BossDeath(this, boss, opts);
+  }
 
   replayPrologue() {
     this.playCutscene(introShots(CLASSES[this.state.classId].name), { music: 'story', onDone: () => this.restoreMusic() });
@@ -324,7 +341,7 @@ export class GameScene {
   // knockback's force, for the heavy blows that throw you.
   damagePlayer(dmg, src, opts = {}) {
     const p = this.player, res = this.state.player;
-    if (p.mode === 'dead' || this.deathT > 0) return 'ignored';
+    if (p.mode === 'dead' || this.deathT > 0 || this.bossDeath) return 'ignored';
     if (p.iframes > 0 && !opts.ignoreIframes) return 'ignored';
     if (!opts.unblockable && this.guard(dmg, src)) return 'blocked';
     const amount = dmg * this.diff.damageTaken;
@@ -341,7 +358,8 @@ export class GameScene {
   }
 
   // The shield takes a blow from `src` if it faces it and stamina covers `dmg`: true when it does,
-  // with the clang, the sparks and the shove. Effect-only zone strikes ask too (see zones.js).
+  // with the clang, the sparks and the shove. Effect-only zone strikes ask too (see zones.js); their
+  // `src` is the point the blow comes from, with the foe that dealt it as `owner`.
   guard(dmg, src) {
     const p = this.player, res = this.state.player, shield = SHIELDS[this.state.gear.shield];
     if (!src || !shield || !p.shielding || !shieldBlocks(p, src.x, src.y, shield.arc)) return false;
@@ -353,15 +371,17 @@ export class GameScene {
     this.area.spawn(new Particles(p.x + Math.cos(p.aim) * 8, p.y - 4 + Math.sin(p.aim) * 8, { count: 6, color: ['#ffffff', '#ffe080'], speed: 70, life: 0.25 }));
     const [kx, ky] = knockbackVector(src.x, src.y, p.x, p.y, 70);
     p.knock(kx, ky, 0.1);
-    if (src.knock && src.team === 'enemy' && !src.boss) { const [ex, ey] = knockbackVector(p.x, p.y, src.x, src.y, 160); src.knock(ex, ey, 0.2); }
+    const foe = src.owner ?? src;
+    if (foe.knock && foe.team === 'enemy' && !foe.boss) { const [ex, ey] = knockbackVector(p.x, p.y, foe.x, foe.y, 160); foe.knock(ex, ey, 0.2); }
     return true;
   }
 
   // ---------------------------------------------------------------- status effects
-  // Zones with no damage call this directly. `src` is whoever dealt it; nothing reads it yet.
+  // Zones with no damage call this directly. `src` is where it came from (a zone's strike point,
+  // with its owner); nothing reads it yet.
   applyEffect(kind, src) {
     const p = this.player;
-    if (p.mode === 'dead' || this.deathT > 0) return false;
+    if (p.mode === 'dead' || this.deathT > 0 || this.bossDeath) return false;
     const to = fx.resolve(p, kind), fresh = !p.effects[to];
     if (!fx.applyEffect(p, kind, { story: this.app.options.difficulty === 'story' })) return false;
     // A patch re-strikes every second; only the first strike of an effect gets the fanfare.

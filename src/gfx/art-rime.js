@@ -1,5 +1,6 @@
-// The Rime Sovereign's art: a crystalline owl-queen. The painter draws around her feet facing
-// right (see bossart.js); every colour comes from a palette, so another body can wear it.
+// The Rime Sovereign's art: a crystalline owl-queen. The painter draws around her feet facing the
+// camera (b.view 'front', the default), from behind ('back'), or turned to the right ('side', see
+// bossart.js); every colour comes from a palette, so another body can wear it.
 import { TAU, clamp01, lerp, hash, poly, line, disc, roarK, lit, glow, dizzyStars } from './bossart.js';
 
 export const RIME_PAL = {
@@ -39,6 +40,7 @@ export function rimeWings(b) {
 }
 
 export function paintRime(g, b, L, pal = RIME_PAL) {
+  const view = b.view || 'front', back = view === 'back', side = view === 'side';
   const t = b.anim || 0, st = b.state, ph = b.phase || 1, roar = roarK(b), W = rimeWings(b);
   g.save(); g.translate(0, rimeHover(b));
   let lean = 0;
@@ -47,19 +49,24 @@ export function paintRime(g, b, L, pal = RIME_PAL) {
   if (st === 'stunned') lean = Math.sin(t * 2.5) * 0.12;
   g.translate(0, -28); g.rotate(lean); g.translate(0, 28);
   if (st === 'wind') { g.translate(0, 2); g.scale(1, 0.95); }
-  // wings of ice shards: primaries off the wrist, secondaries along the arm
+  if (side) g.scale(0.72, 1); // turned side-on: narrower, her face and beak forward (rough)
+  // wings of ice shards: primaries off the wrist, secondaries along the arm. Seen from behind they
+  // spread between us and her, so they go on last.
   const n = 5 + ph * 2;
-  for (const s of [-1, 1]) {
-    const tw = st === 'skid' ? s * 0.35 : 0, sx = s * 7, sy = -46, wx = sx + s * Math.cos(W.al) * W.arm, wy = sy - Math.sin(W.al) * W.arm;
-    for (let i = n - 1; i >= 0; i--) {
-      const u = i / (n - 1), bx = lerp(wx, sx, u * 0.85), by = lerp(wy, sy, u * 0.85);
-      const len = (14 + 20 * Math.sin(Math.PI * (0.25 + u * 0.6))) * W.ln * (1 + (ph - 1) * 0.12) * (u < 0.2 ? 1.1 : 1);
-      shard(g, pal, bx, by, lerp(W.a0, W.a1, u) + W.flap * (1 - u * 0.6) + tw, len, lerp(3.4, 2.4, u), s, u);
+  const wings = () => {
+    for (const s of [-1, 1]) {
+      const tw = st === 'skid' ? s * 0.35 : 0, sx = s * 7, sy = -46, wx = sx + s * Math.cos(W.al) * W.arm, wy = sy - Math.sin(W.al) * W.arm;
+      for (let i = n - 1; i >= 0; i--) {
+        const u = i / (n - 1), bx = lerp(wx, sx, u * 0.85), by = lerp(wy, sy, u * 0.85);
+        const len = (14 + 20 * Math.sin(Math.PI * (0.25 + u * 0.6))) * W.ln * (1 + (ph - 1) * 0.12) * (u < 0.2 ? 1.1 : 1);
+        shard(g, pal, bx, by, lerp(W.a0, W.a1, u) + W.flap * (1 - u * 0.6) + tw, len, lerp(3.4, 2.4, u), s, back ? 1 - u : u);
+      }
+      g.lineCap = 'round'; g.strokeStyle = pal.arm; g.lineWidth = 3.2; line(g, [[sx, sy], [wx, wy]]);
+      g.strokeStyle = pal.armHi; g.lineWidth = 1.4; line(g, [[sx, sy - 0.8], [wx, wy - 0.8]]);
+      for (let i = 0; i < 3; i++) { const u = (i + 0.5) / 3; shard(g, pal, lerp(sx, wx, u), lerp(sy, wy, u), lerp(W.a1, W.a0, u) * 0.85 + 0.25, 9, 2.4, s, 0.3); }
     }
-    g.lineCap = 'round'; g.strokeStyle = pal.arm; g.lineWidth = 3.2; line(g, [[sx, sy], [wx, wy]]);
-    g.strokeStyle = pal.armHi; g.lineWidth = 1.4; line(g, [[sx, sy - 0.8], [wx, wy - 0.8]]);
-    for (let i = 0; i < 3; i++) { const u = (i + 0.5) / 3; shard(g, pal, lerp(sx, wx, u), lerp(sy, wy, u), lerp(W.a1, W.a0, u) * 0.85 + 0.25, 9, 2.4, s, 0.3); }
-  }
+  };
+  if (!back) wings();
   // gown of frost mist
   const sway = Math.sin(t * 1.7) * 1.5 - clamp01(Math.abs(b.mvx || 0) / 200) * Math.sign(b.mvx || 0) * 3;
   const hem = (i) => [-15 + i * 5 + sway, -3 + (i % 2 ? -3 : 1) + Math.sin(t * 3 + i * 1.3) * 1.5];
@@ -68,12 +75,14 @@ export function paintRime(g, b, L, pal = RIME_PAL) {
   g.lineWidth = 1;
   g.strokeStyle = pal.gownLight; g.beginPath(); for (const x of [-4, 1, 5]) { g.moveTo(x * 0.5, -31); g.quadraticCurveTo(x + sway * 0.5, -18, x * 1.8 + sway, -5); } g.stroke();
   g.strokeStyle = pal.gownShade; g.beginPath(); for (const x of [-2, 3]) { g.moveTo(x * 0.5, -30); g.quadraticCurveTo(x + sway * 0.6, -16, x * 2.2 + sway, -4); } g.stroke();
-  // faceted crystal bodice
+  // faceted crystal bodice (its heart-gem shows only from the front)
   const V = [[-8, -47], [0, -52], [8, -47], [6.5, -33], [0, -29], [-6.5, -33]];
-  pal.facets.forEach((c, i) => { g.fillStyle = c; poly(g, [[0, -40], V[i], V[(i + 1) % 6]]); });
+  pal.facets.forEach((c, i) => { g.fillStyle = c; poly(g, [[0, -40], V[back ? 5 - i : i], V[back ? (10 - i) % 6 : (i + 1) % 6]]); });
   g.strokeStyle = pal.facetEdge; g.lineWidth = 0.6; g.beginPath(); for (const v of V) { g.moveTo(0, -40); g.lineTo(...v); } g.stroke();
-  g.fillStyle = pal.gem; poly(g, [[0, -42.5], [2, -40], [0, -37.5], [-2, -40]]); g.fillStyle = pal.glint; g.fillRect(-0.5, -41.5, 1, 1);
-  lit(g, L, 0, -40, 8 + ph * 2 + roar * 6, pal.gemGlow, 0.5);
+  if (!back) {
+    g.fillStyle = pal.gem; poly(g, [[0, -42.5], [2, -40], [0, -37.5], [-2, -40]]); g.fillStyle = pal.glint; g.fillRect(-0.5, -41.5, 1, 1);
+    lit(g, L, 0, -40, 8 + ph * 2 + roar * 6, pal.gemGlow, 0.5);
+  }
   // owl ruff of ice feathers
   for (let k = 0; k < 9; k++) { const x = -10 + k * 2.5; g.fillStyle = k % 2 ? pal.ruffHi : pal.ruff; poly(g, [[x - 1.8, -51], [x + 1.8, -51], [x * 1.25, -45 + Math.abs(x) * 0.15]]); }
   // head: ear tufts, crown of icicles, heart-shaped facial disc and burning blue eyes
@@ -86,19 +95,26 @@ export function paintRime(g, b, L, pal = RIME_PAL) {
   g.fillStyle = pal.band; g.fillRect(-7, -6.5, 14, 2); g.fillStyle = pal.gem; g.fillRect(-1, -6.5, 2, 2);
   lit(g, L, 0, -6, 6 + roar * 6, pal.gemGlow, 0.5);
   g.restore();
-  g.fillStyle = pal.mask; disc(g, -3.4, -0.5, 3.9); disc(g, 3.4, -0.5, 3.9); poly(g, [[-7, 0.8], [7, 0.8], [0, 6.5]]);
-  g.strokeStyle = pal.maskLine; g.lineWidth = 0.6; line(g, [[0, -3.5], [0, 1]]);
-  const er = 1 + roar * 0.3 + (st === 'rain' ? 0.25 : 0);
-  for (const s of [-1, 1]) {
-    g.fillStyle = pal.socket; disc(g, s * 3.4, -0.6, 2.6);
-    if (st === 'stunned') { g.strokeStyle = pal.daze; g.lineWidth = 0.7; g.beginPath(); g.arc(s * 3.4, -0.6, 1.5, t * 8, t * 8 + 4.5); g.stroke(); continue; }
-    g.fillStyle = pal.eye; disc(g, s * 3.4, -0.6, 1.9 * er);
-    g.fillStyle = pal.glint; disc(g, s * 3.4 - s * 0.4, -1, 0.85);
-    lit(g, L, s * 3.4, -0.6, 9 * er, pal.eyeGlow, 0.65);
+  if (back) { // the back of her head: feathers swept down to the ruff
+    g.strokeStyle = pal.ruffHi; g.lineWidth = 0.7; g.beginPath(); for (const x of [-4, 0, 4]) { g.moveTo(x * 0.6, -5); g.quadraticCurveTo(x, 0, x * 1.2, 5); } g.stroke();
+  } else {
+    const fx = side ? 3 : 0, eyes = side ? [1] : [-1, 1]; // side-on, one eye and the beak forward
+    g.fillStyle = pal.mask; for (const s of eyes) disc(g, fx + s * 3.4, -0.5, 3.9); poly(g, [[fx - 7, 0.8], [fx + 7, 0.8], [fx + (side ? 5 : 0), 6.5]]);
+    g.strokeStyle = pal.maskLine; g.lineWidth = 0.6; line(g, [[fx, -3.5], [fx, 1]]);
+    const er = 1 + roar * 0.3 + (st === 'rain' ? 0.25 : 0);
+    for (const s of eyes) {
+      const ex = fx + s * 3.4;
+      g.fillStyle = pal.socket; disc(g, ex, -0.6, 2.6);
+      if (st === 'stunned') { g.strokeStyle = pal.daze; g.lineWidth = 0.7; g.beginPath(); g.arc(ex, -0.6, 1.5, t * 8, t * 8 + 4.5); g.stroke(); continue; }
+      g.fillStyle = pal.eye; disc(g, ex, -0.6, 1.9 * er);
+      g.fillStyle = pal.glint; disc(g, ex - s * 0.4, -1, 0.85);
+      lit(g, L, ex, -0.6, 9 * er, pal.eyeGlow, 0.65);
+    }
+    g.strokeStyle = pal.brow; g.lineWidth = 1; g.beginPath(); for (const s of eyes) { g.moveTo(fx + s * 7, -4.5); g.lineTo(fx + s * 1.5, -2.6); } g.stroke();
+    g.fillStyle = pal.beak; poly(g, side ? [[fx + 4, 0.5], [fx + 4, 3], [fx + 8.5, 2]] : [[-1.3, 1.5], [1.3, 1.5], [0, 4.8]]);
   }
-  g.strokeStyle = pal.brow; g.lineWidth = 1; g.beginPath(); for (const s of [-1, 1]) { g.moveTo(s * 7, -4.5); g.lineTo(s * 1.5, -2.6); } g.stroke();
-  g.fillStyle = pal.beak; poly(g, [[-1.3, 1.5], [1.3, 1.5], [0, 4.8]]);
   g.restore();
+  if (back) wings();
   g.restore();
 }
 

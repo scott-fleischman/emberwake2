@@ -14,16 +14,28 @@ export function makeZone(shape, fields) {
   const z = { shape, ...DEFAULTS, ...fields };
   z.t0 = z.t || 0.001;
   if (shape === 'ring') z.gaps ??= [];
-  // Ownerless segments still need a position: damagePlayer reads src.x/y for knockback and blocks.
+  // A segment's midpoint, for anything that wants one place to call it (strikes use strikeFrom).
   if (shape === 'segment') Object.defineProperties(z, { x: { get() { return (this.x1 + this.x2) / 2; } }, y: { get() { return (this.y1 + this.y2) / 2; } } });
   return z;
 }
 
-const segDist = (px, py, ax, ay, bx, by) => {
+// The point of segment a-b nearest p.
+const nearest = (px, py, ax, ay, bx, by) => {
   const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
   const k = clamp(((px - ax) * vx + (py - ay) * vy) / l2, 0, 1);
-  return Math.hypot(px - ax - vx * k, py - ay - vy * k);
+  return [ax + vx * k, ay + vy * k];
 };
+const segDist = (px, py, ax, ay, bx, by) => { const [x, y] = nearest(px, py, ax, ay, bx, by); return Math.hypot(px - x, py - y); };
+
+// Where a zone's blow comes from, for the knockback and the shield: a circle or ring's centre, a
+// cone's apex, the nearest point of a line. Struck dead centre, it comes from the owner instead.
+// The owner rides along for bookkeeping.
+function strikeFrom(z, p) {
+  const o = z.owner;
+  let [x, y] = z.shape === 'segment' ? nearest(p.x, p.y, z.x1, z.y1, z.x2, z.y2) : [z.x, z.y];
+  if (o && Math.hypot(p.x - x, p.y - y) < 1) { x = o.x; y = o.y; }
+  return { x, y, owner: o, name: o?.name };
+}
 
 // Each shape grows by `pad` on every side. A gap in a ring shrinks by the angle that pad covers,
 // so a body too wide to fit through it is still caught.
@@ -78,13 +90,14 @@ export function tickZones(zones, dt, ctx) {
       // try once the invulnerability ends.
       if (!z.hit && z.cool <= 0 && p.mode !== 'dead' && inZone(z, p.x, p.y, HIT_PAD)) {
         let landed = false;
+        const src = strikeFrom(z, p);
         if (z.dmg > 0) {
-          const r = g.damagePlayer(z.dmg, o ?? z, { effect: z.effect, knock: z.knock, unblockable: !z.blockable });
+          const r = g.damagePlayer(z.dmg, src, { effect: z.effect, knock: z.knock, unblockable: !z.blockable });
           landed = r !== 'ignored'; z.blocked = r === 'blocked';
         } else if (z.effect && p.iframes <= 0) {
           // A blockable effect-only strike meets the shield as a light blow would; blocked, it carries nothing.
-          z.blocked = z.blockable && g.guard(1, o ?? z);
-          if (!z.blocked) g.applyEffect(z.effect, o ?? z);
+          z.blocked = z.blockable && g.guard(1, src);
+          if (!z.blocked) g.applyEffect(z.effect, src);
           landed = true;
         }
         if (landed) { if (z.art && z.life > 0) z.cool = PATCH_BEAT; else z.hit = true; }

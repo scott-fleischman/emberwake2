@@ -3,12 +3,18 @@
 // see Boss.runMoves.
 import { Particles, Projectile } from './entities.js';
 import { makeZone } from './zones.js';
+import { TILE } from '../world/tiles.js';
+
+const ANCHORS = [[6, 4], [17, 4], [6, 10], [17, 10]].map(([tx, ty]) => ({ x: tx * TILE + 8, y: ty * TILE + 8 }));
 
 export const moves = {
   first: 'volley',
+  aim: ['volley'],
+  init(b) { b.anchors = ANCHORS; b.alpha = 1; b.volleys = 3; b.timer = 0.6; b.cdx = 0; b.cdy = 1; },
   phase1: {
-    intro(b) { if (b.timer <= 0) { b.state = 'volley'; b.timer = 0.6; b.volleys = 3; } },
-    volley(b, dt, ctx, { p }) {
+    intro(b) { if (b.timer <= 0) { moves.init(b); b.state = 'volley'; } },
+    volley(b, dt, ctx, { p, dx, dy, d }) {
+      b.cdx = dx / d; b.cdy = dy / d; // it casts at the player
       if (b.timer <= 0) {
         const n = b.phase > 1 ? 5 : 3, spread = 0.26;
         const a = Math.atan2(p.y - b.y, p.x - b.x);
@@ -18,7 +24,8 @@ export const moves = {
         b.timer = 0.55;
         if (b.volleys <= 0) {
           if (b.phase > 1) {
-            for (let k = 0; k < 3; k++) ctx.area.zones.push(makeZone('circle', { x: p.x + (Math.random() - 0.5) * 40 * k, y: p.y + (Math.random() - 0.5) * 30 * k, r: 12, t: 0.9 + k * 0.25, dmg: 2, owner: b, rgb: '255,120,40', erupt: true }));
+            // + dt: this frame's tickZones counts them down too, and must not take a frame off.
+            for (let k = 0; k < 3; k++) ctx.area.zones.push(makeZone('circle', { x: p.x + (Math.random() - 0.5) * 40 * k, y: p.y + (Math.random() - 0.5) * 30 * k, r: 12, t: 0.9 + k * 0.25 + dt, dmg: 2, owner: b, rgb: '255,120,40', erupt: true }));
           }
           b.state = 'vent'; b.timer = b.phase === 3 ? 1.4 : 1.9;
           ctx.game.audio.sfx('gate', { pitch: 0.6, volume: 0.5 });
@@ -51,6 +58,6 @@ export const moves = {
       ctx.game.audio.sfx('explode', { volume: 0.4, pitch: 1.2 });
     }
   },
-  enter2() {},
+  enter2(b, ctx) { b.summon(ctx, 'skirmisher', 5, 2); },
   clear() {},
 };

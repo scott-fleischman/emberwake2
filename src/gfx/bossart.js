@@ -1,8 +1,8 @@
 // Boss art shared by every warden. Painters (one file each: art-thornmaw.js, art-cinder.js,
-// art-rime.js) draw around the boss's feet (0,0) facing right and read pose fields off the boss
-// (state, phase, anim, timer, roarT, phaseT, cdx/cdy, mvx); each takes a palette, so another body
-// can wear its look. stamp() runs them through an offscreen buffer for a crisp dark outline and
-// white flashes. Scaled up, the same painters make the cutscene portraits. Here: the stamp, lights,
+// art-rime.js) draw around the boss's feet (0,0) in the boss's view (side, facing right; front;
+// back) and read pose fields off the boss (view, state, phase, anim, timer, roarT, phaseT, cdx/cdy,
+// mvx); each takes a palette, so another body can wear its look. stamp() runs them through an
+// offscreen buffer for a crisp dark outline and white flashes, mirroring the side view to face left. Scaled up, the same painters make the cutscene portraits. Here: the stamp, lights,
 // roars, deaths, entrances and omens. Nothing here touches Math.random, so headless runs stay
 // reproducible.
 import { makeCanvas } from './sprites.js';
@@ -65,7 +65,7 @@ export function stamp(g, x, y, paint, o = {}) {
   b.save(); b.translate(OX, OY);
   if (o.ground !== undefined) { b.beginPath(); b.rect(-OX, -OY, BW, OY + o.ground); b.clip(); }
   b.translate(0, o.sink || 0);
-  if (o.face < 0) b.scale(-1, 1);
+  if (o.face < 0 && (o.view ?? 'side') === 'side') b.scale(-1, 1); // front and back views don't turn
   paint(b, L);
   b.restore();
   if (o.cracks > 0) lightCracks(b, o.cracks, o.rgb || '255,240,200');

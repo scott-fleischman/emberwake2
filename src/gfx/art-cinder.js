@@ -1,5 +1,6 @@
-// The Cinder Warden's art: a floating obsidian knight. The painter draws around its feet facing
-// right (see bossart.js); every colour comes from a palette, so another body can wear it.
+// The Cinder Warden's art: a floating obsidian knight. The painter draws around its feet facing the
+// camera (b.view 'front', the default), from behind ('back'), or turned to the right ('side', see
+// bossart.js); every colour comes from a palette, so another body can wear it.
 import { TAU, clamp01, lerp, hash, poly, line, disc, mix, roarK, lit, glow, flameTongue } from './bossart.js';
 
 export const CINDER_PAL = {
@@ -64,9 +65,11 @@ function gauntlet(g, pal, h, L, hot) {
 }
 
 export function paintCinder(g, b, L, pal = CINDER_PAL) {
-  const t = b.anim || 0, st = b.state, ph = b.phase || 1, op = ventOpen(b), pulse = 0.75 + 0.25 * Math.sin(t * 5);
+  const view = b.view || 'front', back = view === 'back', side = view === 'side';
+  const t = b.anim || 0, st = b.state, ph = b.phase || 1, op = back ? 0 : ventOpen(b), pulse = 0.75 + 0.25 * Math.sin(t * 5);
   const hot = st === 'vent' ? 1 : ph === 3 ? 0.6 : ph === 2 ? 0.3 : 0;
   g.save(); g.translate(0, cinderHover(b));
+  if (side) g.scale(0.72, 1); // turned side-on: narrower, its far pauldron hidden, the visor forward (rough)
   // smoke-and-ember cloak, no legs
   const hem = (i) => [-19 + i * 4.75, (i % 2 ? -6 : 1) + Math.sin(t * 7 + i * 1.7) * 2];
   const cg = g.createLinearGradient(0, -30, 0, 2);
@@ -89,7 +92,7 @@ export function paintCinder(g, b, L, pal = CINDER_PAL) {
     lit(g, L, 0, -40, 22 + op * 20, pal.coreGlow, 0.8 * op);
   }
   // pauldrons
-  for (const s of [-1, 1]) {
+  for (const s of side ? [1] : [-1, 1]) {
     g.save(); g.scale(s, 1);
     g.fillStyle = pal.spikes; poly(g, [[14, -53], [17, -64], [19.5, -53]]); poly(g, [[19, -51], [26, -59], [23.5, -48]]);
     g.fillStyle = s < 0 ? pal.plate : pal.plateDark;
@@ -99,8 +102,16 @@ export function paintCinder(g, b, L, pal = CINDER_PAL) {
     if (ph === 3) moltenLine(g, pal, [[18, -54], [19, -50], [17, -47]], pulse);
     g.restore();
   }
+  // from behind, the cloak hangs over the back plate from the shoulders
+  if (back) {
+    const kg = g.createLinearGradient(0, -53, 0, -24);
+    kg.addColorStop(0, pal.cloak[0]); kg.addColorStop(0.6, pal.cloak[1]); kg.addColorStop(1, pal.cloak[2]);
+    g.fillStyle = kg; g.beginPath(); g.moveTo(-12, -52); g.quadraticCurveTo(0, -55, 12, -52); g.lineTo(14, -26); g.quadraticCurveTo(0, -22 + Math.sin(t * 4) * 1.5, -14, -26); g.closePath(); g.fill();
+    g.strokeStyle = pal.folds; g.lineWidth = 1.2; g.beginPath(); for (const x of [-6, 0, 6]) { g.moveTo(x * 0.8, -51); g.quadraticCurveTo(x + Math.sin(t * 3 + x) * 1.2, -38, x * 1.5, -25); } g.stroke();
+    g.strokeStyle = `rgba(${hc[0]},${hc[1] + ph * 30},${hc[2]},${0.6 * pulse})`; g.lineWidth = 1; g.beginPath(); g.moveTo(-14, -26); g.quadraticCurveTo(0, -22 + Math.sin(t * 4) * 1.5, 14, -26); g.stroke();
+  }
   // breastplate in two halves that part to vent
-  for (const s of [-1, 1]) {
+  if (!back) for (const s of [-1, 1]) {
     g.save(); g.translate(s * 4 * op, 0); g.rotate(s * 0.12 * op);
     g.fillStyle = s < 0 ? mix(pal.chest, pal.chestHot, hot * 0.5) : mix(pal.chestDark, pal.chestHotDark, hot * 0.5);
     poly(g, [[0, -51], [s * 13, -51], [s * 14.5, -42], [s * 9, -29], [0, -29]]);
@@ -127,10 +138,18 @@ export function paintCinder(g, b, L, pal = CINDER_PAL) {
   g.fillStyle = hg; g.beginPath(); g.moveTo(-7, -52); g.lineTo(-8.5, -61); g.quadraticCurveTo(-7, -68, 0, -69); g.quadraticCurveTo(7, -68, 8.5, -61); g.lineTo(7, -52); g.quadraticCurveTo(0, -50, -7, -52); g.closePath(); g.fill();
   g.fillStyle = pal.steelHi; g.fillRect(-0.5, -68, 1, 6);
   g.strokeStyle = pal.helmLine; g.lineWidth = 1; g.beginPath(); g.moveTo(-6, -55); g.lineTo(-2, -53); g.moveTo(6, -55); g.lineTo(2, -53); g.stroke();
-  g.fillStyle = pal.slot; g.fillRect(-6.5, -61, 13, 3); g.fillRect(-1.5, -61, 3, 7);
-  g.fillStyle = st === 'vent' ? pal.visorDim : pal.visor; g.fillRect(-6, -60.5, 12, 1.6); g.fillRect(-1, -60.5, 2, 6);
-  g.fillStyle = pal.visorHot; g.fillRect(-4.5, -60.2, 2.5, 1); g.fillRect(2, -60.2, 2.5, 1);
-  for (const s of [-1, 1]) lit(g, L, s * 3, -59.7, 9 + roarK(b) * 6, pal.visorGlow, st === 'vent' ? 0.25 : 0.6);
+  if (back) { g.fillStyle = pal.helmLine; g.fillRect(-0.5, -66, 1, 13); g.fillStyle = pal.steelHi; g.fillRect(-2.5, -64, 1, 9); }
+  else if (side) { // the visor slot wraps round to the front
+    g.fillStyle = pal.slot; g.fillRect(1, -61, 8, 3); g.fillRect(4.5, -61, 3, 7);
+    g.fillStyle = st === 'vent' ? pal.visorDim : pal.visor; g.fillRect(1.5, -60.5, 7.5, 1.6); g.fillRect(5, -60.5, 2, 6);
+    g.fillStyle = pal.visorHot; g.fillRect(6.5, -60.2, 2.5, 1);
+    lit(g, L, 6, -59.7, 9 + roarK(b) * 6, pal.visorGlow, st === 'vent' ? 0.25 : 0.6);
+  } else {
+    g.fillStyle = pal.slot; g.fillRect(-6.5, -61, 13, 3); g.fillRect(-1.5, -61, 3, 7);
+    g.fillStyle = st === 'vent' ? pal.visorDim : pal.visor; g.fillRect(-6, -60.5, 12, 1.6); g.fillRect(-1, -60.5, 2, 6);
+    g.fillStyle = pal.visorHot; g.fillRect(-4.5, -60.2, 2.5, 1); g.fillRect(2, -60.2, 2.5, 1);
+    for (const s of [-1, 1]) lit(g, L, s * 3, -59.7, 9 + roarK(b) * 6, pal.visorGlow, st === 'vent' ? 0.25 : 0.6);
+  }
   g.fillStyle = pal.band; g.fillRect(-7, -66, 14, 2); g.fillStyle = pal.studs; for (const x of [-5, 0, 5]) g.fillRect(x - 0.5, -65.6, 1, 1);
   g.restore();
   for (const h of cinderHands(b)) gauntlet(g, pal, h, L, hot);

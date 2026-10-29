@@ -537,7 +537,7 @@ export class DungeonArea extends Area {
     const flags = g.state.quest.flags, key = `outro:${boss.kind}`;
     if (!flags[key] && WARDENS[boss.kind]) {
       flags[key] = true;
-      const focus = { x: boss.x, y: boss.y };
+      const focus = boss.spawn; // where it dematerialized
       g.queueCutscene(() => g.playCutscene(bossOutroShots(boss.kind, focus), {
         letterbox: true,
         music: 'story',

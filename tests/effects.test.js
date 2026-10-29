@@ -170,10 +170,10 @@ test('effects clear on death, area change and cutscenes', async () => {
 test('effects clear when a boss starts to die', async () => {
   const { createBoss } = await import('../src/game/bosses.js');
   const s = await sandbox(), boss = createBoss('thornmaw', s.center.x, s.center.y - 60, 1);
-  s.area.boss = boss; s.spawn(boss); boss.state = 'stalk';
+  s.area.boss = boss; s.spawn(boss); boss.state = 'stalk'; boss.phase = 2;
   s.game.applyEffect('freeze');
   boss.damage(9999, s.game.player, s.area.ctx);
-  assert.equal(boss.state, 'dying'); assert.deepEqual(s.game.player.effects, {});
+  assert.ok(s.game.bossDeath); assert.deepEqual(s.game.player.effects, {});
 });
 test('the arena revive clears effects too', async () => {
   const { makeApp } = await import('../tools/headless.mjs');

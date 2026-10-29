@@ -168,6 +168,9 @@ const RAW = {
   },
 };
 
+// A warden's second phase: its theme driven harder, on bare fifths an octave down.
+RAW.boss2 = { ...RAW.boss, bpm: 156, voicing: 'fifth', bassOct: -2, bassVel: 0.5, compOct: -1, drone: 0.5, voice: { bright: 0.45, decay: 0.5 }, seed: 127 };
+
 const TRACKS = Object.fromEntries(Object.entries(RAW).map(([k, v]) =>
   [k, { ...DEF, ...v, voice: { ...DEF.voice, ...v.voice } }]));
 
@@ -323,6 +326,41 @@ const SFX = {
     a.noise(t, { dur: 0.35, vol: 0.28, type: 'highpass', f: 3000, f2: 1500, attack: 0.002 });
     [0, 0.02, 0.05, 0.09].forEach((d, i) => a.tone(t + d, { f: 2600 - i * 380, f2: 1800 - i * 300, dur: 0.18, vol: 0.06 }));
     a.tone(t, { type: 'triangle', f: 240, f2: 70, dur: 0.12, vol: 0.2 });
+  },
+  // wardens: a phase change (the roar of the transform) and a death (the dematerialize)
+  thornmaw_phase: (a, t) => { // a deep woody groan cracking into a roar, leaves thrashing
+    a.tone(t, { type: 'sawtooth', f: 62, f2: 96, dur: 1.2, vol: 0.14, lp: 300, lp2: 1100, attack: 0.25 });
+    a.tone(t, { type: 'sawtooth', f: 64, f2: 99, dur: 1.2, vol: 0.1, lp: 300, lp2: 900, attack: 0.25, detune: 18 });
+    [0.2, 0.45, 0.6].forEach((d) => a.noise(t + d, { dur: 0.06, vol: 0.16, type: 'highpass', f: 1800 }));
+    a.noise(t + 0.3, { dur: 1.0, vol: 0.1, f: 2400, f2: 900, q: 0.8, attack: 0.2 });
+  },
+  cinder_phase: (a, t) => { // a furnace drawing breath, then a roaring burst of flame
+    a.noise(t, { dur: 0.7, vol: 0.12, type: 'lowpass', f: 300, f2: 2600, attack: 0.6 });
+    a.noise(t + 0.65, { dur: 0.9, vol: 0.3, type: 'lowpass', f: 3500, f2: 200, attack: 0.01 });
+    a.tone(t + 0.65, { f: 120, f2: 38, dur: 0.9, vol: 0.4 });
+    a.tone(t, { type: 'sawtooth', f: 90, f2: 180, dur: 0.7, vol: 0.06, lp: 600, attack: 0.5 });
+  },
+  rime_phase: (a, t) => { // a rising cold shimmer that bursts into ringing shards
+    a.tone(t, { f: 700, f2: 2100, dur: 0.8, vol: 0.06, attack: 0.5 });
+    a.tone(t, { type: 'triangle', f: 705, f2: 2120, dur: 0.8, vol: 0.05, attack: 0.5, detune: 9 });
+    a.noise(t + 0.75, { dur: 0.5, vol: 0.26, type: 'highpass', f: 3500, f2: 1800, attack: 0.002 });
+    a.notes(t + 0.78, [96, 91, 100, 93, 98], 0.05, { type: 'triangle', dur: 0.6, vol: 0.06 });
+  },
+  thornmaw_death: (a, t) => { // a long creak sinking into the earth, the roots letting go
+    a.tone(t, { type: 'sawtooth', f: 140, f2: 40, dur: 1.6, vol: 0.12, lp: 700, lp2: 150, attack: 0.05 });
+    a.noise(t, { dur: 1.5, vol: 0.12, f: 900, f2: 160, q: 1.4, attack: 0.1 });
+    [0.3, 0.7, 1.1].forEach((d, i) => a.noise(t + d, { dur: 0.05, vol: 0.14 - i * 0.03, type: 'highpass', f: 1500 }));
+    a.notes(t + 0.9, [62, 69], 0.2, { type: 'triangle', dur: 1.2, vol: 0.05 });
+  },
+  cinder_death: (a, t) => { // the fire gutters out with a hiss, and the armor sighs empty
+    a.noise(t, { dur: 1.6, vol: 0.18, type: 'highpass', f: 5000, f2: 1200, attack: 0.05 });
+    a.tone(t, { type: 'sawtooth', f: 110, f2: 30, dur: 1.5, vol: 0.1, lp: 900, lp2: 120 });
+    a.notes(t + 0.6, [57, 52, 45], 0.25, { type: 'triangle', dur: 0.9, vol: 0.06 });
+  },
+  rime_death: (a, t) => { // a cascade of falling icicles chiming away to a single note
+    a.notes(t, [103, 98, 96, 91, 89, 84, 79], 0.12, { type: 'triangle', dur: 0.5, vol: 0.05 });
+    a.noise(t, { dur: 0.4, vol: 0.18, type: 'highpass', f: 4200, f2: 2400, attack: 0.002 });
+    a.tone(t + 0.9, { f: mtof(72), dur: 1.4, vol: 0.05, attack: 0.1 });
   },
   // monster signature moves, mv_<region>_<archetype>, played as the move is unleashed
   mv_forest_brute: (a, t) => { // a slam, then thorns scraping up

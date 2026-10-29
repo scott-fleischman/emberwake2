@@ -27,8 +27,9 @@ function clearWalls(b, ctx) {
 
 export const moves = {
   first: 'orbit',
+  init(b) { b.orbitA = 0; b.walls = []; b.timer = 2.2; b.shotT = 0.7; b.dashes = 0; b.cdx = 0; b.cdy = 1; },
   phase1: {
-    intro(b) { if (b.timer <= 0) { b.state = 'orbit'; b.timer = 2.2; b.shotT = 0.7; } },
+    intro(b) { if (b.timer <= 0) { moves.init(b); b.state = 'orbit'; } },
     orbit(b, dt, ctx, { p, dx, dy, d }) {
       b.orbitA += dt * (b.phase > 1 ? 1.9 : 1.4);
       const tx = p.x + Math.cos(b.orbitA) * 70, ty = p.y + Math.sin(b.orbitA) * 52;
@@ -60,7 +61,8 @@ export const moves = {
         const n = b.phase > 1 ? 8 : 5;
         for (let k = 0; k < n; k++) {
           const a = Math.random() * TAU, r = k === 0 ? 0 : 20 + Math.random() * 60;
-          ctx.area.zones.push(makeZone('circle', { x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r * 0.7, r: 8, t: 0.8 + k * 0.08, dmg: 1, owner: b, rgb: '20,40,80', shard: true }));
+          // + dt: this frame's tickZones counts them down too, and must not take a frame off.
+          ctx.area.zones.push(makeZone('circle', { x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r * 0.7, r: 8, t: 0.8 + k * 0.08 + dt, dmg: 1, owner: b, rgb: '20,40,80', shard: true }));
         }
         b.state = 'orbit'; b.timer = 1.8; b.shotT = 1;
       }
@@ -78,6 +80,6 @@ export const moves = {
     for (const w of b.walls) { w.t -= dt; }
     if (b.walls.length && b.walls.every((w) => w.t <= 0)) clearWalls(b, ctx);
   },
-  enter2: raiseWalls,
+  enter2(b, ctx) { raiseWalls(b, ctx); b.summon(ctx, 'skirmisher', 4, 2); },
   clear: clearWalls,
 };

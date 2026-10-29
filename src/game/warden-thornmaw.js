@@ -6,8 +6,9 @@ import { TAU } from '../core/math.js';
 
 export const moves = {
   first: 'stalk',
+  init(b) { b.timer = 1.4; b.cdx = 0; b.cdy = 1; b.bursts = 0; },
   phase1: {
-    intro(b) { if (b.timer <= 0) { b.state = 'stalk'; b.timer = 1.4; } },
+    intro(b) { if (b.timer <= 0) { moves.init(b); b.state = 'stalk'; } },
     stalk(b, dt, ctx, { dx, dy, d }) {
       moveActor(ctx.map, b, (dx / d) * 30 * dt, (dy / d) * 30 * dt);
       b.touchPlayer(ctx, 2);

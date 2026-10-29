@@ -27,7 +27,11 @@ export class ArenaArea extends Area {
     this.name = 'Arena';
   }
   drawGround(g, cam) { this.renderer.draw(g, cam); }
-  onBossDefeated(boss) { this.game.log(`${boss.name.split(',')[0]} defeated in ${(this.time - boss.spawnT).toFixed(1)}s`); this.boss = null; }
+  onBossDefeated(boss) {
+    this.game.log(`${boss.name.split(',')[0]} defeated in ${(this.time - boss.spawnT).toFixed(1)}s`);
+    this.boss = null;
+    this.game.audio.playMusic('dungeon'); // the death flow silenced the fight
+  }
   enemyKilled(e) {
     const ttk = this.time - e.spawnT;
     this.game.log(`${e.name} (${e.archetype}) defeated · ${ttk.toFixed(1)}s`);
@@ -109,7 +113,7 @@ export class ArenaScene extends GameScene {
 
   update(dt) {
     const input = this.input;
-    if (!this.uiStack.length) {
+    if (!this.uiStack.length && !this.bossDeath) { // the death flow owns the arena until it ends
       for (let k = 0; k < 4; k++) if (input.keyPressed(`Digit${k + 1}`)) { this.spawn(ARCH[k]); this.log(`Spawned ${ARCH[k]}`); }
       if (input.keyPressed('Digit5')) { for (const a of ['brute', 'lunger', 'ranged', 'skirmisher']) this.spawn(a); this.log('Spawned a mixed squad'); }
       if (input.keyPressed('Digit6')) {

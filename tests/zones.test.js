@@ -81,7 +81,7 @@ test('a zero-damage effect zone applies its effect instead of hurting', async ()
   const z = makeZone('circle', { ...s.center, r: 12, t: 0.1, life: 0.5, dmg: 0, effect: 'slow' });
   s.area.zones.push(z);
   s.step(1);
-  assert.deepEqual(seen, [['slow', z]]);
+  assert.deepEqual(seen.map(([k, src]) => [k, src.x, src.y]), [['slow', z.x, z.y]]); // struck from the zone itself
   assert.equal(s.game.state.player.hp, hp0);
 });
 test("a dead owner's zones vanish, but ground patches stay", async () => {

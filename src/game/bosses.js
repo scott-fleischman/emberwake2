@@ -1,4 +1,5 @@
-// Regional bosses. Each has phases with distinct pressure and an explicit punish window.
+// Regional bosses. Each fights in two phases with distinct pressure and an explicit punish window,
+// transforms at half health, and dies through the centered death flow (bossdeath.js).
 import { Actor, Entity, Particles, Poof } from './entities.js';
 import { Enemy } from './enemies.js';
 import { makeZone } from './zones.js';
@@ -13,18 +14,39 @@ import { moves as rime } from './warden-rime.js';
 import { TILE } from '../world/tiles.js';
 import { TAU } from '../core/math.js';
 
+// view: the way it faces until it first moves, the way its entrance and portrait show it.
 export const BOSS_INFO = {
-  thornmaw: { name: 'Thornmaw, Warden of the Grove', hp: 60, music: 'boss' },
-  cinder: { name: 'The Cinder Warden', hp: 72, music: 'boss' },
-  rime: { name: 'Rime Sovereign', hp: 84, music: 'boss' },
+  thornmaw: { name: 'Thornmaw, Warden of the Grove', hp: 120, music: 'boss', view: 'side' },
+  cinder: { name: 'The Cinder Warden', hp: 144, music: 'boss', view: 'front' },
+  rime: { name: 'Rime Sovereign', hp: 168, music: 'boss', view: 'front' },
 };
-const DIE = 2; // seconds a warden takes to die
+export const DIE = 1.6; // seconds a warden takes to dematerialize
+const TRANSFORM = 1.5; // seconds the change into phase 2 takes, unhurtable
 
 // Each warden's fight as a moveset: a table of state handlers any boss body can run (see runMoves).
+// A moveset is {
+//   first, first2?   the state a body enters at (after its intro), and on reaching phase 2
+//   phase1, phase2   state -> handler(b, dt, ctx, me); phase 2 falls back to phase 1's handler
+//   vulnerable(b)    the punish window; untargetable?(b) states no hit can land in
+//   aim?             telegraph states besides 'wind', where the body faces cdx/cdy, not its motion
+//   tick?(b, dt, ctx)  every frame, whatever the state
+//   init?(b)         sets every field the handlers read, so a body can start at `first`
+//   enter2(b, ctx)   on reaching phase 2;  clear(b, ctx)  once, when it dies: undo what it left
+// }
 export const WARDEN_MOVES = { thornmaw, cinder, rime };
 
+// Which way a boss shows itself, from where it is going: 'side', 'front' (down the screen) or
+// 'back'. Slow, or on a diagonal, it keeps the view it had, so it doesn't flicker.
+export function viewFrom(vx, vy, prev) {
+  const ax = Math.abs(vx), ay = Math.abs(vy);
+  if (Math.hypot(vx, vy) < 4) return prev;
+  if (ax >= 1.25 * ay) return 'side';
+  if (ay >= 1.25 * ax) return vy > 0 ? 'front' : 'back';
+  return prev;
+}
+
 // A non-blocking white flash and shockwave for phase changes and deaths, drawn above everything.
-class Burst extends Entity {
+export class Burst extends Entity {
   constructor(boss, big = false) { super(boss.x, boss.y - 28, 1, 1); this.rgb = BOSS_RGB[boss.kind]; this.big = big; this.t = 0; }
   get sortY() { return 2e9; }
   update(dt) { this.t += dt; if (this.t > (this.big ? 1.4 : 1)) this.dead = true; }
@@ -51,21 +73,23 @@ class Boss extends Actor {
     this.boss = true;
     this.team = 'enemy';
     this.mass = 6;
+    this.spawn = { x, y }; // the arena's centre: where it dies
+    this.phase = 1;
+    this.moves = WARDEN_MOVES[kind];
+    this.moves?.init?.(this);
     this.state = 'intro';
     this.timer = 1.6;
     this.t = 0;
-    this.phase = 1;
-    this.moves = WARDEN_MOVES[kind];
     this.vulnerable = false;
     this.summoned = 0;
-    this.face = -1; this.roarT = 0; this.phaseT = 9; this.mvx = 0; // visual only
+    this.face = -1; this.view = this.info.view; this.roarT = 0; this.phaseT = 9; this.mvx = this.mvy = 0; // visual only
   }
-  get hpFrac() { return this.hp / this.maxHp; }
   update(dt, ctx) {
     this.tickTimers(dt); this.t += dt;
-    if (this.state === 'dying') { this.moves.clear(this, ctx); return this.dyingUpdate(dt, ctx); }
+    if (this.state === 'dying') return this.dyingUpdate(dt, ctx);
     this.checkPhase(ctx);
     this.timer -= dt;
+    if (this.state === 'transform') return this.transformUpdate(dt, ctx);
     this.runMoves(this.moves, dt, ctx);
   }
   // One frame of a moveset: phase 2's handler for the state if it has one, else phase 1's. me is
@@ -78,49 +102,61 @@ class Boss extends Actor {
     m.tick?.(this, dt, ctx);
     ((this.phase > 1 && m.phase2[this.state]) || m.phase1[this.state])?.(this, dt, ctx, me);
   }
-  checkPhase() {}
-  // Visual bookkeeping only: animation clock, facing, speed, roar and phase-change timers.
+  // At half health a warden stops where it stands to transform. damage() holds phase 1 at half, so
+  // even the biggest hit lands it here rather than past it.
+  checkPhase(ctx) {
+    if (this.phase > 1 || this.state === 'transform' || this.hp > this.maxHp * 0.5) return;
+    this.state = 'transform'; this.timer = TRANSFORM;
+    this.untargetable = true; this.vulnerable = false;
+    this.roarT = 0.9;
+    ctx.area.spawn(new Burst(this));
+    ctx.game.audio.sfx(`${this.kind}_phase`);
+    ctx.game.audio.playMusic('boss2');
+    ctx.game.cam.shake(6, 0.7);
+    ctx.game.toast(`${this.name.split(',')[0]} grows furious!`);
+  }
+  // Then phase 2 begins with fresh clocks at the moveset's phase 2 entry.
+  transformUpdate(dt, ctx) {
+    const m = this.moves;
+    this.untargetable = true; this.vulnerable = false;
+    m.tick?.(this, dt, ctx);
+    if (this.timer > 0) return;
+    this.phase = 2; this.phaseT = 0;
+    m.init?.(this);
+    m.enter2(this, ctx);
+    this.state = m.first2 ?? m.first;
+    this.untargetable = !!m.untargetable?.(this);
+  }
+  // Visual bookkeeping only: animation clock, facing and view, speed, roar and phase-change timers.
   tickTimers(dt) {
     super.tickTimers(dt);
     this.anim += dt;
     this.phaseT += dt;
     if (this.roarT > 0) this.roarT -= dt;
-    const mx = this.x - (this.lx ?? this.x);
-    this.lx = this.x;
-    if (dt > 0) this.mvx = mx / dt;
-    if (Math.abs(mx) > 0.02) this.face = mx > 0 ? 1 : -1;
-  }
-  updatePhase(ctx, thresholds) {
-    const next = 1 + thresholds.filter((f) => this.hpFrac <= f).length;
-    if (next > this.phase) {
-      this.phase = next;
-      this.roarT = 0.9; this.phaseT = 0;
-      ctx.area.spawn(new Burst(this));
-      ctx.game.audio.sfx('boss');
-      ctx.game.audio.sfx('explode', { pitch: 0.5, volume: 0.7 });
-      ctx.game.cam.shake(6, 0.7);
-      ctx.game.toast(`${this.name.split(',')[0]} grows furious!`);
-      return true;
+    const mx = this.x - (this.lx ?? this.x), my = this.y - (this.ly ?? this.y);
+    this.lx = this.x; this.ly = this.y;
+    if (dt > 0) { this.mvx = mx / dt; this.mvy = my / dt; }
+    // A telegraph faces where the blow will go; otherwise it faces where it's going. A blink to
+    // somewhere else is not a walk.
+    if (this.cdx !== undefined && (this.state === 'wind' || this.moves?.aim?.includes(this.state))) {
+      this.view = viewFrom(this.cdx * 60, this.cdy * 60, this.view);
+      if (Math.abs(this.cdx) > 0.15) this.face = Math.sign(this.cdx);
+    } else if (Math.hypot(mx, my) < 24) {
+      this.view = viewFrom(this.mvx, this.mvy, this.view);
+      if (Math.abs(mx) > 0.02) this.face = mx > 0 ? 1 : -1;
     }
-    return false;
   }
   damage(amount, src, ctx, opts = {}) {
-    if (this.dead || this.state === 'dying' || this.state === 'intro' || this.untargetable) return false;
+    if (this.dead || this.hp <= 0 || this.state === 'dying' || this.state === 'intro' || this.untargetable) return false;
     const dmg = this.vulnerable ? amount * 1.5 : amount;
-    this.hp -= dmg;
+    this.hp = Math.max(this.phase === 1 ? this.maxHp * 0.5 : 0, this.hp - dmg);
     this.flash = 0.12;
     ctx.game.audio.sfx('hit', { pitch: 0.7 });
     if (this.vulnerable) ctx.area.spawn(new Particles(this.x, this.y - 24, { count: 6, color: '#fff0a0', speed: 50, life: 0.3 }));
-    if (this.hp <= 0) {
-      this.hp = 0;
-      this.state = 'dying';
-      this.timer = DIE;
-      ctx.game.clearEffects(); // nothing should hold the player through the victory
-      ctx.game.audio.sfx('death', { pitch: 0.6 });
-      ctx.game.cam.shake(4, 1.2);
-    }
+    if (this.hp <= 0) ctx.game.beginBossDeath(this);
     return true;
   }
+  // The dematerialize at the end of the death flow, which hands the victory to the area once it's gone.
   dyingUpdate(dt, ctx) {
     this.timer -= dt;
     if (Math.random() < dt * 14) ctx.area.spawn(new Particles(this.x + (Math.random() - 0.5) * 56, this.y - Math.random() * 50, { count: 6, color: ['#ffffff', '#ffe0a0'], speed: 60, life: 0.4 }));
@@ -128,7 +164,6 @@ class Boss extends Actor {
       this.dead = true;
       ctx.area.spawn(new Poof(this.x, this.y - 24, '#ffffff', true));
       ctx.area.spawn(new Burst(this, true));
-      ctx.area.onBossDefeated(this, ctx);
     }
   }
   summon(ctx, archetype, biome, count) {
@@ -148,19 +183,21 @@ class Boss extends Actor {
     return Math.abs(p.x - this.x) < (p.w + this.w) / 2 + pad && Math.abs(p.y - this.y) < (p.h + this.h) / 2 + pad ? ctx.game.damagePlayer(dmg, this) : false;
   }
   drawBar() {}
-  // Shared draw: entrance placement, shadow, dying shudder, outlined body, lights, roar rings.
-  // o: {face, alpha, tele, ghosts, shadow: [dy, rx, ry], under(g,x,y,a), over(g,x,y,a)}
+  // Shared draw: entrance placement, shadow, dying shudder, transform tremble, outlined body,
+  // lights, roar rings. o: {face, alpha, tele, ghosts, shadow: [dy, rx, ry], under(g,x,y,a), over(g,x,y,a)}
   drawBoss(g, cam, paint, o = {}) {
     const e = entranceOffset(this.cine);
     if (!e) return;
     const dying = this.state === 'dying', dp = dying ? Math.max(0, Math.min(1, 1 - this.timer / DIE)) : 0;
-    const x = Math.round(this.x - cam.left) + (dying ? Math.round(Math.sin(this.anim * 80) * (1 + dp * 3)) : 0);
+    const tp = this.state === 'transform' ? Math.max(0, Math.min(1, 1 - this.timer / TRANSFORM)) : 0; // swelling with the change
+    const x = Math.round(this.x - cam.left) + (dying ? Math.round(Math.sin(this.anim * 80) * (1 + dp * 3)) : tp ? Math.round(Math.sin(this.anim * 60) * tp * 2) : 0);
     const y = Math.round(this.y - cam.top), dy = e.dy || 0, alpha = (o.alpha ?? 1) * (e.alpha ?? 1), rgb = BOSS_RGB[this.kind];
     const [sy, rx, ry] = o.shadow || [8, 20, 5], lift = Math.max(0.2, 1 - Math.abs(dy) / 160) * (e.sink ? Math.max(0, 1 - e.sink / 60) : 1);
     if (alpha > 0) drawShadow(g, x, y + sy, rx * lift, ry * lift, 0.42 * Math.min(1, alpha + 0.3));
     if (o.under && alpha > 0) o.under(g, x, y + dy, alpha);
-    const white = this.flash > 0 || o.tele ? 1 : dying ? (Math.floor(this.anim * (8 + dp * 22)) % 2 ? 0.25 + dp * 0.7 : dp * 0.35) : 0;
-    if (alpha > 0) stamp(g, x, y + dy, paint, { face: o.face, alpha, white, ghosts: o.ghosts, sink: e.sink, ground: e.ground, cracks: dp > 0.15 ? (dp - 0.15) / 0.85 : 0, rgb });
+    const white = this.flash > 0 || o.tele ? 1 : dying ? (Math.floor(this.anim * (8 + dp * 22)) % 2 ? 0.25 + dp * 0.7 : dp * 0.35)
+      : tp ? (Math.floor(this.anim * (6 + tp * 18)) % 2 ? tp * 0.7 : 0) : 0;
+    if (alpha > 0) stamp(g, x, y + dy, paint, { face: o.face ?? this.face, view: this.view, alpha, white, ghosts: o.ghosts, sink: e.sink, ground: e.ground, cracks: dp > 0.15 ? (dp - 0.15) / 0.85 : 0, rgb });
     if (o.over && alpha > 0) o.over(g, x, y + dy, alpha);
     if (this.roarT > 0 && !e.sink) roarRings(g, x, y - 30, this.roarT, rgb);
     if (dying) deathRays(g, x, y - 30, dp, this.anim, rgb);
@@ -168,14 +205,13 @@ class Boss extends Actor {
 }
 
 // ---------------------------------------------------------------- the wardens
-// Each fight is a moveset in its warden-*.js file; a class adds the body, the phase steps and the draw.
+// Each fight is a moveset in its warden-*.js file; a class adds the body and the draw.
 
 // Thornmaw: charges, stuns on walls, thorn rings.
 class Thornmaw extends Boss {
   constructor(x, y, hpMult) { super('thornmaw', x, y, hpMult); this.w = 26; this.h = 18; }
-  checkPhase(ctx) { if (this.updatePhase(ctx, [0.5])) this.moves.enter2(this, ctx); }
   draw(g, cam) {
-    const st = this.state, face = st === 'wind' && Math.abs(this.cdx) > 0.15 ? Math.sign(this.cdx) : this.face;
+    const st = this.state, face = this.face;
     const tele = st === 'wind' && Math.floor(this.t * 14) % 2 === 0;
     const jx = st === 'wind' ? Math.round(Math.sin(this.anim * 70) * 1.5) : 0;
     this.drawBoss(g, { left: cam.left - jx, top: cam.top }, (b, L) => paintThornmaw(b, this, L), {
@@ -188,13 +224,7 @@ class Thornmaw extends Boss {
 
 // Cinder Warden: teleports, fans of embers, vents (punish), eruptions.
 class CinderWarden extends Boss {
-  constructor(x, y, hpMult) {
-    super('cinder', x, y, hpMult);
-    this.w = 18; this.h = 14;
-    this.anchors = [[6, 4], [17, 4], [6, 10], [17, 10]].map(([tx, ty]) => ({ x: tx * TILE + 8, y: ty * TILE + 8 }));
-    this.alpha = 1;
-  }
-  checkPhase(ctx) { if (this.updatePhase(ctx, [0.5, 0.25]) && this.phase === 3) this.summon(ctx, 'skirmisher', 5, 2); }
+  constructor(x, y, hpMult) { super('cinder', x, y, hpMult); this.w = 18; this.h = 14; }
   draw(g, cam) {
     const x = Math.round(this.x - cam.left), y = Math.round(this.y - cam.top);
     const fade = this.state === 'fadeout' || this.state === 'fadein' ? 1 - this.alpha : 0;
@@ -208,18 +238,7 @@ class CinderWarden extends Boss {
 
 // Rime Sovereign: orbits, dashes (stun on walls), shard rain, ice walls.
 class RimeSovereign extends Boss {
-  constructor(x, y, hpMult) {
-    super('rime', x, y, hpMult);
-    this.w = 18; this.h = 14;
-    this.orbitA = 0;
-    this.walls = [];
-  }
-  checkPhase(ctx) {
-    if (this.updatePhase(ctx, [0.6, 0.3])) {
-      if (this.phase === 2) this.moves.enter2(this, ctx);
-      if (this.phase === 3) this.summon(ctx, 'skirmisher', 4, 2);
-    }
-  }
+  constructor(x, y, hpMult) { super('rime', x, y, hpMult); this.w = 18; this.h = 14; }
   draw(g, cam, ctx) {
     // Each falling shard over its landing zone.
     for (const z of ctx.area.zones) {
