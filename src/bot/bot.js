@@ -9,7 +9,7 @@ import { RIDDLES } from '../data/sidequests.js';
 import { Dialog, Menu } from '../gfx/ui.js';
 import { Cutscene } from '../gfx/cutscene.js';
 import { fullMethods } from './full.js';
-import { zoneDanger, HIT_PAD } from '../game/zones.js';
+import { zoneDanger, inZone, HIT_PAD } from '../game/zones.js';
 import { moveActor } from '../game/physics.js';
 import { DODGE_SPEED, DODGE_TIME } from '../game/player.js';
 import { findPath, reachMap, walkable, tileOf, center, besideTile, standableNear, isBush } from './nav.js';
@@ -312,10 +312,10 @@ export class Bot {
     return !e.untargetable && !TELEGRAPH.has(e.pose ?? e.state);
   }
 
-  // Danger at a point: {lv 0..3, block: can a shield stop it, shot: the projectile about to land, if
-  // that's what the danger is}.
+  // Danger at a point: {lv 0..3, block: can a shield stop it, shot: the projectile (or the wave or
+  // ring, as {vx, vy}: the way it comes) about to land, if that's what the danger is}.
   danger(x, y, list) {
-    let lv = 0, block = true, shot = null;
+    let lv = 0, block = true, shot = null, wave = null;
     const bump = (v, blockable) => { if (v > lv) { lv = v; block = blockable; } else if (v === lv && !blockable) block = false; };
     for (const e of list) {
       if (e.boss) {
@@ -349,7 +349,10 @@ export class Bot {
     }
     for (const z of this.g.area.zones) {
       const v = zoneDanger(z, x, y, HIT_PAD);
-      if (v) bump(v, z.blockable);
+      if (!v) continue;
+      bump(v, z.blockable);
+      // A wave or a ring on its way is crossed like a shot, rolling against the way it comes.
+      if (v === 2 && z.t <= 0 && !inZone(z, x, y, HIT_PAD)) wave = z.vx || z.vy ? { vx: z.vx, vy: z.vy, wave: true } : { vx: x - z.x, vy: y - z.y, wave: true };
     }
     for (const pr of this.g.area.entities) {
       if (pr.team !== 'enemy' || pr.vx === undefined || pr.dead || !pr.hitSet || pr.lob) continue; // a lob's landing is a zone
@@ -359,7 +362,7 @@ export class Bot {
       const r = pr.rolling ? pr.zone.w / 2 + 8 : 12, lane = (k) => segDist(x, y, pr.x, pr.y, pr.x + pr.vx * k, pr.y + pr.vy * k) < r;
       if (lane(0.22)) { if (lv <= 2) shot = pr; bump(2, !pr.rolling); } else if (lane(0.45)) bump(1, !pr.rolling);
     }
-    return { lv, block, shot: lv === 2 ? shot : null };
+    return { lv, block, shot: lv === 2 ? shot || wave : null };
   }
 
   fight(list) {
@@ -402,14 +405,17 @@ export class Bot {
     if ((!shield && here.lv >= 2) || here.lv >= 3) {
       // Roll through a shot, not away from it: a roll is quick enough to cross a volley's whole wave
       // before its invulnerability runs out, where rolling off leaves the wave to catch us after.
-      // Not through a warden's thorn ring, though: that roll ends up against its body.
+      // Not through a warden's thorn ring, though: that roll ends up against its body. A wave on its
+      // way is the zone we'd walk out of: the way out is through it, wherever the walk was heading.
       const s = here.shot, l = s && (Math.hypot(s.vx, s.vy) || 1), into = s && [Math.round(-s.vx / l), Math.round(-s.vy / l)];
-      const roll = into && !out && this.safeRoll(into) && !this.rollsOntoBoss(into, list) ? into : mv || [Math.cos(p.aim), Math.sin(p.aim)];
+      const roll = into && (!out || s.wave) && this.safeRoll(into) && !this.rollsOntoBoss(into, list) ? into : mv || [Math.cos(p.aim), Math.sin(p.aim)];
       if (res.stamina >= d.dodgeCost && p.mode === 'normal' && this.time - this.lastDodge > 0.45 && this.safeRoll(roll)) {
         if (roll === into) { for (const k of [K.left, K.right, K.up, K.down]) this.want.delete(k); this.move(into[0], into[1]); }
         this.tap(K.dodge); this.lastDodge = this.time;
       }
     }
+    // A swing pressed with the roll would win over it and swallow it.
+    if (this.lastDodge === this.time) return;
     if (open && dist <= reach && p.cool <= 0 && p.mode === 'normal' && !shield) this.tap(K.attack);
     else if (dist > reach + 2 && dist < 160 && !shield && p.mode === 'normal' && this.rangedReady(focus)) this.tap(K.item);
   }

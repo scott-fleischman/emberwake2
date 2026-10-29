@@ -39,6 +39,28 @@ test('danger levels follow the countdown', () => {
   z.t = -0.1; assert.equal(zoneDanger(z, 0, 0), 3);
   assert.equal(zoneDanger(z, 50, 0), 0);
 });
+// R26: a wave or a ring is read where it will be, not only where it is: the sooner it arrives, the
+// nearer the strike.
+test('a moving zone reads as danger before it arrives, and not once it has passed', () => {
+  const z = makeZone('segment', { x1: -60, y1: -40, x2: 60, y2: -40, w: 10, t: -0.1, life: 3, vy: 100 });
+  assert.equal(inZone(z, 0, 0, 4), false);
+  assert.equal(zoneDanger(z, 0, 0, 4), 1, '0.31 s off: an early warning');
+  z.y1 = z.y2 = -20; assert.equal(zoneDanger(z, 0, 0, 4), 2, '0.11 s off: about to land');
+  z.y1 = z.y2 = -100; assert.equal(zoneDanger(z, 0, 0, 4), 0, 'a second off: nothing yet');
+  z.y1 = z.y2 = 20; assert.equal(zoneDanger(z, 0, 0, 4), 0, 'passed');
+  z.y1 = z.y2 = -20; z.life = 0.15; assert.equal(zoneDanger(z, 0, 0, 4), 0, 'gone before it gets here');
+});
+test('a telegraph that will move once live reads where it is going', () => {
+  const z = makeZone('segment', { x1: -60, y1: -30, x2: 60, y2: -30, w: 10, t: 0.2, life: 3, vy: 100 });
+  assert.equal(zoneDanger(z, 0, 0, 4), 1, 'live in 0.2 s, here 0.21 s after');
+  assert.equal(zoneDanger(makeZone('segment', { x1: -60, y1: -30, x2: 60, y2: -30, w: 10, t: 0.2, life: 3 }), 0, 0, 4), 0, 'one that stays put');
+});
+test('a growing ring reads as danger before it arrives, but not through its gaps or inside it', () => {
+  const z = makeZone('ring', { x: 0, y: 0, r: 20, width: 8, t: -0.1, life: 3, grow: 90, gaps: [[0, 0.4]] });
+  assert.equal(zoneDanger(z, 0, 40, 4), 2);
+  assert.equal(zoneDanger(z, 40, 0, 4), 0, 'in the gap');
+  assert.equal(zoneDanger(z, 0, 4, 4), 0, 'inside: it grows away');
+});
 test('a zone strikes the player once, when its timer runs out', async () => {
   const s = await sandbox();
   const hp0 = s.game.state.player.hp;
@@ -102,6 +124,41 @@ test('the bot reads zones as danger', async () => {
   const s = await sandbox();
   s.area.zones.push(makeZone('circle', { ...s.center, r: 12, t: 0.3 }));
   assert.equal(new Bot(s.game).danger(s.center.x, s.center.y, []).lv, 2);
+});
+// A wave wall to wall can't be walked round or outrun: a roll carries the bot through it while it
+// can't be hurt. Rolling away would only let it catch up once the roll ran out.
+test('the bot rolls through a wave it can\'t get round', async () => {
+  const s = await sandbox(), p = s.game.player, res = s.game.state.player, hp0 = res.hp;
+  const bot = new Bot(s.game, 'any'); bot.task = (function* () { for (;;) yield; })();
+  const { createBoss } = await import('../src/game/bosses.js');
+  Object.assign(s.spawn(createBoss('thornmaw', p.x + 60, p.y)), { state: 'parked', aggro: true }); // something to fight, that does nothing
+  const z = makeZone('segment', { x1: 16, y1: p.y - 60, x2: s.area.map.pixelW - 16, y2: p.y - 60, w: 14, t: 0, life: 3, dmg: 1, vy: 120 });
+  s.area.zones.push(z);
+  let rolled = null;
+  for (let t = 0; t < 2.5; t += 1 / 60) {
+    bot.step(1 / 60); s.game.update(1 / 60); s.app.input.endFrame();
+    if (p.mode === 'dodge' && !rolled) rolled = { dy: p.dodgeY, ahead: z.y1 - p.y };
+  }
+  assert.equal(res.hp, hp0, 'the wave never caught it');
+  assert.ok(rolled && rolled.dy < 0, `rolled up into the wave, not away from it (${JSON.stringify(rolled)})`);
+});
+// From every side, walking out of zones or pressing an opening, a wave wall to wall never catches it.
+test('the bot crosses a wave from any side, pressing an opening or not', async () => {
+  const { createBoss } = await import('../src/game/bosses.js');
+  const caught = [];
+  let n = 0;
+  for (const open of [false, true]) for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+    const cls = ['swordsman', 'mage', 'ranger', 'rogue'][n++ % 4];
+    const s = await sandbox({ cls, seed: `wave${n}` }), p = s.game.player, res = s.game.state.player, hp0 = res.hp, { pixelW: W, pixelH: H } = s.area.map;
+    const bot = new Bot(s.game, 'any'); bot.task = (function* () { for (;;) yield; })();
+    const b = Object.assign(s.spawn(createBoss('thornmaw', p.x + 40, p.y + 40)), open ? { state: 'stunned', timer: 99 } : { state: 'parked' }, { aggro: true });
+    bot.threats = () => [b]; // as in its own room, where the warden is always the fight
+    s.area.zones.push(dy ? makeZone('segment', { x1: 16, y1: p.y - dy * 60, x2: W - 16, y2: p.y - dy * 60, w: 14, t: 0, life: 4, dmg: 1, vy: dy * 120 })
+      : makeZone('segment', { x1: p.x - dx * 60, y1: 16, x2: p.x - dx * 60, y2: H - 16, w: 14, t: 0, life: 4, dmg: 1, vx: dx * 120 }));
+    for (let t = 0; t < 2; t += 1 / 60) { bot.step(1 / 60); s.game.update(1 / 60); s.app.input.endFrame(); }
+    if (res.hp < hp0) caught.push(`${cls} ${open ? 'open' : 'closed'} ${dx},${dy}`);
+  }
+  assert.deepEqual(caught, []);
 });
 test('the bot treats blockable zones as shield-stoppable', async () => {
   const s = await sandbox();

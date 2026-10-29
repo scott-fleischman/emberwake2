@@ -58,12 +58,31 @@ export function inZone(z, x, y, pad = 0) {
   return false;
 }
 
+// How far ahead a moving or growing zone is read along its way, how finely (finer than any zone is
+// thick, at the speeds they move), and how soon its arrival counts as about to land.
+const AHEAD = 0.6, LOOK = 0.1, SOON = 0.3;
+
+// The zone after k seconds of the motion move() gives it.
+function moved(z, k) {
+  const dx = z.vx * k, dy = z.vy * k;
+  if (z.shape === 'segment') return { ...z, x1: z.x1 + dx, y1: z.y1 + dy, x2: z.x2 + dx, y2: z.y2 + dy, w: z.w + z.grow * k * 2 };
+  return { ...z, x: z.x + dx, y: z.y + dy, r: z.r + z.grow * k };
+}
+
 // 0 outside, 1 early warning, 2 about to land, 3 live. A live zone that neither hurts nor afflicts
 // (a burrow's ripple) is nothing to avoid; a harmless telegraph still warns while it counts down, of
-// the strike that follows it (an aim line).
+// the strike that follows it (an aim line). A wave or a ring on its way is read where it will be: it
+// arrives live, so the sooner it gets here the nearer the strike.
 export function zoneDanger(z, x, y, pad = 0) {
-  if (!inZone(z, x, y, pad) || (z.t <= 0 && !z.dmg && !z.effect)) return 0;
-  return z.t <= 0 ? 3 : z.t < 0.9 ? 2 : 1;
+  const harms = z.dmg || z.effect;
+  if (inZone(z, x, y, pad)) return z.t > 0 ? (z.t < 0.9 ? 2 : 1) : harms ? 3 : 0;
+  if (!harms || !(z.vx || z.vy || z.grow)) return 0;
+  for (let s = LOOK; s <= AHEAD + 1e-9; s += LOOK) {
+    if (s >= z.t + z.life) break; // gone by then
+    const k = s - Math.max(0, z.t); // it moves only once live
+    if (k > 0 && inZone(moved(z, k), x, y, pad)) return s < SOON ? 2 : 1;
+  }
+  return 0;
 }
 
 function move(z, dt) {
