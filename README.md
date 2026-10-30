@@ -16,6 +16,14 @@ npm start
 
 Then open http://localhost:5173. There are no dependencies to install; it is plain ES modules served by a tiny Node server. Node 18 or newer is needed.
 
+To play without a server, on Windows or anywhere else:
+
+```bash
+npm run build
+```
+
+This writes `dist/`: a single `index.html` with every module embedded, plus a short `README.txt`. Copy the folder anywhere and double-click `index.html` to play in a recent Edge, Chrome or Firefox. No install or internet connection is needed.
+
 ```bash
 npm test
 ```
