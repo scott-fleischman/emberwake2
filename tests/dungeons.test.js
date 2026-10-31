@@ -682,7 +682,7 @@ test('the Fane\'s monsters are swamp kin as tough as the Sanctuary\'s', async ()
   }
 });
 
-test('the Tidewarden\'s leeches fight at the Fane\'s tier', async () => {
+test('the Tidewarden\'s leech fights at the Fane\'s tier', async () => {
   const s = await sandbox(); s.game.enterDungeon('drowned');
   s.game.state.quest.flags['intro:tide'] = true;
   const a = s.game.area, boss = a.dungeon.rooms[a.dungeon.bossId];
@@ -691,7 +691,7 @@ test('the Tidewarden\'s leeches fight at the Fane\'s tier', async () => {
   b.damage(9999, s.game.player, a.ctx); s.step(2);
   assert.equal(b.phase, 2);
   const leeches = a.enemyList.filter((e) => e.archetype === 'lunger' && !e.boss);
-  assert.equal(leeches.length, 2);
+  assert.equal(leeches.length, 1);
   const tough = enemyStats('lunger', 1, { tier: 1.9 }).hp;
   assert.notEqual(tough, enemyStats('lunger', 1).hp);
   for (const e of leeches) assert.equal(e.maxHp, tough);

@@ -3,7 +3,8 @@
 //   Phase 1, his own form: slow homing gloam bolts, a shadow step behind the player over a marked
 //   circle into a cold-flame scythe, gloam pillars from marked spots.
 //   Phase 2, at half: his robes burn away into a smoke-winged shadow. A gloam ring with three gaps, a
-//   sweeping drain beam, an eclipse that dims the room while bolts come in from its edges, Gloam kin.
+//   sweeping drain beam, an eclipse that dims the room while bolts come in from its edges; one Gloam kin
+//   climbs out of his shadow as it begins.
 //   At 0 he rises instead of dying (the death flow's rise, bossdeath.js) on the sockets' light, with
 //   a fresh bar, and phase 3 is one cycle through the four wardens: six seconds of his own moves, a
 //   shift, then a warden borrowed in his colours, fighting with its phase 1 moves, until two hits
@@ -30,7 +31,7 @@ import {
   BOLT_WIND, BOLT_GAP, STEP, SCYTHE, RECOVER, PILLARS, PILLAR_T, PILLAR_LIFE, RING, RING_T, BEAM_T, BEAM, SPENT, ECLIPSE, CALL, SHIFT, STUN,
 } from '../gfx/art-vesper.js';
 
-const SECOND_BAR = 180;
+const SECOND_BAR = 100;
 const FLOORS = [0.8, 0.6, 0.4, 0.2]; // phase 3: how low he can go with 0, 1, 2, 3 forms broken
 const KINDS = ['thornmaw', 'cinder', 'rime', 'tide'];
 const INTERLUDE = 6, FORM_T = 12;
@@ -41,7 +42,7 @@ const WARDS = Object.values(DUNGEON_FAMILY);
 // The order he reaches for his own moves in, by phase. Phase 3's interludes draw on both.
 const OWN = {
   1: ['bolts', 'pillars', 'step'],
-  2: ['ring', 'bolts', 'step', 'call', 'beam', 'pillars', 'eclipse'],
+  2: ['ring', 'bolts', 'step', 'beam', 'pillars', 'eclipse'],
   3: ['bolts', 'ring', 'step', 'pillars', 'beam', 'eclipse'],
 };
 
@@ -134,9 +135,9 @@ const BEGIN = {
     b.timer = ECLIPSE; b.waves = 0; b.edgeA = Math.random() * TAU;
     ctx.game.audio.sfx('vesper_eclipse');
   },
-  // Two Gloam kin of the wards climb out of his shadow (next() skips the call while any still stand).
+  // A Gloam kin of the wards climbs out of his shadow, once, as his second phase begins.
   call(b, ctx) {
-    b.summon(ctx, 'lunger', WARDS[Math.floor(Math.random() * WARDS.length)], 2, { gloam: true });
+    b.summon(ctx, 'lunger', WARDS[Math.floor(Math.random() * WARDS.length)], 1, { gloam: true });
     smoke(ctx, b.x, b.y - 10, 20, 70);
     b.timer = CALL;
   },
@@ -152,8 +153,7 @@ function next(b, ctx, me, dt) {
     return;
   }
   const order = b.ownOrder;
-  let st = order[b.own++ % order.length];
-  if (st === 'call' && kin(ctx)) st = order[b.own++ % order.length];
+  const st = order[b.own++ % order.length];
   b.state = st; b.cdx = me.dx / me.d; b.cdy = me.dy / me.d;
   BEGIN[st](b, ctx, me, dt);
 }
@@ -232,7 +232,7 @@ export const moves = {
       ctx.game.cam.shake(1.5, 0.12);
     }
   },
-  // His robes burn away; the shadow they hid unfolds its wings, and his Gloam kin come.
+  // His robes burn away; the shadow they hid unfolds its wings, and a Gloam kin comes.
   enter2(b, ctx) {
     ctx.area.spawn(new Particles(b.x, b.y - 40, { count: 30, color: ['#2a1438', '#5a3480', '#c8a0ff', '#ffc070'], speed: 120, life: 0.9, up: 50, gravity: 80 }));
     ctx.game.cam.shake(5, 0.4);

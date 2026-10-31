@@ -38,9 +38,11 @@ const segDist = (px, py, ax, ay, bx, by) => {
 };
 
 export class Bot {
-  constructor(game, mode = 'any') {
+  // watch: sit through every scene and read every line (100%'s way: it shows the whole game).
+  constructor(game, mode = 'any', { watch = mode === 'full' } = {}) {
     this.g = game;
     this.mode = mode; // 'any' | 'full'
+    this.watch = watch;
     this.input = game.input;
     this.want = new Set();
     this.taps = [];
@@ -146,6 +148,8 @@ export class Bot {
     }
     this.uiT += this.dt;
     if (top instanceof Cutscene) {
+      // Watching, a scene plays as a film: every line types out and stays up long enough to read.
+      if (this.watch) { top.autoplay = true; top.hint = ''; return; }
       // Speedrun etiquette: skip story scenes (Esc arms the skip, Esc again skips).
       if (this.uiT > 0.35) { this.tap(K.back); this.uiT = 0.05; }
       return;
@@ -153,14 +157,20 @@ export class Bot {
     if (top instanceof Dialog) {
       const page = top.page;
       if (!page) return;
-      if (top.chars < page.text.length) { if (this.uiT > 0.12) { this.tap(K.confirm); this.uiT = 0; } return; }
-      if (page.options && page.options.length) {
-        const want = this.chooseOption(page);
-        if (top.sel !== want) { if (this.uiT > 0.08) { this.tap(want > top.sel ? K.down : K.up); this.uiT = 0; } return; }
-        if (this.uiT > 0.3) { this.tap(K.confirm); this.uiT = 0; }
+      if (top.chars < page.text.length) { // a speedrunner fills the text in; a watcher lets it type
+        this.typedAt = null;
+        if (!this.watch && this.uiT > 0.12) { this.tap(K.confirm); this.uiT = 0; }
         return;
       }
-      if (this.uiT > 0.45) { this.tap(K.confirm); this.uiT = 0; }
+      this.typedAt ??= this.time;
+      const read = this.time - this.typedAt >= (this.watch ? 1 + page.text.length * 0.03 : 0);
+      if (page.options && page.options.length) {
+        const want = this.chooseOption(page);
+        if (top.sel !== want) { if (read && this.uiT > (this.watch ? 0.35 : 0.08)) { this.tap(want > top.sel ? K.down : K.up); this.uiT = 0; } return; }
+        if (read && this.uiT > (this.watch ? 0.8 : 0.3)) { this.tap(K.confirm); this.uiT = 0; this.typedAt = null; }
+        return;
+      }
+      if (read && this.uiT > 0.45) { this.tap(K.confirm); this.uiT = 0; this.typedAt = null; }
       return;
     }
     if (top instanceof Menu && top.title === 'General Goods' && this.shopping) { this.shop(top); return; }

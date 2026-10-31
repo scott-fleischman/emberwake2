@@ -129,9 +129,9 @@ const SHATTER = {
     b.timer = PILLARS;
     ctx.game.audio.sfx('rime_pillar');
   },
-  // Two shards fly off her and stand as decoys either side of the player.
+  // A shard flies off her and stands as a decoy to one side of the player.
   decoys(b, ctx, { p, dx, dy, d }) {
-    for (const s of [-1, 1]) {
+    for (const s of [Math.random() < 0.5 ? -1 : 1]) {
       const e = new RimeDecoy(p.x - (dy / d) * s * 72, p.y + (dx / d) * s * 72, b);
       placeDecoy(ctx, e, b);
       ctx.area.spawnEnemy(e);
@@ -234,12 +234,12 @@ export const moves = {
     for (const w of b.walls) { w.t -= dt; }
     if (b.walls.length && b.walls.every((w) => w.t <= 0)) clearWalls(b, ctx);
   },
-  // She bursts into shards and reforms larger; her walls rise and the skirmishers come.
+  // She bursts into shards and reforms larger; her walls rise and a skirmisher comes.
   enter2(b, ctx) {
     ctx.area.spawn(new Particles(b.x, b.y - 40, { count: 30, color: ['#ffffff', '#d8f4ff', '#8ec6ea', '#40c8ff'], speed: 140, life: 0.8, up: 20, gravity: 60 }));
     ctx.game.cam.shake(5, 0.4);
     raiseWalls(b, ctx);
-    b.summon(ctx, 'skirmisher', 4, 2);
+    b.summon(ctx, 'skirmisher', 4, 1);
   },
   clear(b, ctx) {
     clearWalls(b, ctx);

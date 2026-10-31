@@ -1,6 +1,7 @@
 // UI layer helpers and components. Drawn on the crisp display canvas in 480x270 "game pixel" units.
 import { UI } from './palette.js';
 import { hot } from '../core/touch.js';
+import { babble } from '../audio/voices.js';
 
 export const FONT = '"Trebuchet MS", "Segoe UI", Verdana, sans-serif';
 export const SERIF = 'Georgia, "Palatino Linotype", "Times New Roman", serif';
@@ -43,10 +44,12 @@ export function panel(u, x, y, w, h, o = {}) {
 
 // ---------------------------------------------------------------- dialog
 export class Dialog {
-  // pages: [{speaker, text, options:[{label, onSelect}]}]
+  // pages: [{speaker, text, voice?, options:[{label, onSelect}]}]. opts.voice: how the speaker
+  // sounds (audio/voices.js); without one, text just ticks as it types.
   constructor(pages, opts = {}) {
     this.pages = pages.filter(Boolean);
     this.i = 0; this.chars = 0; this.sel = 0; this.blip = 0;
+    this.voice = opts.voice || null;
     this.onClose = opts.onClose || null;
     this.done = false;
     this.blocking = true;
@@ -58,9 +61,10 @@ export class Dialog {
     const input = game.input;
     const full = page.text.length;
     if (this.chars < full) {
-      const before = Math.floor(this.chars);
+      const before = this.chars, voice = page.voice ?? (page.speaker ? this.voice : null);
       this.chars = Math.min(full, this.chars + dt * 70);
-      if (Math.floor(this.chars / 3) > Math.floor(before / 3)) game.audio.sfx('talk');
+      if (voice) babble(game.audio, voice, page.text, before, this.chars, 5);
+      else if (Math.floor(this.chars / 3) > Math.floor(before / 3)) game.audio.sfx('talk');
       if (input.pressed('confirm')) this.chars = full;
       return;
     }

@@ -12,17 +12,20 @@ import { moves as cinder } from './warden-cinder.js';
 import { moves as rime } from './warden-rime.js';
 import { moves as tide } from './warden-tide.js';
 import { TAU } from '../core/math.js';
+import { roll } from '../audio/voices.js';
 
 // view: the way it faces until it first moves, the way its entrance and portrait show it.
 export const BOSS_INFO = {
-  thornmaw: { name: 'Thornmaw, Warden of the Grove', hp: 120, music: 'boss', view: 'side' },
-  cinder: { name: 'The Cinder Warden', hp: 144, music: 'boss', view: 'front' },
-  rime: { name: 'Rime Sovereign', hp: 168, music: 'boss', view: 'front' },
-  tide: { name: 'The Tidewarden', hp: 180, music: 'boss', view: 'front' },
-  vesper: { name: 'Vesper, the Unkindled', hp: 220, music: 'boss' },
+  thornmaw: { name: 'Thornmaw, Warden of the Grove', hp: 64, music: 'boss', view: 'side' },
+  cinder: { name: 'The Cinder Warden', hp: 84, music: 'boss', view: 'front' },
+  rime: { name: 'Rime Sovereign', hp: 104, music: 'boss', view: 'front' },
+  tide: { name: 'The Tidewarden', hp: 124, music: 'boss', view: 'front' },
+  vesper: { name: 'Vesper, the Unkindled', hp: 150, music: 'boss' },
 };
 export const DIE = 1.6; // seconds a warden takes to dematerialize
 const TRANSFORM = 1.5; // seconds the change into phase 2 takes, unhurtable
+// States in which a boss is between blows: it growls as it leaves one for a move, now and then in one.
+const CALM = new Set(['intro', 'stalk', 'orbit', 'drift', 'recover', 'spent', 'ready', 'skid', 'fadeout', 'vent', 'transform', 'dying', 'defeated']);
 
 // Each warden's fight as a moveset: a table of state handlers any boss body can run (see runMoves).
 // A moveset is {
@@ -85,6 +88,7 @@ export class Boss extends Actor {
     this.vulnerable = false;
     this.summoned = 0;
     this.face = -1; this.view = this.info.view; this.roarT = 0; this.phaseT = 9; this.mvx = this.mvy = 0; // visual only
+    this.saidState = 'intro'; this.growlT = -9; this.hurtT = -9; // its voice (vocalize)
   }
   update(dt, ctx) {
     if (this.hp <= 0 && this.state !== 'dying') return; // killed this frame (the player updates first): the death flow has the stage
@@ -94,7 +98,21 @@ export class Boss extends Actor {
     this.timer -= dt;
     if (this.state === 'transform') return this.transformUpdate(dt, ctx);
     this.runMoves(this.moves, dt, ctx);
+    this.vocalize(ctx);
   }
+  // Its voice through the fight: a growl as a move begins (and now and then between them), a groan
+  // when it is stunned. Pained grunts come from damage().
+  vocalize(ctx) {
+    const st = this.state;
+    if (st === this.saidState) {
+      if (CALM.has(st) && st !== 'intro' && this.t - this.growlT > 5 + roll() * 3) this.growl(ctx, 0.6);
+      return;
+    }
+    this.saidState = st;
+    if (st === 'stunned') ctx.game.audio.sfx(`${this.kind}_hurt`, { pitch: 0.75 });
+    else if (!CALM.has(st) && this.t - this.growlT > 1.6 && roll() < 0.7) this.growl(ctx, 1);
+  }
+  growl(ctx, volume) { this.growlT = this.t; ctx.game.audio.sfx(`${this.kind}_growl`, { volume, pitch: 0.95 + roll() * 0.1 }); }
   // One frame of a moveset: phase 2's handler for the state if it has one, else phase 1's. me is
   // where the player is from here. The punish window (and any untargetable state) is read before
   // the handler runs, so it follows the state the frame began in.
@@ -155,6 +173,7 @@ export class Boss extends Actor {
     this.hp = Math.max(this.floor(), this.hp - dmg);
     this.flash = 0.12;
     ctx.game.audio.sfx('hit', { pitch: 0.7 });
+    if (this.t - this.hurtT > 0.35) { this.hurtT = this.t; ctx.game.audio.sfx(`${this.kind}_hurt`, { pitch: 0.95 + roll() * 0.1 }); }
     if (this.vulnerable) ctx.area.spawn(new Particles(this.x, this.y - 24, { count: 6, color: '#fff0a0', speed: 50, life: 0.3 }));
     if (this.hp <= 0) ctx.game.beginBossDeath(this, this.deathOpts());
     return true;

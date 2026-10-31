@@ -136,11 +136,11 @@ export const moves = {
       if (z.lava) ctx.area.spawn(new Particles(z.x, z.y, { count: 10, color: ['#ff5a10', '#ffb040'], speed: 45, life: 0.45, up: 25 }));
     }
   },
-  // Its plates blast off, and the skirmishers come.
+  // Its plates blast off, and a skirmisher comes.
   enter2(b, ctx) {
     ctx.area.spawn(new Particles(b.x, b.y - 42, { count: 26, color: ['#34282c', '#64525a', '#ff8a30', '#fff2a8'], speed: 120, life: 0.9, up: 50, gravity: 120 }));
     ctx.game.cam.shake(5, 0.4);
-    b.summon(ctx, 'skirmisher', 5, 2);
+    b.summon(ctx, 'skirmisher', 5, 1);
   },
   clear() {},
 };

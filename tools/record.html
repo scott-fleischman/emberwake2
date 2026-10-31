@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Emberwake recorder</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    canvas { display: block; image-rendering: pixelated; }
+  </style>
+</head>
+<body>
+  <!-- tools/record.mjs opens this page: the game, stepped frame by frame by record-page.js. -->
+  <canvas id="game"></canvas>
+  <script>window.EMBERWAKE_MANUAL = true;</script>
+  <script type="module" src="../src/main.js"></script>
+  <script type="module" src="record-page.js"></script>
+</body>
+</html>
