@@ -7,6 +7,7 @@ import { drawDarkness } from './render.js';
 import { text, wrap, SERIF } from './ui.js';
 import { UI } from './palette.js';
 import { hot, TOUCH } from '../core/touch.js';
+import { babble, voiceFor } from '../audio/voices.js';
 
 const CPS = 42;           // typewriter characters per second
 const FADE = 0.35;        // seconds to fade between panels
@@ -16,6 +17,8 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const easeOut = (v) => 1 - (1 - clamp01(v)) ** 3;
 // Shot sfx: a name, or a list of names / [name, opts] pairs.
 const playSfx = (game, list) => { for (const e of [].concat(list)) { if (Array.isArray(e)) game.audio.sfx(e[0], e[1]); else if (e) game.audio.sfx(e); } };
+// A cue: a sound, or 'amb:<key>' to change the bed of sound under the scene mid-shot.
+const playCue = (game, n, o) => { if (n.startsWith('amb:')) game.audio.ambience?.(n.slice(4) || null); else game.audio.sfx(n, o); };
 
 export class Cutscene {
   constructor(shots, opts = {}) {
@@ -59,6 +62,7 @@ export class Cutscene {
     if (!s) return;
     if (s.sfx) playSfx(game, s.sfx);
     if (s.music) game.audio.playMusic(s.music);
+    game.audio.ambience?.(s.amb ?? null); // the bed of sound under the shot, if it has one
     if (s.run) s.run(game);
     if (s.shake && !s.art && game.cam && this.ctx.shake !== false) game.cam.shake(s.shake, 0.8);
   }
@@ -78,6 +82,7 @@ export class Cutscene {
   finish(game) {
     if (this.done) return;
     this.done = true;
+    game.audio.ambience?.(null);
     this.release(game);
     if (this.onDone) this.onDone(game);
   }
@@ -137,14 +142,14 @@ export class Cutscene {
     this.t += dt;
     // In-engine shots can steer the camera: a slow pan toward `look` (world pixels).
     if (s.look && game.cam && game.area?.map) game.cam.follow(s.look.x, s.look.y, game.area.map.pixelW, game.area.map.pixelH, dt * 0.22);
-    while (s.cues && this.cue < s.cues.length && this.t >= s.cues[this.cue][0]) { const [, n, o] = s.cues[this.cue++]; game.audio.sfx(n, o); }
+    while (s.cues && this.cue < s.cues.length && this.t >= s.cues[this.cue][0]) { const [, n, o] = s.cues[this.cue++]; playCue(game, n, o); }
     this.direct(dt, game, s);
     if (s.spirit) this.spiritA = Math.min(1, this.spiritA + dt * (s.fadeSpirit ? 0 : 1.2));
     if (s.fadeSpirit) this.spiritA = Math.max(0, this.spiritA - dt * 0.8);
     if (s.text && this.chars < s.text.length) {
-      const before = Math.floor(this.chars / 4);
+      const before = this.chars;
       this.chars = Math.min(s.text.length, this.chars + dt * CPS);
-      if (s.speaker && Math.floor(this.chars / 4) > before) game.audio.sfx('talk');
+      if (s.speaker) babble(game.audio, s.voice ?? voiceFor(s.speaker), s.text, before, this.chars);
     }
     const pressed = this.t > INPUT_GRACE && input.pressed('confirm');
     if (pressed) {

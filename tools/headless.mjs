@@ -22,7 +22,7 @@ export function installHeadless() {
   globalThis.window = globalThis;
 }
 
-export const silentAudio = { sfx() {}, playMusic(k) { this.cur = { key: k }; }, stopMusic() {}, update() {}, init() {}, setMusicVolume() {}, setSfxVolume() {} };
+export const silentAudio = { sfx() {}, playMusic(k) { this.cur = { key: k }; }, stopMusic() {}, ambience() {}, update() {}, init() {}, setMusicVolume() {}, setSfxVolume() {} };
 
 // A minimal App stand-in that GameScene accepts.
 export async function makeApp(options = {}) {

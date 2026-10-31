@@ -151,24 +151,24 @@ test('a warden entered straight at its first state fights at once (init sets wha
     assert.ok(Number.isFinite(b.x) && Number.isFinite(b.y), `${kind} stays put somewhere real`);
   }
 });
-test('wardens have double HP and transform at half', async () => {
+test('wardens transform at half health', async () => {
   const s = await sandbox();
   const b = s.spawn(createBoss('thornmaw', s.center.x, s.center.y - 40)); b.state = 'stalk';
-  assert.equal(b.maxHp, 120);
-  b.damage(61, s.game.player, s.game.area.ctx);
+  assert.equal(b.maxHp, 64);
+  b.damage(33, s.game.player, s.game.area.ctx);
   s.step(0.05); assert.equal(b.state, 'transform'); assert.ok(b.untargetable);
   s.step(1.6); assert.equal(b.phase, 2); assert.notEqual(b.state, 'transform');
 });
 test('the transform roars in the warden\'s own voice, swells the music, then runs phase 2\'s entry', async () => {
-  assert.deepEqual([createBoss('cinder', 0, 0).maxHp, createBoss('rime', 0, 0).maxHp], [144, 168]);
+  assert.deepEqual([createBoss('cinder', 0, 0).maxHp, createBoss('rime', 0, 0).maxHp, createBoss('tide', 0, 0).maxHp], [84, 104, 124]);
   const s = await sandbox(), heard = [];
   s.app.audio.sfx = (name) => heard.push(name);
   const b = s.spawn(createBoss('thornmaw', s.center.x, s.center.y - 40)); b.state = 'stalk';
-  b.damage(70, s.game.player, s.area.ctx); s.step(0.05);
+  b.damage(40, s.game.player, s.area.ctx); s.step(0.05);
   assert.ok(heard.includes('thornmaw_phase')); assert.equal(s.app.audio.cur.key, 'boss2');
   assert.equal(b.damage(5, s.game.player, s.area.ctx), false, 'no hurting it mid-transform');
   s.step(1.5);
-  assert.equal(s.area.enemyList.filter((e) => e.archetype === 'lunger' && !e.dead).length, 2, 'enter2 ran');
+  assert.equal(s.area.enemyList.filter((e) => e.archetype === 'lunger' && !e.dead).length, 1, 'enter2 ran: one minion, no more');
   assert.equal(b.state, WARDEN_MOVES.thornmaw.first2 ?? WARDEN_MOVES.thornmaw.first);
 });
 test('a huge hit cannot skip phase 2', async () => {
@@ -669,7 +669,7 @@ test('the Shatter attacks do what they promise, each in its own voice', async ()
   ({ s, b, p, heard } = await cast(4));
   assert.equal(b.state, 'decoys');
   const decoys = s.area.enemyList.filter((e) => e instanceof RimeDecoy);
-  assert.equal(decoys.length, 2);
+  assert.equal(decoys.length, 1);
   assert.ok(decoys.every((d) => d.hp === 1 && d.owner === b && d.team === 'enemy'));
   assert.ok(heard.includes('rime_decoy'));
   const edge = 32;
@@ -763,8 +763,8 @@ test('Tide front and back views differ from the side, in both forms', () => {
     assert.notEqual(draw('front'), draw('side')); assert.notEqual(draw('back'), draw('side')); assert.notEqual(draw('front'), draw('back'));
   }
 });
-test('the Tidewarden is a warden of 180 HP, punished only when it surfaces dazed or is spent after a wave', () => {
-  assert.equal(createBoss('tide', 0, 0).maxHp, 180);
+test('the Tidewarden is a warden of 124 HP, punished only when it surfaces dazed or is spent after a wave', () => {
+  assert.equal(createBoss('tide', 0, 0).maxHp, 124);
   assert.equal(createBoss('tide', 0, 0).name, 'The Tidewarden');
   const m = WARDEN_MOVES.tide;
   for (const state of ['jets', 'sweep', 'dive', 'surface', 'wave', 'spent', 'whirl', 'rings']) {
@@ -888,7 +888,7 @@ test('the Wail attacks do what they promise, each in its own voice', async () =>
   fight(s, first.t + 1);
   assert.ok(close(first.r - r0, -first.t * 90, 1), `grown ${(first.r - r0).toFixed(1)} px in ${(-first.t).toFixed(2)} s`);
 });
-test('the Tidewarden sheds its coral where it stands and calls Mire Leeches', async () => {
+test('the Tidewarden sheds its coral where it stands and calls a Mire Leech', async () => {
   const s = await sandbox(), heard = [];
   s.app.audio.sfx = (name) => heard.push(name);
   const b = s.spawn(createBoss('tide', s.center.x, s.center.y - 40)); b.state = 'jets';
@@ -897,7 +897,7 @@ test('the Tidewarden sheds its coral where it stands and calls Mire Leeches', as
   assert.equal(b.state, 'transform'); assert.ok(heard.includes('tide_phase'));
   s.step(1.5);
   const leeches = s.area.enemyList.filter((e) => e.archetype === 'lunger' && !e.dead);
-  assert.equal(leeches.length, 2); assert.ok(leeches.every((e) => e.name === 'Mire Leech'), leeches.map((e) => e.name).join());
+  assert.equal(leeches.length, 1); assert.ok(leeches.every((e) => e.name === 'Mire Leech'), leeches.map((e) => e.name).join());
   assert.deepEqual([b.phase, b.state, b.x, b.y], [2, 'jets', at.x, at.y]);
 });
 test('every Tide sound is its own', () => {

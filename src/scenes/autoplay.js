@@ -19,16 +19,18 @@ export const fmtTime = (t, cs = true) => {
 };
 
 export class AutoplayScene {
-  constructor(app, { mode = 'any', classId = 'swordsman', seed } = {}) {
+  // movie: filmed (tools/record.mjs): no buttons or key hints, and the overlay steps aside for scenes.
+  constructor(app, { mode = 'any', classId = 'swordsman', seed, movie = false } = {}) {
     this.app = app;
     this.opts = { mode, classId };
+    this.movie = movie;
     this.seed = seed || `run${Math.floor(Math.random() * 9000 + 1000)}`;
     const game = new GameScene(app, newGameState(this.seed, classId));
     game.input = new Input();
     game.saveGame = () => true;
     // Quiet the sound effects when fast-forwarding.
     const audio = app.audio;
-    game.audio = { sfx: (...a) => { if (this.speed <= 2 && !this.skip) audio.sfx(...a); }, playMusic: (k) => audio.playMusic(k), stopMusic: () => audio.stopMusic(), get cur() { return audio.cur; } };
+    game.audio = { sfx: (...a) => { if (this.speed <= 2 && !this.skip) audio.sfx(...a); }, playMusic: (k) => audio.playMusic(k), stopMusic: () => audio.stopMusic(), ambience: (k) => audio.ambience(k), get cur() { return audio.cur; } };
     this.game = game;
     this.bot = new Bot(game, mode);
     this.speed = 2;
@@ -97,6 +99,7 @@ export class AutoplayScene {
   touchMode() { return 'watch'; }
 
   touchButtons() {
+    if (this.movie) return null;
     if (this.bot.done) return [{ label: 'New run ▶', act: 'Enter' }, { label: 'Title', act: 'Escape' }];
     if (this.skip) return [{ label: `Skipping to ${this.skip.label}…`, act: null, on: true }, { label: 'Stop', act: 'KeyX' }];
     const t = this.skipTarget();
@@ -110,11 +113,13 @@ export class AutoplayScene {
     ];
   }
 
+  viewZoom() { return this.game.viewZoom(); }
   drawWorld(g) { this.game.drawWorld(g); }
 
   drawUI(u) {
     this.game.drawUI(u);
     const b = this.bot, s = this.game.state;
+    if (this.movie && this.game.uiStack.length && !b.done) return; // nothing over a scene's or a conversation's words
     const title = this.opts.mode === 'full' ? '100% RUN' : 'ANY% SPEEDRUN';
     // Timer card
     panel(u, 6, 228, 170, 36, { fill: 'rgba(10,8,14,0.82)', r: 3 });
@@ -135,7 +140,7 @@ export class AutoplayScene {
         text(u, value, 470, 106 + k * 9, { size: 5.5, align: 'right', color: UI.gold });
       });
     }
-    text(u, '←→ speed · Space pause · N skip ahead · End finish · Esc quit', 472, 266, { size: 5, align: 'right', color: UI.dim });
+    if (!this.movie) text(u, '←→ speed · Space pause · N skip ahead · End finish · Esc quit', 472, 266, { size: 5, align: 'right', color: UI.dim });
     if (this.skip) {
       u.fillStyle = 'rgba(0,0,0,0.35)'; u.fillRect(0, 108, 480, 34);
       text(u, `Fast-forwarding to ${this.skip.label}…`, 240, 124, { size: 10, align: 'center', family: SERIF, color: '#f4dcb0' });

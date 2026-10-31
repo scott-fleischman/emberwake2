@@ -1,6 +1,9 @@
 // Emberwake audio: procedural WebAudio music and SFX. No assets, no network, no dependencies.
 // Music is a lookahead pattern sequencer driving a soft synthesized piano through a
 // procedural convolver reverb; each region key has its own scale, tempo, register and texture.
+// The title theme is composed instead (a score: horns, strings, drums). Voices, creature cries and
+// ambience beds live in voices.js.
+import { speak, cry, AMBIENCE } from './voices.js';
 
 const G = typeof globalThis !== 'undefined' ? globalThis : {};
 const FADE = 1.5;          // crossfade seconds
@@ -62,7 +65,7 @@ function chordTones(d, deg) {
 // Pattern strings: one char per step within a chord. Bass: R/T/F/O or '.'.
 // Arp: digit = chord-tone index (wraps up by octaves). Comp: 'x' = soft chord.
 const DEF = {
-  bpm: 80, sub: 2, root: 60, scale: S.major, voicing: 'triad', fold: true,
+  bpm: 80, sub: 2, root: 60, scale: S.major, voicing: 'triad', fold: true, score: null,
   chordSteps: 8, progs: [[0]], breathe: 0.1,
   bass: null, bassOct: -1, bassVel: 0.45, bassHold: 4,
   comp: null, compOct: 0, compVel: 0.25, compHold: 2,
@@ -73,7 +76,7 @@ const DEF = {
 };
 
 const RAW = {
-  title: {
+  hearth: { // the old lullaby of the Hearth, for the true ending
     bpm: 66, root: 62, progs: [[0, 4, 5, 3], [0, 5, 3, 4], [3, 4, 2, 5]],
     bass: 'R.......', bassOct: -2, bassHold: 8,
     arp: '0123.21.', arpVel: 0.34, arpHold: 6, breathe: 0.04,
@@ -168,11 +171,60 @@ const RAW = {
   },
 };
 
+// The title: the adventure starting. A composed march in D (see SCORES): horn melody, galloping
+// low strings, timpani and snare, a harp in the second verse.
+RAW.title = { bpm: 104, root: 62, score: 'title', voice: { bright: 0.8, decay: 0.7 }, wet: 0.3, gain: 1, seed: 11 };
+
 // A warden's second phase: its theme driven harder, on bare fifths an octave down.
 RAW.boss2 = { ...RAW.boss, bpm: 156, voicing: 'fifth', bassOct: -2, bassVel: 0.5, compOct: -1, drone: 0.5, voice: { bright: 0.45, decay: 0.5 }, seed: 127 };
 
 const TRACKS = Object.fromEntries(Object.entries(RAW).map(([k, v]) =>
   [k, { ...DEF, ...v, voice: { ...DEF.voice, ...v.voice } }]));
+
+// ---------- scores ----------
+// A composed piece rather than a generated one. Each section has chords (a scale degree per bar, or
+// two for a change at the half bar), a horn melody ([bar, step, midi, steps]; eight eighth-note
+// steps to the bar) and the parts that play: strings (level), gallop, timp, snare, harp (levels),
+// double (the horn an octave down too), roll ({bar: from step}: a drum roll to the next bar) and
+// swell ([bars]: a cymbal swelling into the next). The form plays in order, then loops from `loop`.
+const A_CH = [[0], [3], [5], [4], [0], [3], [1, 4], [0]];
+const B_CH = [[5], [3], [0], [4], [5], [3], [1, 4], [4]];
+const at = (bar, notes) => notes.map(([step, midi, len]) => [bar, step, midi, len]);
+const A_MEL = [
+  ...at(0, [[0, 74, 3], [3, 69, 1], [4, 74, 2], [6, 76, 1], [7, 78, 1]]),
+  ...at(1, [[0, 79, 4], [4, 78, 2], [6, 76, 2]]),
+  ...at(2, [[0, 78, 3], [3, 74, 1], [4, 71, 4]]),
+  ...at(3, [[0, 73, 2], [2, 74, 1], [3, 76, 1], [4, 69, 4]]),
+  ...at(4, [[0, 74, 3], [3, 69, 1], [4, 74, 2], [6, 76, 1], [7, 78, 1]]),
+  ...at(5, [[0, 79, 3], [3, 81, 1], [4, 83, 2], [6, 81, 1], [7, 79, 1]]),
+  ...at(6, [[0, 78, 2], [2, 76, 2], [4, 76, 1], [5, 78, 1], [6, 76, 1], [7, 73, 1]]),
+  ...at(7, [[0, 74, 6]]),
+];
+const B_MEL = [
+  ...at(0, [[0, 71, 2], [2, 73, 1], [3, 74, 1], [4, 78, 4]]),
+  ...at(1, [[0, 76, 2], [2, 74, 1], [3, 71, 1], [4, 74, 4]]),
+  ...at(2, [[0, 69, 2], [2, 71, 1], [3, 73, 1], [4, 74, 2], [6, 78, 2]]),
+  ...at(3, [[0, 76, 6]]),
+  ...at(4, [[0, 78, 2], [2, 79, 1], [3, 81, 1], [4, 83, 4]]),
+  ...at(5, [[0, 79, 2], [2, 81, 1], [3, 83, 1], [4, 86, 4]]),
+  ...at(6, [[0, 83, 2], [2, 79, 2], [4, 81, 2], [6, 73, 2]]),
+  ...at(7, [[0, 76, 3], [3, 73, 1], [4, 69, 2], [6, 73, 1], [7, 76, 1]]),
+];
+const SCORES = {
+  title: {
+    form: ['intro', 'A', 'B', 'A2', 'B2', 'bridge'], loop: 1,
+    sections: {
+      intro: { chords: [[0], [4]], mel: at(1, [[0, 69, 2], [2, 73, 1], [3, 76, 1], [4, 81, 4]]), parts: { strings: 0.5, roll: { 0: 0 }, swell: [0], timp: 0.7 } },
+      A: { chords: A_CH, mel: A_MEL, parts: { strings: 0.55, gallop: 0.9, timp: 0.8, snare: 0.5 } },
+      B: { chords: B_CH, mel: B_MEL, parts: { strings: 0.6, gallop: 0.9, timp: 0.8, snare: 0.6, harp: 0.8, roll: { 7: 4 } } },
+      A2: { chords: A_CH, mel: A_MEL, parts: { strings: 0.65, gallop: 1, timp: 1, snare: 0.9, harp: 0.9, double: 1 } },
+      B2: { chords: B_CH, mel: B_MEL, parts: { strings: 0.7, gallop: 1, timp: 1, snare: 0.9, harp: 1, double: 1, roll: { 7: 4 }, swell: [7] } },
+      bridge: { chords: [[5], [3], [1], [4]], mel: [...at(0, [[0, 66, 4], [4, 71, 4]]), ...at(1, [[0, 71, 4], [4, 74, 4]]), ...at(2, [[0, 67, 4], [4, 71, 4]]), ...at(3, [[0, 73, 8]])], parts: { strings: 0.45, harp: 0.7, timp: 0.4, roll: { 3: 4 } } },
+    },
+  },
+};
+const GALLOP = [0, 2, 3, 4, 6, 7];
+const HARP = [0, 1, 2, 3, 4, 5, 4, 2];
 
 // ---------- SFX definitions ----------
 // Each receives the engine and a start time. Frequencies are scaled by opts.pitch
@@ -804,16 +856,136 @@ const SFX = {
     a.noise(t + 0.18, { dur: 0.3, vol: 0.18, type: 'lowpass', f: 1500, f2: 200 });
     a.tone(t + 0.18, { f: 120, f2: 60, dur: 0.2, vol: 0.2 });
   },
+  // voices and cries (voices.js): o.v is a voice (a VOICES key or a profile), o.kind/o.mood a cry
+  voice: (a, t, o) => speak(a, t, o.v, o),
+  cry: (a, t, o) => cry(a, t, o.kind, o.mood),
+  // wardens in the fight: a growl as a move begins, a pained grunt when a blow lands
+  thornmaw_growl: (a, t) => { // a woody, wet snort and rumble
+    a.tone(t, { type: 'sawtooth', f: 82, f2: 98, dur: 0.45, vol: 0.14, lp: 480, lp2: 900, attack: 0.05 });
+    a.noise(t, { dur: 0.35, vol: 0.09, type: 'lowpass', f: 600, f2: 1200, q: 2, attack: 0.04 });
+    [0.1, 0.2].forEach((d) => a.noise(t + d, { dur: 0.03, vol: 0.07, type: 'highpass', f: 2800 }));
+  },
+  thornmaw_hurt: (a, t) => { // a squeal through bark, a creak of wood
+    a.tone(t, { type: 'sawtooth', f: 240, f2: 150, dur: 0.22, vol: 0.12, lp: 1400, attack: 0.01 });
+    a.tone(t + 0.05, { type: 'sawtooth', f: 130, f2: 105, dur: 0.18, vol: 0.06, lp: 600, q: 5 });
+  },
+  cinder_growl: (a, t) => { // a furnace-breath through the helm
+    a.tone(t, { type: 'sawtooth', f: 70, f2: 86, dur: 0.5, vol: 0.13, lp: 500, lp2: 1200, attack: 0.08 });
+    a.noise(t, { dur: 0.5, vol: 0.12, type: 'lowpass', f: 500, f2: 1800, attack: 0.1 });
+  },
+  cinder_hurt: (a, t) => { // a clang off the plates, a hiss of flame
+    a.tone(t, { type: 'triangle', f: 640, f2: 600, dur: 0.25, vol: 0.07, attack: 0.002 });
+    a.tone(t, { type: 'triangle', f: 1012, dur: 0.18, vol: 0.04, attack: 0.002 });
+    a.tone(t, { type: 'sawtooth', f: 120, f2: 85, dur: 0.2, vol: 0.09, lp: 700 });
+    a.noise(t + 0.03, { dur: 0.25, vol: 0.06, type: 'highpass', f: 4500 });
+  },
+  rime_growl: (a, t) => { // an owl's hiss, frost crackling
+    a.noise(t, { dur: 0.45, vol: 0.1, type: 'bandpass', f: 3000, f2: 1800, q: 1.5, attack: 0.06 });
+    a.tone(t, { type: 'sawtooth', f: 900, f2: 1250, dur: 0.3, vol: 0.035, lp: 2600, attack: 0.04 });
+    [0.12, 0.22, 0.3].forEach((d) => a.noise(t + d, { dur: 0.02, vol: 0.05, type: 'highpass', f: 4200 }));
+  },
+  rime_hurt: (a, t) => { // a sharp shriek and a ring of struck ice
+    a.tone(t, { type: 'sawtooth', f: 1600, f2: 1100, dur: 0.16, vol: 0.05, lp: 3200 });
+    a.tone(t, { f: 2400, dur: 0.3, vol: 0.04, attack: 0.002 });
+  },
+  tide_growl: (a, t) => { // a deep, bubbling moan
+    a.tone(t, { type: 'sawtooth', f: 62, f2: 78, dur: 0.6, vol: 0.13, lp: 420, attack: 0.1 });
+    [0.1, 0.22, 0.34].forEach((d, i) => a.tone(t + d, { f: 280 + i * 60, f2: 480 + i * 80, dur: 0.05, vol: 0.05 }));
+  },
+  tide_hurt: (a, t) => { // a wet bellow
+    a.tone(t, { type: 'sawtooth', f: 120, f2: 80, dur: 0.3, vol: 0.13, lp: 800, attack: 0.02 });
+    a.noise(t, { dur: 0.25, vol: 0.09, type: 'lowpass', f: 1500, f2: 400 });
+  },
+  vesper_growl: (a, t) => { // a cold whisper and a low chuckle
+    a.noise(t, { dur: 0.6, vol: 0.08, type: 'bandpass', f: 1800, f2: 900, q: 3, attack: 0.2 });
+    [0, 0.14, 0.27].forEach((d, i) => a.tone(t + 0.15 + d, { type: 'sawtooth', f: 120 - i * 6, f2: 100 - i * 6, dur: 0.1, vol: 0.06, lp: 800 }));
+  },
+  vesper_hurt: (a, t) => { // an old man's pained gasp, a crack of gloam
+    a.tone(t, { type: 'sawtooth', f: 210, f2: 140, dur: 0.25, vol: 0.08, lp: 1300, attack: 0.01 });
+    a.noise(t, { dur: 0.2, vol: 0.06, type: 'bandpass', f: 1200, f2: 700, q: 2 });
+    a.tone(t, { type: 'triangle', f: 900, f2: 500, dur: 0.12, vol: 0.04 });
+  },
+  // story scenes
+  meteor_fall: (a, t) => { // a shriek coming down out of the sky, the air roaring louder as it nears
+    a.tone(t, { f: 2200, f2: 260, dur: 2.3, vol: 0.05, attack: 1.2 });
+    a.tone(t + 0.3, { type: 'sawtooth', f: 1400, f2: 180, dur: 2, vol: 0.02, attack: 1.2, lp: 2500 });
+    a.noise(t, { dur: 2.3, vol: 0.2, f: 700, f2: 2400, q: 0.7, attack: 2.1 });
+    a.noise(t + 0.8, { dur: 1.5, vol: 0.18, type: 'lowpass', f: 120, f2: 400, attack: 1.3 });
+  },
+  meteor_boom: (a, t) => { // the impact: a great boom, the ground shaking, rocks raining back down
+    a.noise(t, { dur: 2.6, vol: 0.55, type: 'lowpass', f: 3500, f2: 60, q: 0.5, attack: 0.003 });
+    a.tone(t, { f: 90, f2: 24, dur: 2.2, vol: 0.6 });
+    a.tone(t, { f: 55, f2: 30, dur: 3, vol: 0.4, attack: 0.05 });
+    a.noise(t, { dur: 0.08, vol: 0.4, type: 'highpass', f: 2000 });
+    [0.5, 0.7, 0.85, 1.05, 1.2, 1.5, 1.7].forEach((d, i) => a.noise(t + d, { dur: 0.06, vol: 0.12 - i * 0.012, type: 'bandpass', f: 600 + i * 150, q: 2 }));
+  },
+  spark_fly: (a, t) => { // a spark leaping away: a rising whoosh and shimmer
+    a.noise(t, { dur: 0.7, vol: 0.09, f: 900, f2: 4200, q: 2, attack: 0.15 });
+    a.tone(t, { type: 'triangle', f: 700, f2: 1800, dur: 0.6, vol: 0.03, attack: 0.1 });
+  },
+  spark_land: (a, t) => a.notes(t, [79, 86, 91], 0.06, { type: 'triangle', dur: 0.8, vol: 0.05 }), // and settling, chiming
+  stone_rise: (a, t) => { // a tower raised out of the earth: a long grinding rumble
+    a.noise(t, { dur: 2.6, vol: 0.14, type: 'lowpass', f: 160, f2: 520, q: 1.5, attack: 0.5 });
+    a.tone(t, { type: 'sawtooth', f: 38, f2: 50, dur: 2.6, vol: 0.06, lp: 200, attack: 0.5 });
+    [0.6, 1.1, 1.7, 2.2].forEach((d) => a.noise(t + d, { dur: 0.1, vol: 0.08, type: 'lowpass', f: 900 }));
+  },
+  seal: (a, t) => { // chains dragged taut, then the seal slamming shut with a deep boom
+    [0, 0.09, 0.21, 0.3, 0.41].forEach((d, i) => { a.tone(t + d, { type: 'triangle', f: 900 + (i % 3) * 270, dur: 0.12, vol: 0.05 }); a.tone(t + d, { type: 'triangle', f: 1410 + (i % 2) * 330, dur: 0.08, vol: 0.03 }); });
+    a.tone(t + 0.55, { f: 70, f2: 30, dur: 1.6, vol: 0.5 });
+    a.noise(t + 0.55, { dur: 1.2, vol: 0.25, type: 'lowpass', f: 1200, f2: 80 });
+  },
+  rekindle: (a, t) => { // the Hearth roaring up: a rushing whoomph, then sparks
+    a.noise(t + 0.2, { dur: 1.6, vol: 0.3, type: 'lowpass', f: 200, f2: 3200, attack: 0.4 });
+    a.tone(t + 0.2, { f: 70, f2: 140, dur: 1.2, vol: 0.2, attack: 0.3 });
+    [0.6, 0.75, 0.9, 1.1, 1.3].forEach((d) => a.noise(t + d, { dur: 0.02, vol: 0.12, type: 'highpass', f: 3500 }));
+  },
+  whisper: (a, t) => { // someone close by, breathing a word
+    [[0, 1800, 2400], [0.22, 1300, 1700], [0.5, 2100, 1500]].forEach(([d, f, f2]) => a.noise(t + d, { dur: 0.22, vol: 0.06, type: 'bandpass', f, f2, q: 4, attack: 0.06 }));
+  },
+  twinkle: (a, t) => a.notes(t, [96, 100, 103, 108], 0.07, { type: 'triangle', dur: 0.5, vol: 0.03 }),
+  fanfare: (a, t) => { // the title slams in: a timpani roll ending in a crash
+    for (let i = 0; i < 10; i++) a.tone(t + i * 0.05, { f: 98, f2: 86, dur: 0.12, vol: 0.08 + i * 0.02 });
+    a.tone(t + 0.5, { f: 73, f2: 62, dur: 1.4, vol: 0.45 });
+    a.noise(t + 0.5, { dur: 2, vol: 0.12, type: 'highpass', f: 4500, f2: 3000, attack: 0.005 });
+  },
+  spirit_stag: (a, t) => { // the stag's bellow
+    a.tone(t, { type: 'sawtooth', f: 120, f2: 190, dur: 0.7, vol: 0.1, lp: 700, lp2: 1300, attack: 0.15 });
+    a.tone(t + 0.6, { type: 'sawtooth', f: 190, f2: 110, dur: 0.8, vol: 0.08, lp: 1200, lp2: 500 });
+  },
+  spirit_phoenix: (a, t) => { // the phoenix's cry
+    a.tone(t, { f: 1200, f2: 2600, dur: 0.4, vol: 0.06, attack: 0.05 });
+    a.tone(t + 0.35, { f: 2600, f2: 1500, dur: 0.6, vol: 0.05 });
+    a.noise(t, { dur: 0.9, vol: 0.04, type: 'highpass', f: 4000, attack: 0.1 });
+  },
+  spirit_owl: (a, t) => { // two soft hoots
+    a.tone(t, { f: 400, f2: 380, dur: 0.35, vol: 0.09, attack: 0.06 });
+    a.tone(t + 0.5, { f: 360, f2: 330, dur: 0.6, vol: 0.09, attack: 0.08 });
+  },
+  spirit_whale: (a, t) => { // the whale's song
+    a.tone(t, { f: 180, f2: 320, dur: 1.2, vol: 0.08, attack: 0.3 });
+    a.tone(t + 1, { f: 320, f2: 150, dur: 1.6, vol: 0.07, attack: 0.2 });
+    a.tone(t, { type: 'triangle', f: 360, f2: 640, dur: 1, vol: 0.015, attack: 0.3 });
+  },
+};
+
+// Sounds that need lifting to sit with the rest (measured against a sword's hit): the wardens'
+// voices in a fight, and some quiet story sounds.
+const BOOST = {
+  thornmaw_growl: 1.2, thornmaw_hurt: 2.5, cinder_growl: 3, cinder_hurt: 3, rime_growl: 4.5, rime_hurt: 4.5,
+  tide_growl: 2.3, tide_hurt: 2, vesper_growl: 5, vesper_hurt: 4, cinder_roar: 1.5, rime_roar: 2, tide_roar: 1.5, vesper_laugh: 2,
+  whisper: 4, meteor_fall: 2.5, spirit_stag: 2, spirit_phoenix: 2, spirit_owl: 2, spirit_whale: 2,
 };
 
 // Small random pitch drift so repeated combat sounds don't machine-gun.
 const VARY = new Set(['swing', 'hit', 'block', 'dash', 'arrow', 'talk', 'eat', 'splash', 'hurt', 'rime_shard']);
+
 
 // ---------- engine ----------
 export class AudioEngine {
   constructor() {
     this.ctx = null;
     this.cur = null;          // active music track state
+    this.amb = null;          // active ambience bed
     this._pending = null;     // music key requested before init()
     this._mv = 0.5;
     this._sv = 0.7;
@@ -822,13 +994,19 @@ export class AudioEngine {
     this._plays = 0;
     this._p = 1;              // current sfx pitch multiplier
     this._v = 1;              // current sfx volume multiplier
+    this._dest = null;        // where tone()/noise() play (the sfx bus unless an ambience is laying down its bed)
     this._tock = false;
+    this.offline = null;      // set by startOffline() while recording
   }
 
   get musicVolume() { return this._mv; }
   get sfxVolume() { return this._sv; }
 
+  // The audio clock: the context's own, or while recording, the game's (relative to this chunk).
+  now() { return this.offline ? this.offline.clock() - this.offline.base : this.ctx.currentTime; }
+
   init() {
+    if (this.offline) return;
     try {
       if (!this.ctx) {
         const AC = G.AudioContext || G.webkitAudioContext;
@@ -850,16 +1028,21 @@ export class AudioEngine {
     } catch (e) { /* audio unavailable: stay silent */ }
   }
 
-  // Mixer: music/sfx buses -> master -> highpass -> compressor -> out, with a shared reverb.
+  // Mixer: music/sfx buses -> master -> highpass -> compressor -> out, with a shared reverb. Offline,
+  // the compressor is left to the recorder, so chunks that overlap add up exactly.
   _build(c) {
-    const comp = c.createDynamicsCompressor();
-    comp.threshold.value = -20; comp.knee.value = 18; comp.ratio.value = 4;
-    comp.attack.value = 0.004; comp.release.value = 0.3;
     const hp = c.createBiquadFilter();
     hp.type = 'highpass'; hp.frequency.value = 32;
     this.master = c.createGain();
     this.master.gain.value = 0.85;
-    this.master.connect(hp); hp.connect(comp); comp.connect(c.destination);
+    this.master.connect(hp);
+    if (this.offline) hp.connect(c.destination);
+    else {
+      const comp = c.createDynamicsCompressor();
+      comp.threshold.value = -20; comp.knee.value = 18; comp.ratio.value = 4;
+      comp.attack.value = 0.004; comp.release.value = 0.3;
+      hp.connect(comp); comp.connect(c.destination);
+    }
 
     this.verb = c.createConvolver();
     this.verb.buffer = this._impulse(c, 2.8);
@@ -900,6 +1083,58 @@ export class AudioEngine {
     return buf;
   }
 
+  // ---------- offline rendering (recordings) ----------
+  // The game's clock drives the sound, rendered a chunk at a time into OfflineAudioContexts. Each
+  // chunk runs `tail` seconds past its end so whatever is still ringing gets rendered; onChunk(i,
+  // buffer) gets them in order of finishing, and the recorder adds the tails into the next chunk.
+  startOffline({ clock, onChunk, rate = 48000, chunk = 30, tail = 24 }) {
+    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    this.offline = { clock, onChunk, rate, chunk, tail, base: clock(), index: 0, renders: [] };
+    this._offlineCtx();
+    if (this._pending) { const k = this._pending; this._pending = null; this.playMusic(k); }
+  }
+
+  _offlineCtx() {
+    const o = this.offline, OAC = G.OfflineAudioContext || G.webkitOfflineAudioContext;
+    const ctx = new OAC(2, Math.ceil((o.chunk + o.tail) * o.rate), o.rate);
+    this._build(ctx);
+    this.ctx = ctx;
+    this._last = Object.create(null);
+    // What is playing carries on into the new chunk, on fresh nodes there.
+    for (const st of [this.cur, this.amb]) {
+      if (!st || st.done) continue;
+      st.next -= o.chunk;
+      if (st.st) for (const k of Object.keys(st.st)) st.st[k] -= o.chunk;
+      this._wire(st, st === this.cur ? st.def.gain : st.level);
+    }
+  }
+
+  // Hand the chunk that just ended to the renderer, and start the next.
+  _flushChunk() {
+    const o = this.offline, ctx = this.ctx, index = o.index++;
+    o.renders.push(ctx.startRendering().then((buf) => o.onChunk(index, buf)));
+    o.base += o.chunk;
+    this._offlineCtx();
+  }
+
+  // Render what is left; resolves once every chunk has been handed over.
+  async finishOffline() {
+    const o = this.offline;
+    if (!o) return;
+    const index = o.index++;
+    o.renders.push(this.ctx.startRendering().then((buf) => o.onChunk(index, buf)));
+    await Promise.all(o.renders);
+  }
+
+  // A track's or ambience's output nodes in the current context.
+  _wire(st, level) {
+    const c = this.ctx;
+    st.out = c.createGain(); st.out.gain.value = level;
+    if (st === this.amb) { st.out.connect(this.sfxIn); return; }
+    st.send = c.createGain(); st.send.gain.value = st.def.wet;
+    st.out.connect(this.musicDry); st.out.connect(st.send); st.send.connect(this.musicWet);
+  }
+
   // ---------- music control ----------
   playMusic(key) {
     const def = Object.prototype.hasOwnProperty.call(TRACKS, key) ? TRACKS[key] : null;
@@ -909,24 +1144,22 @@ export class AudioEngine {
     this._pending = null;
     this._fadeOut(this.cur);
 
-    const c = this.ctx, now = c.currentTime;
-    const out = c.createGain(), send = c.createGain();
-    out.gain.setValueAtTime(0.0001, now);
-    out.gain.linearRampToValueAtTime(def.gain, now + FADE);
-    send.gain.value = def.wet;
-    out.connect(this.musicDry); out.connect(send); send.connect(this.musicWet);
-
+    const now = this.now();
     const ms = def.mel && (def.mel.scale || def.scale);
     const salt = this._plays++ * 7919;
     this.cur = {
-      key, def, out, send, salt, done: false,
+      key, def, salt, done: false,
       step: 0, next: now + 0.1, stepDur: 60 / def.bpm / def.sub,
       rng: rng32(def.seed * 1013 + salt), mrng: rng32(def.seed),
       prog: def.progs[0], pi: 0, deg: 0, tones: [0, 4, 7],
       arpOn: true, arpUp: 0, arpRev: false,
       melDeg: ms ? Math.round(((def.mel.lo + def.mel.hi) / 2 - def.root) / 12 * ms.length) : 0,
       melBusy: 0,
+      sec: 0, bar: 0, pos: 0, // a score's place
     };
+    this._wire(this.cur, 0.0001);
+    this.cur.out.gain.setValueAtTime(0.0001, now);
+    this.cur.out.gain.linearRampToValueAtTime(def.gain, now + FADE);
     this._schedule();
   }
 
@@ -938,42 +1171,76 @@ export class AudioEngine {
   _fadeOut(tr) {
     if (!tr || !this.ctx) return;
     tr.done = true;
-    const g = tr.out.gain, now = this.ctx.currentTime;
+    const g = tr.out.gain, now = this.now();
     g.cancelScheduledValues(now);
     g.setValueAtTime(g.value, now);
     g.linearRampToValueAtTime(0, now + FADE);
-    setTimeout(() => { try { tr.out.disconnect(); tr.send.disconnect(); } catch (e) { /* already gone */ } },
+    if (this.offline) return; // the chunk's context goes with it
+    setTimeout(() => { try { tr.out.disconnect(); tr.send?.disconnect(); } catch (e) { /* already gone */ } },
       (FADE + 0.3) * 1000);
+  }
+
+  // A bed of sound under a scene (voices.js AMBIENCE), crossfading from the last; null for quiet.
+  ambience(key, level = 1) {
+    if ((this.amb?.key ?? null) === (key ?? null)) return;
+    if (this.amb) this._fadeOut(this.amb);
+    this.amb = null;
+    const def = key && AMBIENCE[key];
+    if (!def || !this.ctx) return;
+    level *= def.gain ?? 1;
+    const now = this.now();
+    this.amb = { key, def, level, next: now + 0.05, st: {}, done: false };
+    this._wire(this.amb, 0.0001);
+    this.amb.out.gain.setValueAtTime(0.0001, now);
+    this.amb.out.gain.linearRampToValueAtTime(level, now + 1);
   }
 
   setMusicVolume(v) {
     this._mv = clamp(+v || 0, 0, 1);
-    if (this.ctx) for (const n of [this.musicDry, this.musicWet]) n.gain.setTargetAtTime(this._mv, this.ctx.currentTime, 0.05);
+    if (this.ctx) for (const n of [this.musicDry, this.musicWet]) n.gain.setTargetAtTime(this._mv, this.now(), 0.05);
   }
 
   setSfxVolume(v) {
     this._sv = clamp(+v || 0, 0, 1);
-    if (this.ctx) this.sfxIn.gain.setTargetAtTime(this._sv, this.ctx.currentTime, 0.05);
+    if (this.ctx) this.sfxIn.gain.setTargetAtTime(this._sv, this.now(), 0.05);
   }
 
-  update() { this._schedule(); } // scheduling is timer-driven; this is a harmless extra pump
+  // Scheduling is timer-driven; this is a harmless extra pump. Offline it is the only pump, and it
+  // moves on to the next chunk when this one is full.
+  update() {
+    const o = this.offline;
+    if (o && o.clock() - o.base >= o.chunk) this._flushChunk();
+    this._schedule();
+  }
 
   // ---------- sequencer ----------
   _schedule() {
-    const c = this.ctx, tr = this.cur;
-    if (!c || !tr || tr.done) return;
-    const now = c.currentTime;
+    const c = this.ctx;
+    if (!c) return;
+    const now = this.now();
     const ahead = G.document && G.document.hidden ? 1.2 : LOOKAHEAD; // timers throttle in hidden tabs
-    if (tr.next < now - 0.2) tr.next = now + 0.05;                    // recover after a stall
-    while (!tr.done && tr.next < now + ahead) {
-      this._step(tr, tr.next);
-      tr.step++;
-      tr.next += tr.stepDur;
+    const tr = this.cur;
+    if (tr && !tr.done) {
+      if (tr.next < now - 0.2) tr.next = now + 0.05;                  // recover after a stall
+      while (!tr.done && tr.next < now + ahead) {
+        this._step(tr, tr.next);
+        tr.step++;
+        tr.next += tr.stepDur;
+      }
+    }
+    const am = this.amb;
+    if (am && !am.done) {
+      if (am.next < now - 0.2) am.next = now + 0.05;
+      const keep = [this._p, this._v, this._dest];
+      this._p = 1; this._v = 1; this._dest = am.out;
+      try { while (am.next < now + ahead) { am.def.tick(this, am.next, am.st); am.next += am.def.step; } } catch (e) { /* never let a sound break the game */ }
+      [this._p, this._v, this._dest] = keep;
     }
   }
 
   _step(tr, t) {
     const d = tr.def, s = tr.step, rng = tr.rng, sd = tr.stepDur, out = tr.out;
+    if (d.score) return this._stepScore(tr, t);
     const play = (midi, vel, steps) =>
       this._piano(out, t + (rng() - 0.5) * 0.012, midi, vel * (0.88 + rng() * 0.24), d.voice, steps * sd);
 
@@ -1056,6 +1323,45 @@ export class AudioEngine {
     if (d.drip && rng() < d.drip) this._drip(out, t + rng() * sd, 0.5 + rng() * 0.5, 1000 + rng() * 1600);
   }
 
+  // One eighth-note step of a composed score (see SCORES).
+  _stepScore(tr, t) {
+    const d = tr.def, sc = SCORES[d.score], sd = tr.stepDur, out = tr.out;
+    const S = sc.sections[sc.form[tr.sec]], P = S.parts, bar = tr.bar, pos = tr.pos;
+    const ch = S.chords[bar], split = ch.length > 1, deg = ch[split && pos >= 4 ? 1 : 0];
+    const tones = chordTones(d, deg), r = mod(degSemi(d.scale, deg), 12);
+    let low = d.root - 24 + r; if (low > d.root - 15) low -= 12; // the chord's root, low in the bass
+    if (P.strings && (pos === 0 || (split && pos === 4))) {
+      this._strings(out, t, [low + 12, ...tones.map((x) => d.root + x), d.root + tones[0] + 12], P.strings, (split ? 4 : 8) * sd);
+    }
+    if (P.gallop && GALLOP.includes(pos)) this._low(out, t, low + (pos === 0 ? 0 : 12), P.gallop * (pos === 0 || pos === 4 ? 1 : 0.7));
+    const roll = P.roll && P.roll[bar] !== undefined && pos >= P.roll[bar];
+    if (roll) { // sixteenths on the drums, growing to the next bar
+      const k = (pos - P.roll[bar] + 1) / (8 - P.roll[bar]);
+      for (const h of [0, 0.5]) {
+        if (P.snare) this._snare(out, t + h * sd, P.snare * (0.4 + 0.6 * k));
+        else this._timp(out, t + h * sd, low + 12, (P.timp || 0.7) * (0.3 + 0.7 * k));
+      }
+    } else {
+      if (P.timp && (pos === 0 || pos === 4)) this._timp(out, t, low + (pos === 0 ? 12 : 7), P.timp * (pos === 0 ? 1 : 0.7));
+      if (P.snare && (pos === 2 || pos === 6)) this._snare(out, t, P.snare * 0.6);
+    }
+    if (P.swell && P.swell.includes(bar) && pos === 0) this._swell(out, t, 8 * sd);
+    if (P.harp) {
+      const k = HARP[pos], n = tones.length;
+      this._piano(out, t, d.root + 12 + tones[k % n] + 12 * ((k / n) | 0), 0.3 * P.harp, d.voice, 3 * sd);
+    }
+    for (const [b, step, midi, len] of S.mel || []) {
+      if (b !== bar || step !== pos) continue;
+      this._horn(out, t, midi, 0.8, len * sd);
+      if (P.double) this._horn(out, t, midi - 12, 0.45, len * sd);
+    }
+    // on to the next step, bar and section
+    if (++tr.pos >= 8) {
+      tr.pos = 0;
+      if (++tr.bar >= S.chords.length) { tr.bar = 0; tr.sec = tr.sec + 1 < sc.form.length ? tr.sec + 1 : sc.loop; }
+    }
+  }
+
   // ---------- music voices ----------
   // Soft piano: sine fundamental + detuned triangle + decaying upper partial, through a
   // closing low-pass. Percussive attack, long exponential tail (longer for low notes).
@@ -1071,6 +1377,7 @@ export class AudioEngine {
     lp.frequency.setValueAtTime(Math.min(15000, f * (2 + 6 * bright) + 600 * vel), t);
     lp.frequency.setTargetAtTime(Math.max(200, f * 1.3), t + 0.01, decay * 0.3);
     const g = amp.gain;
+    g.value = 0;
     g.setValueAtTime(0, t);
     g.linearRampToValueAtTime(peak, t + 0.005);
     g.setTargetAtTime(peak * 0.4, t + 0.005, 0.12);
@@ -1093,11 +1400,109 @@ export class AudioEngine {
     top.onended = () => amp.disconnect();
   }
 
+  // Brass: two detuned saws through a low-pass that opens with the breath, vibrato settling in.
+  _horn(dest, t, midi, vel, dur) {
+    const c = this.ctx, f = mtof(midi), peak = 0.055 * vel, end = t + Math.max(0.12, dur * 0.94);
+    const amp = c.createGain(), lp = c.createBiquadFilter(), lfo = c.createOscillator(), depth = c.createGain();
+    lp.type = 'lowpass'; lp.Q.value = 1.1;
+    lp.frequency.setValueAtTime(f * 1.3, t);
+    lp.frequency.linearRampToValueAtTime(f * 5 + 900 * vel, t + 0.06);
+    lp.frequency.setTargetAtTime(f * 3, t + 0.07, 0.25);
+    const g = amp.gain;
+    g.value = 0;
+    g.setValueAtTime(0, t);
+    g.linearRampToValueAtTime(peak, t + 0.045);
+    g.setTargetAtTime(peak * 0.75, t + 0.05, 0.15);
+    g.setTargetAtTime(0, end, 0.05);
+    lfo.frequency.value = 5.2;
+    depth.gain.setValueAtTime(0, t); depth.gain.linearRampToValueAtTime(8, t + 0.4);
+    lfo.connect(depth);
+    for (const det of [-5, 6]) {
+      const o = c.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = det;
+      depth.connect(o.detune); o.connect(lp);
+      o.start(t); o.stop(end + 0.35);
+    }
+    lp.connect(amp); amp.connect(dest);
+    lfo.start(t); lfo.stop(end + 0.35);
+    lfo.onended = () => amp.disconnect();
+  }
+
+  // A string section holding a chord: pairs of detuned saws, a slow bow in and out.
+  _strings(dest, t, midis, vel, dur) {
+    const c = this.ctx, peak = 0.014 * vel, a = Math.min(0.3, dur * 0.3), end = t + dur;
+    const amp = c.createGain(), lp = c.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 2200; lp.Q.value = 0.4;
+    amp.gain.value = 0;
+    amp.gain.setValueAtTime(0, t);
+    amp.gain.linearRampToValueAtTime(peak, t + a);
+    amp.gain.setValueAtTime(peak, end);
+    amp.gain.linearRampToValueAtTime(0, end + 0.35);
+    lp.connect(amp); amp.connect(dest);
+    let last;
+    for (const m of midis) for (const det of [-9, 8]) {
+      const o = c.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = mtof(m); o.detune.value = det;
+      o.connect(lp); o.start(t); o.stop(end + 0.4);
+      last = o;
+    }
+    last.onended = () => amp.disconnect();
+  }
+
+  // Low strings digging in: a short, bowed saw over a sine for weight.
+  _low(dest, t, midi, vel) {
+    const c = this.ctx, f = mtof(midi), o = c.createOscillator(), sub = c.createOscillator(), lp = c.createBiquadFilter(), g = c.createGain(), sg = c.createGain();
+    o.type = 'sawtooth'; o.frequency.value = f; sub.frequency.value = f;
+    lp.type = 'lowpass'; lp.Q.value = 1.5;
+    lp.frequency.setValueAtTime(f * 7, t); lp.frequency.setTargetAtTime(f * 2.2, t, 0.05);
+    g.gain.value = 0; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.1 * vel, t + 0.012); g.gain.setTargetAtTime(0, t + 0.05, 0.08);
+    sg.gain.value = 0.7;
+    o.connect(lp); lp.connect(g); sub.connect(sg); sg.connect(g); g.connect(dest);
+    o.start(t); sub.start(t); o.stop(t + 0.6); sub.stop(t + 0.6);
+    o.onended = () => g.disconnect();
+  }
+
+  // Timpani: a pitched sine thump dropping onto its note, and the stick's soft noise.
+  _timp(dest, t, midi, vel) {
+    const c = this.ctx, f = mtof(midi), o = c.createOscillator(), g = c.createGain();
+    o.frequency.setValueAtTime(f * 1.12, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.07);
+    g.gain.value = 0; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.3 * vel, t + 0.004); g.gain.setTargetAtTime(0, t + 0.004, 0.3);
+    o.connect(g); g.connect(dest); o.start(t); o.stop(t + 1.6);
+    o.onended = () => g.disconnect();
+    const n = c.createBufferSource(), b = c.createBiquadFilter(), ng = c.createGain();
+    n.buffer = this.noiseBuf; b.type = 'lowpass'; b.frequency.value = 700;
+    ng.gain.value = 0; ng.gain.setValueAtTime(0.2 * vel, t); ng.gain.setTargetAtTime(0, t, 0.025);
+    n.connect(b); b.connect(ng); ng.connect(dest); n.start(t, Math.random() * 0.5); n.stop(t + 0.2);
+  }
+
+  // A snare: a crack of band-passed noise over a short drum tone.
+  _snare(dest, t, vel) {
+    const c = this.ctx, n = c.createBufferSource(), b = c.createBiquadFilter(), g = c.createGain(), o = c.createOscillator(), og = c.createGain();
+    n.buffer = this.noiseBuf; b.type = 'bandpass'; b.frequency.value = 2200; b.Q.value = 0.7;
+    g.gain.value = 0; g.gain.setValueAtTime(0.11 * vel, t); g.gain.setTargetAtTime(0, t, 0.045);
+    n.connect(b); b.connect(g); g.connect(dest); n.start(t, Math.random() * 0.5); n.stop(t + 0.3);
+    o.type = 'triangle'; o.frequency.setValueAtTime(200, t); o.frequency.exponentialRampToValueAtTime(150, t + 0.06);
+    og.gain.value = 0; og.gain.setValueAtTime(0.08 * vel, t); og.gain.setTargetAtTime(0, t, 0.03);
+    o.connect(og); og.connect(dest); o.start(t); o.stop(t + 0.2);
+    n.onended = () => g.disconnect();
+  }
+
+  // A suspended cymbal swelling up to the next bar, then crashing.
+  _swell(dest, t, dur) {
+    const c = this.ctx, n = c.createBufferSource(), b = c.createBiquadFilter(), g = c.createGain();
+    n.buffer = this.noiseBuf; n.loop = true; b.type = 'highpass'; b.frequency.value = 5000;
+    g.gain.value = 0; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + dur);
+    g.gain.setValueAtTime(0.09, t + dur); g.gain.setTargetAtTime(0, t + dur, 0.5);
+    n.connect(b); b.connect(g); g.connect(dest); n.start(t, Math.random() * 0.5); n.stop(t + dur + 2.5);
+    n.onended = () => g.disconnect();
+  }
+
   // Sustained low drone with slow swell.
   _pad(dest, t, midi, dur, vel) {
     const c = this.ctx, f = mtof(midi), a = Math.min(1.5, dur / 3), peak = 0.1 * vel;
     const g = c.createGain(), lp = c.createBiquadFilter();
     lp.type = 'lowpass'; lp.frequency.value = Math.min(1200, f * 4); lp.Q.value = 0.3;
+    g.gain.value = 0;
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(peak, t + a);
     g.gain.setValueAtTime(peak, t + dur - a);
@@ -1119,6 +1524,7 @@ export class AudioEngine {
     const c = this.ctx, o = c.createOscillator(), g = c.createGain();
     o.frequency.setValueAtTime(f, t);
     o.frequency.exponentialRampToValueAtTime(f * 1.7, t + 0.05);
+    g.gain.value = 0;
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(0.06 * vel, t + 0.003);
     g.gain.setTargetAtTime(0, t + 0.003, 0.04);
@@ -1131,24 +1537,28 @@ export class AudioEngine {
   sfx(name, opts = {}) {
     const c = this.ctx;
     if (!c || !Object.prototype.hasOwnProperty.call(SFX, name)) return;
-    const now = c.currentTime;
+    const now = this.now();
     if (now - (this._last[name] ?? -1) < SFX_GAP) return;
     const vol = clamp(opts.volume ?? 1, 0, 1);
     if (!(vol > 0)) return;
     this._last[name] = now;
     this._p = (opts.pitch > 0 ? opts.pitch : 1) * (VARY.has(name) ? 0.96 + Math.random() * 0.08 : 1);
-    this._v = vol;
-    try { SFX[name](this, now + 0.005); } catch (e) { /* never let a sound break the game */ }
+    this._v = vol * (BOOST[name] || 1);
+    try { SFX[name](this, now + 0.005, opts); } catch (e) { /* never let a sound break the game */ }
   }
 
-  _env(g, t, vol, attack, dur) {
+  // An envelope: up over `attack`, held `hold` seconds, then down to nothing by `dur`. Silent until
+  // then: a gain is 1 before its first event, and a source starting between two samples would click.
+  _env(g, t, vol, attack, dur, hold = 0) {
     const v = Math.max(0.0002, vol * this._v);
+    g.gain.value = 0;
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(v, t + attack);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(dur, attack + 0.01));
+    if (hold > 0) g.gain.setValueAtTime(v, t + attack + hold);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(dur, attack + hold + 0.01));
   }
 
-  tone(t, { type = 'sine', f, f2 = f, dur = 0.15, vol = 0.2, attack = 0.004, lp = 0, lp2 = lp, q = 0.7, detune = 0 }) {
+  tone(t, { type = 'sine', f, f2 = f, dur = 0.15, vol = 0.2, attack = 0.004, hold = 0, lp = 0, lp2 = lp, q = 0.7, detune = 0 }) {
     const c = this.ctx, o = c.createOscillator(), g = c.createGain(), p = this._p;
     o.type = type; o.detune.value = detune;
     o.frequency.setValueAtTime(f * p, t);
@@ -1161,20 +1571,20 @@ export class AudioEngine {
       if (lp2 !== lp) b.frequency.exponentialRampToValueAtTime(lp2, t + dur);
       o.connect(b); src = b;
     }
-    this._env(g, t, vol, attack, dur);
-    src.connect(g); g.connect(this.sfxIn);
+    this._env(g, t, vol, attack, dur, hold);
+    src.connect(g); g.connect(this._dest || this.sfxIn);
     o.start(t); o.stop(t + dur + 0.05);
     o.onended = () => g.disconnect();
   }
 
-  noise(t, { dur = 0.2, vol = 0.2, type = 'bandpass', f = 1000, f2 = f, q = 1, attack = 0.005 }) {
+  noise(t, { dur = 0.2, vol = 0.2, type = 'bandpass', f = 1000, f2 = f, q = 1, attack = 0.005, hold = 0 }) {
     const c = this.ctx, s = c.createBufferSource(), b = c.createBiquadFilter(), g = c.createGain(), p = this._p;
     s.buffer = this.noiseBuf; s.loop = true;
     b.type = type; b.Q.value = q;
     b.frequency.setValueAtTime(f * p, t);
     if (f2 !== f) b.frequency.exponentialRampToValueAtTime(f2 * p, t + dur);
-    this._env(g, t, vol, attack, dur);
-    s.connect(b); b.connect(g); g.connect(this.sfxIn);
+    this._env(g, t, vol, attack, dur, hold);
+    s.connect(b); b.connect(g); g.connect(this._dest || this.sfxIn);
     s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
     s.onended = () => g.disconnect();
   }
@@ -1182,7 +1592,39 @@ export class AudioEngine {
   notes(t, midis, gap, o) {
     midis.forEach((m, i) => this.tone(t + i * gap, { ...o, f: mtof(m) }));
   }
+
+  // A sung or spoken syllable: a buzzy source through two vowel formants (form scales them), with
+  // optional breath, a growl's rasp, a sub-octave and a wobble in the pitch.
+  syllable(t, { f, f2 = f, dur = 0.09, vol = 1, vowel = 'a', form = 1, type = 'sawtooth', breath = 0, growl = 0, sub = false, wobble = 0, gain = 1 }) {
+    vol *= gain;
+    const c = this.ctx, p = this._p, [F1, F2] = VOWELS[vowel] || VOWELS.a, g = c.createGain();
+    const o = c.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f * p, t);
+    if (wobble) o.frequency.setValueAtTime(f * p * (1 + wobble), t + dur * 0.4);
+    o.frequency.exponentialRampToValueAtTime(f2 * p, t + dur);
+    for (const [F, q, lvl] of [[F1, 4, 1], [F2, 6, 0.55]]) {
+      const b = c.createBiquadFilter(), bg = c.createGain();
+      b.type = 'bandpass'; b.frequency.value = F * form; b.Q.value = q; bg.gain.value = lvl;
+      o.connect(b); b.connect(bg); bg.connect(g);
+    }
+    if (sub) {
+      const s = c.createOscillator(), sg = c.createGain(), lp = c.createBiquadFilter();
+      s.type = 'sawtooth'; s.frequency.setValueAtTime(f * p / 2, t); s.frequency.exponentialRampToValueAtTime(f2 * p / 2, t + dur);
+      lp.type = 'lowpass'; lp.frequency.value = 400; sg.gain.value = 0.35;
+      s.connect(lp); lp.connect(sg); sg.connect(g); s.start(t); s.stop(t + dur + 0.05);
+    }
+    this._env(g, t, 0.5 * vol, 0.012, dur);
+    g.connect(this._dest || this.sfxIn);
+    o.start(t); o.stop(t + dur + 0.05);
+    o.onended = () => g.disconnect();
+    if (breath) this.noise(t, { dur, vol: 0.05 * breath * vol, type: 'bandpass', f: F2 * form, q: 2, attack: 0.02 });
+    if (growl) this.noise(t, { dur, vol: 0.09 * growl * vol, type: 'bandpass', f: F1 * form, q: 3, attack: 0.015 });
+  }
 }
+
+// Vowel formants (Hz): the shape of the mouth in a syllable.
+const VOWELS = { a: [800, 1250], e: [500, 1900], i: [320, 2300], o: [520, 900], u: [350, 780] };
 
 export const MUSIC_KEYS = Object.keys(TRACKS);
 export const SFX_NAMES = Object.keys(SFX);

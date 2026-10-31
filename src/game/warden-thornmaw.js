@@ -82,7 +82,6 @@ export const moves = {
         b.timer = 0.6;
         if (b.bursts <= 0) {
           b.state = 'stalk'; b.timer = 1.2;
-          if (b.phase > 1 && ctx.area.enemyList.filter((e) => !e.boss && !e.dead).length < 2) b.summon(ctx, 'skirmisher', 0, 1);
         }
       }
     },
@@ -127,6 +126,6 @@ export const moves = {
       ctx.game.cam.shake(1.5, 0.12);
     }
   },
-  enter2(b, ctx) { b.summon(ctx, 'lunger', 0, 2); },
+  enter2(b, ctx) { b.summon(ctx, 'lunger', 0, 1); },
   clear() {},
 };

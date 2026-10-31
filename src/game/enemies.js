@@ -10,6 +10,7 @@ import { drawShadow } from '../gfx/render.js';
 import { TAU } from '../core/math.js';
 import { BIOME_KEYS } from '../world/tiles.js';
 import { SPECIALS, firstDelay, specialCooldown } from './specials.js';
+import { cryOf, roll } from '../audio/voices.js';
 
 const RANGED_SHOT = ['arrow', 'shot', 'shot', 'shot', 'ice', 'ember'];
 
@@ -45,6 +46,16 @@ export class Enemy extends Actor {
     this.hitDone = false;
     this.sig = SPECIALS[BIOME_KEYS[biome]]?.[archetype] || null; // signature move, see specials.js
     this.specialCool = firstDelay();
+    this.cry = cryOf(archetype, biome); // its voice: [kind, pitch] (audio/voices.js)
+  }
+
+  // A cry in its own voice, fainter the farther it is from the player. mood: alert, attack, hurt,
+  // die or idle.
+  say(ctx, mood, vol = 1) {
+    if (!this.cry) return;
+    const p = ctx.player, d = Math.hypot(p.x - this.x, p.y - this.y);
+    const pitch = this.cry[1] * (this.gloam ? 0.85 : 1) * (this.elite ? 0.8 : 1) * (0.95 + roll() * 0.1);
+    ctx.game.audio.sfx('cry', { kind: this.cry[0], mood, pitch, volume: vol * Math.max(0.2, Math.min(1, 1.3 - d / 260)) });
   }
 
   get pose() {
@@ -90,7 +101,7 @@ export class Enemy extends Actor {
     const p = ctx.player;
     const dx = p.x - this.x, dy = p.y - this.y, d = Math.hypot(dx, dy);
     const alive = p.mode !== 'dead';
-    if (!this.aggro && alive && d < this.st.sight) { this.aggro = true; this.alertT = 0.6; }
+    if (!this.aggro && alive && d < this.st.sight) { this.aggro = true; this.alertT = 0.6; this.say(ctx, 'alert'); }
     const farHome = Math.hypot(this.x - this.home.x, this.y - this.home.y) > this.leash;
     if (this.aggro && (!alive || d > this.st.sight * 2 || (farHome && d > 90))) {
       if (this.state === 'special') this.cancelSpecial(ctx);
@@ -110,6 +121,7 @@ export class Enemy extends Actor {
   trySpecial(dt, ctx, d) {
     if (!this.sig || (this.specialCool -= dt) > 0 || this.state !== 'idle' || d > this.sig.range || !this.requestToken(ctx)) return false;
     this.state = 'special'; this.sub = 'windup'; this.timer = this.sig.windup;
+    if (roll() < 0.6) this.say(ctx, 'attack');
     return true;
   }
 
@@ -143,6 +155,8 @@ export class Enemy extends Actor {
 
   idle(dt, ctx) {
     const map = ctx.map;
+    // Now and then, minding its own business within earshot, it makes a sound of its own.
+    if (roll() < dt * 0.15 && Math.hypot(ctx.player.x - this.x, ctx.player.y - this.y) < 200) this.say(ctx, 'idle', 0.5);
     if (this.patrol) {
       // Walk the road back and forth.
       this.pi = this.pi ?? 0; this.pdir = this.pdir ?? 1;
@@ -201,7 +215,7 @@ export class Enemy extends Actor {
         this.cool -= dt;
         if (this.cool <= 0 && this.requestToken(ctx)) {
           if (d > 30) this.moveDir(dx, dy, this.speed, dt, map);
-          else { this.state = 'windup'; this.timer = 0.62; this.slamA = Math.atan2(dy, dx); }
+          else { this.state = 'windup'; this.timer = 0.62; this.slamA = Math.atan2(dy, dx); if (roll() < 0.5) this.say(ctx, 'attack', 0.8); }
         } else this.holdRing(dt, ctx, dx, dy, d, 64);
     }
   }
@@ -234,7 +248,7 @@ export class Enemy extends Actor {
         if (this.cool <= 0 && this.requestToken(ctx)) {
           if (d > 82) this.moveDir(dx, dy, this.speed, dt, map);
           else if (d < 44) this.moveDir(-dx, -dy, this.speed, dt, map);
-          else { this.state = 'crouch'; this.timer = 0.45; this.dirX = dx / d; this.dirY = dy / d; this.facing = dx < 0 ? 'left' : 'right'; }
+          else { this.state = 'crouch'; this.timer = 0.45; this.dirX = dx / d; this.dirY = dy / d; this.facing = dx < 0 ? 'left' : 'right'; if (roll() < 0.5) this.say(ctx, 'attack', 0.8); }
         } else this.holdRing(dt, ctx, dx, dy, d, 86);
     }
   }
@@ -310,7 +324,8 @@ export class Enemy extends Actor {
       this.timer = 0.16;
       this.releaseToken(ctx);
       ctx.game.audio.sfx('kill');
-    } else ctx.game.audio.sfx('hit');
+      this.say(ctx, 'die');
+    } else { ctx.game.audio.sfx('hit'); this.say(ctx, 'hurt', 0.8); }
     return true;
   }
 

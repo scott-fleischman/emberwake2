@@ -53,7 +53,7 @@ export function theaterScenes(W, t) {
     { label: 'Vesper awakens', run: () => { t.toBossRoom('spire'); t.play(bossIntroShots('vesper'), { letterbox: true, music: 'boss' }); } },
     { label: 'Vesper rises', run: () => { t.toBossRoom('spire'); t.play(vesperRiseShots(), { letterbox: true, music: 'boss2' }); } },
     { label: 'Vesper lets go', run: () => { t.toBossRoom('spire'); t.play(bossOutroShots('vesper', t.quietBoss()), { letterbox: true, music: 'story' }); } },
-    { label: 'Ending', run: () => t.play(endingShots({ elder }), { music: 'title' }) },
+    { label: 'Ending', run: () => t.play(endingShots({ elder }), { music: 'hearth' }) },
   );
   return list;
 }
