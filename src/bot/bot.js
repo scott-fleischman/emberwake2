@@ -37,8 +37,10 @@ const segDist = (px, py, ax, ay, bx, by) => {
   return Math.hypot(px - (ax + vx * t), py - (ay + vy * t));
 };
 
+const READ_ON = 0.25; // watching: seconds after a line's last word before reading on
+
 export class Bot {
-  // watch: sit through every scene and read every line (100%'s way: it shows the whole game).
+  // watch: sit through every scene and let every line type out (100%'s way: it shows the whole game).
   constructor(game, mode = 'any', { watch = mode === 'full' } = {}) {
     this.g = game;
     this.mode = mode; // 'any' | 'full'
@@ -148,8 +150,17 @@ export class Bot {
     }
     this.uiT += this.dt;
     if (top instanceof Cutscene) {
-      // Watching, a scene plays as a film: every line types out and stays up long enough to read.
-      if (this.watch) { top.autoplay = true; top.hint = ''; return; }
+      // Watching, a scene plays through: a line that waits for a key types out in full, then on it goes,
+      // a beat after its last word. Narration keeps its own time, set to the pictures under it.
+      if (this.watch) {
+        const s = top.shot;
+        top.hint = '';
+        if (s !== this.watchShot) { this.watchShot = s; this.typedAt = null; }
+        if (!s?.wait || !top.typed) return;
+        this.typedAt ??= this.time;
+        if (this.time - this.typedAt >= READ_ON) { this.tap(K.confirm); this.watchShot = null; }
+        return;
+      }
       // Speedrun etiquette: skip story scenes (Esc arms the skip, Esc again skips).
       if (this.uiT > 0.35) { this.tap(K.back); this.uiT = 0.05; }
       return;
@@ -163,11 +174,11 @@ export class Bot {
         return;
       }
       this.typedAt ??= this.time;
-      const read = this.time - this.typedAt >= (this.watch ? 1 + page.text.length * 0.03 : 0);
+      const read = this.time - this.typedAt >= (this.watch ? READ_ON : 0);
       if (page.options && page.options.length) {
         const want = this.chooseOption(page);
-        if (top.sel !== want) { if (read && this.uiT > (this.watch ? 0.35 : 0.08)) { this.tap(want > top.sel ? K.down : K.up); this.uiT = 0; } return; }
-        if (read && this.uiT > (this.watch ? 0.8 : 0.3)) { this.tap(K.confirm); this.uiT = 0; this.typedAt = null; }
+        if (top.sel !== want) { if (read && this.uiT > (this.watch ? 0.15 : 0.08)) { this.tap(want > top.sel ? K.down : K.up); this.uiT = 0; } return; }
+        if (read && this.uiT > 0.3) { this.tap(K.confirm); this.uiT = 0; this.typedAt = null; }
         return;
       }
       if (read && this.uiT > 0.45) { this.tap(K.confirm); this.uiT = 0; this.typedAt = null; }

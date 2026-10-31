@@ -186,26 +186,28 @@ test('every music track and ambience is defined, and the title theme is composed
 });
 
 // ---------------------------------------------------------------- the 100% bot watches
-test('a 100% run watches every scene and reads every line; Any% skips', async () => {
+test('a 100% run watches every scene and lets every line type out, then reads straight on; Any% skips', async () => {
   const s = await sandbox();
   const full = new Bot(s.game, 'full'), any = new Bot(s.game, 'any');
   assert.ok(full.watch && !any.watch);
-  const cut = s.game.playCutscene([{ text: 'A long line of narration to sit through.', hold: 1 }, { speaker: 'Elder', text: 'And a line to read.', wait: true }]);
-  for (let t = 0; t < 2; t += 1 / 60) { full.step(1 / 60); s.game.update(1 / 60); s.app.input.endFrame(); }
-  assert.ok(!cut.done && cut.autoplay, 'still playing, as a film');
-  for (let t = 0; t < 12 && !cut.done; t += 1 / 60) { full.step(1 / 60); s.game.update(1 / 60); s.app.input.endFrame(); }
-  assert.ok(cut.done, 'and it plays to its end');
+  const frame = () => { full.step(1 / 60); s.game.update(1 / 60); s.app.input.endFrame(); };
+  const line = 'And a line to read, which types out in full before it goes.';
+  const cut = s.game.playCutscene([{ text: 'A line of narration, held as long as it asks.', hold: 1 }, { speaker: 'Elder', text: line, wait: true }]);
+  let t = 0, typed = null;
+  for (; t < 12 && !cut.done; t += 1 / 60) { frame(); if (cut.i === 1 && typed === null && cut.typed) typed = t; if (cut.i === 0) assert.ok(t < 3.2, 'narration keeps its hold'); }
+  assert.ok(cut.done, 'it plays to its end');
+  assert.ok(t - typed < 0.5, `a spoken line goes on a beat after its last word (${(t - typed).toFixed(2)} s)`);
   const text = 'This is a page of a book, with quite a few words on it to read before turning over.';
   s.game.message(text, 'A book');
-  let typed = null, closed = null;
-  for (let t = 0; t < 8 && s.game.uiStack.length; t += 1 / 60) {
-    full.step(1 / 60); s.game.update(1 / 60); s.app.input.endFrame();
+  let closed = null; typed = null;
+  for (t = 0; t < 8 && s.game.uiStack.length; t += 1 / 60) {
+    frame();
     const d = s.game.uiStack[0];
     if (d && typed === null && d.chars >= text.length) typed = t;
     if (!s.game.uiStack.length) closed = t;
   }
-  assert.ok(typed > 1, 'the text types out on its own');
-  assert.ok(closed - typed >= 1 + text.length * 0.03 - 0.05, 'and stays up long enough to read');
+  assert.ok(typed > 1, 'the text types out on its own, never filled in');
+  assert.ok(closed - typed < 0.6, `and closes right after (${(closed - typed).toFixed(2)} s)`);
 });
 
 // ---------------------------------------------------------------- the view on a phone
