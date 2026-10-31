@@ -6,6 +6,7 @@ import { drawShadow } from '../gfx/render.js';
 import { TAU } from '../core/math.js';
 import { hashSeed, tileHash } from '../core/rng.js';
 import { makeZone } from './zones.js';
+import { voiceFor } from '../audio/voices.js';
 
 export class Entity {
   constructor(x, y, w = 8, h = 8) {
@@ -421,7 +422,10 @@ export class NPC extends Actor {
     if (this.barkCool <= 0 && dist < 90 && dist > 24 && !this.talking && ctx.game.barkFor) {
       this.barkCool = 8 + Math.random() * 8;
       const line = Math.random() < 0.65 ? ctx.game.barkFor(this) : null;
-      if (line) this.bark = { text: line, t: 3.2 };
+      if (line) {
+        this.bark = { text: line, t: 3.2 };
+        ctx.game.audio?.sfx('voice', { v: voiceFor(this.data.name, this.data.role), phrase: 3, volume: 0.7 }); // calling out as you pass
+      }
     }
     const near = dist < 40, now = ctx.game.time ?? this.anim;
     // Townsfolk sometimes wave as you walk up.

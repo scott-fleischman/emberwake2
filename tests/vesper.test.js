@@ -26,23 +26,23 @@ const fight = async (difficulty = 'normal') => {
 };
 const phase3 = async (difficulty) => {
   const f = await fight(difficulty);
-  f.v.phase = 3; f.v.maxHp = f.v.hp = 180; f.v.startCycle(f.s.game.area.ctx);
+  f.v.phase = 3; f.v.maxHp = f.v.hp = 100; f.v.startCycle(f.s.game.area.ctx);
   return f;
 };
 
 test('the first bar has two phases and then he rises with a full second bar', async () => {
   const { s, v, hit } = await fight();
-  assert.equal(v.maxHp, 220); assert.equal(v.name, 'Vesper, the Unkindled');
-  hit(111); live(s, 1.6); assert.equal(v.phase, 2);
+  assert.equal(v.maxHp, 150); assert.equal(v.name, 'Vesper, the Unkindled');
+  hit(76); live(s, 1.6); assert.equal(v.phase, 2);
   hit(9999); live(s, 4.5);
-  assert.equal(v.phase, 3); assert.equal(v.maxHp, 180); assert.equal(v.hp, 180); assert.ok(!v.dead);
+  assert.equal(v.phase, 3); assert.equal(v.maxHp, 100); assert.equal(v.hp, 100); assert.ok(!v.dead);
 });
 
 test('phase 3 shows all four wardens before he can fall', async () => {
   const { s, v, hit } = await phase3();
   const borrowed = [];
   for (let i = 0; i < 4; i++) {
-    hit(9999); assert.ok(v.hp >= [0.8, 0.6, 0.4, 0.2][i] * 180 - 1e-9 && !v.dead, `floor ${i}`);
+    hit(9999); assert.ok(v.hp >= [0.8, 0.6, 0.4, 0.2][i] * 100 - 1e-9 && !v.dead, `floor ${i}`);
     until(s, () => v.borrowed);
     borrowed.push(v.borrowed); hit(1); hit(1); live(s, 0.1);
     assert.equal(v.borrowed, null); assert.equal(v.breaks, i + 1);

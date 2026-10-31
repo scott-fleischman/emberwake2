@@ -73,36 +73,41 @@ export function bookFor(W, building) {
 
 // ---------------------------------------------------------------- voices
 export const VOICE = {
-  unkindled: { name: 'The Unkindled', color: '#c8a0ff' },
-  unknown: { name: '???', color: '#c8a0ff' },
+  unkindled: { name: 'The Unkindled', color: '#c8a0ff', voice: 'unkindled' },
+  unknown: { name: '???', color: '#c8a0ff', voice: 'unkindled' },
   narrator: { name: null, color: '#f4ead8' },
 };
 
 // ---------------------------------------------------------------- cutscenes
 // Shot fields: art (panel art id), text, speaker, color, title/sub (big card), hold (seconds
 // after typing finishes before auto-advance), wait (needs a key press), sfx (a name or a list of
-// names / [name, opts]), cues ([[seconds, name, opts]] fired mid-shot), shake (panel shake).
+// names / [name, opts]), cues ([[seconds, name, opts]] fired mid-shot; 'amb:<key>' changes the bed),
+// amb (a bed of sound under the shot: audio/voices.js AMBIENCE), voice (how the speaker sounds),
+// music (a track to change to), shake (panel shake).
 // Warden scenes add: spotlight, hideBoss, omen/entrance (boss kind: what stirs, then its in-engine
 // entrance), quake (screen shake + falling grit), roar ("r,g,b" vignette pulse; the boss roars),
 // flash (seconds of white-out), slam (the title slams down), burst (outro light burst at focus).
 
 export function introShots(className) {
   return [
-    { art: 'stars', text: 'An age ago, a star fell burning out of the sky.', sfx: null, hold: 2.6 },
-    { art: 'spire', text: 'Where it landed, the first Kindlers raised a Spire around its fire, and learned to keep it.' },
-    { art: 'sparks', text: 'They split the Firstflame five ways. Four sparks went to the wardens of Grove, Ash, Rime and Tide, to keep the wild world in balance.', hold: 3 },
-    { art: 'village', text: 'The fifth, the Hearth Ember, went to a little village to keep it warm. For a thousand years, it never once went out.' },
-    { art: 'unkindled', text: 'But one Kindler wanted the whole fire for himself. The others sealed him in the dark beneath the Spire, and gave him a new name: the Unkindled.', hold: 3 },
-    { art: 'gloam', text: 'Last night, the Hearth Ember guttered. Across the realm, the wardens stirred and forgot themselves... and deep beneath the Spire, something laughed.', shake: 1.5, hold: 3 },
-    { art: 'bedroom', text: 'Wake up...', color: '#ffd8a0', hold: 1.6 },
-    { art: 'bedroom', text: '...Emberwake.', color: '#ffd8a0', hold: 1.4, glow: true },
-    { art: 'titlecard', title: 'Emberwake', sub: `A ${className} rises.`, hold: 2.8, sfx: 'levelup' },
+    // the star falls (2.4 s), lands with a boom and burns where it fell
+    { art: 'stars', text: 'An age ago, a star fell burning out of the sky.', hold: 2.6, cues: [[0.05, 'meteor_fall'], [2.4, 'meteor_boom'], [2.9, 'amb:fire']] },
+    { art: 'spire', text: 'Where it landed, the first Kindlers raised a Spire around its fire, and learned to keep it.', amb: 'fire', sfx: 'stone_rise' },
+    { art: 'sparks', text: 'They split the Firstflame five ways. Four sparks went to the wardens of Grove, Ash, Rime and Tide, to keep the wild world in balance.', hold: 3, amb: 'wind',
+      cues: [0.3, 0.75, 1.2, 1.65, 2.3].flatMap((at, k) => [[at, 'spark_fly', { pitch: 1 + k * 0.12 }], [at + 1.2, 'spark_land', { pitch: 1 + k * 0.12 }]]) },
+    { art: 'village', text: 'The fifth, the Hearth Ember, went to a little village to keep it warm. For a thousand years, it never once went out.', amb: 'village' },
+    { art: 'unkindled', text: 'But one Kindler wanted the whole fire for himself. The others sealed him in the dark beneath the Spire, and gave him a new name: the Unkindled.', hold: 3, amb: 'dark', sfx: 'seal' },
+    { art: 'gloam', text: 'Last night, the Hearth Ember guttered. Across the realm, the wardens stirred and forgot themselves... and deep beneath the Spire, something laughed.', shake: 1.5, hold: 3, amb: 'wind', cues: [[2.8, 'vesper_laugh']] },
+    { art: 'bedroom', text: 'Wake up...', color: '#ffd8a0', hold: 1.6, amb: 'hearth', cues: [[0.2, 'whisper']] },
+    { art: 'bedroom', text: '...Emberwake.', color: '#ffd8a0', hold: 1.4, glow: true, amb: 'hearth', sfx: 'shrine' },
+    // and the adventure begins
+    { art: 'titlecard', title: 'Emberwake', sub: `A ${className} rises.`, hold: 2.8, sfx: 'fanfare', music: 'title', amb: 'fire' },
   ];
 }
 
 // The elder shows you the guttering Hearth. ctx: {cls, elder, scout, outpost, dir, tip}
 export function elderShots(c) {
-  const E = { speaker: c.elder, color: '#f0c850', wait: true };
+  const E = { speaker: c.elder, voice: 'elder', color: '#f0c850', wait: true, amb: 'hearth' };
   return [
     { art: 'hearth', ...E, text: `${c.cls}, there you are. Come, look at the Hearth.` },
     { art: 'hearth', ...E, text: 'It guttered in the night. Forty years I have tended this flame, and I have never seen it so small. Something is smothering it.' },
@@ -202,12 +207,13 @@ const IMPACT = { thornmaw: 0.62, cinder: 0.98, rime: 1.58, tide: 0.86, vesper: 1
 export function bossIntroShots(kind) {
   const w = WARDENS[kind];
   if (!w) return [];
+  const roar = kind === 'vesper' ? 'vesper_laugh' : `${kind}_roar`; // he laughs where a warden roars
   return [
-    { text: w.omen, color: '#c8b898', small: true, hideBoss: true, omen: kind, spotlight: true, quake: 1.5, hold: 0.4, sfx: [['gate', { pitch: 0.4 }], ['boss', { pitch: 0.5, volume: 0.6 }]] },
-    { text: w.rise, color: w.color, entrance: kind, spotlight: true, quake: 4, hold: Math.max(0.6, 2.1 - w.rise.length / 42), cues: [[IMPACT[kind], 'explode', { pitch: 0.45 }], [IMPACT[kind] + 0.05, 'boss', { pitch: 0.8, volume: 0.7 }]] },
-    { art: `portrait_${kind}`, text: w.narration, roar: w.rgb, shake: 5, flash: 0.3, hold: 0.5, sfx: [['boss', { pitch: 1.2 }], ['explode', { pitch: 0.6, volume: 0.5 }]] },
-    { title: w.title, sub: w.sub, color: w.color, slam: true, spotlight: true, roar: w.rgb, quake: 1.5, hold: 1.8, sfx: [['explode', { pitch: 0.8 }], ['hit', { pitch: 0.4 }]] },
-    { speaker: w.title, text: w.voice, color: '#ff8070', shakeText: true, spotlight: true, roar: w.rgb, quake: 1, hold: 1 },
+    { text: w.omen, color: '#c8b898', small: true, hideBoss: true, omen: kind, spotlight: true, quake: 1.5, hold: 0.4, sfx: [['gate', { pitch: 0.4 }], ['boss', { pitch: 0.5, volume: 0.6 }]], amb: 'dark', cues: [[1, `${kind}_growl`, { pitch: 0.7, volume: 0.5 }]] },
+    { text: w.rise, color: w.color, entrance: kind, spotlight: true, quake: 4, hold: Math.max(0.6, 2.1 - w.rise.length / 42), cues: [[IMPACT[kind], 'explode', { pitch: 0.45 }], [IMPACT[kind] + 0.05, 'boss', { pitch: 0.8, volume: 0.7 }], [IMPACT[kind] + 0.25, roar]] },
+    { art: `portrait_${kind}`, text: w.narration, roar: w.rgb, shake: 5, flash: 0.3, hold: 0.5, sfx: [['boss', { pitch: 1.2 }], ['explode', { pitch: 0.6, volume: 0.5 }], [roar, { pitch: 0.85 }]], cues: [[1.4, `${kind}_growl`]] },
+    { title: w.title, sub: w.sub, color: w.color, slam: true, spotlight: true, roar: w.rgb, quake: 1.5, hold: 1.8, sfx: [['explode', { pitch: 0.8 }], ['hit', { pitch: 0.4 }], [roar, { pitch: 0.75 }]] },
+    { speaker: w.title, voice: kind === 'vesper' ? 'unkindled' : `warden_${kind}`, text: w.voice, color: '#ff8070', shakeText: true, spotlight: true, roar: w.rgb, quake: 1, hold: 1 },
     { text: `Tip: ${w.hint}`, color: '#b8a888', hold: 1.3, small: true },
   ];
 }
@@ -216,50 +222,50 @@ export function bossOutroShots(kind, focus) {
   const w = WARDENS[kind];
   if (!w) return [];
   if (kind === 'vesper') return vesperFallShots(focus);
-  const S = { speaker: w.spirit.name, color: w.spirit.color, spirit: w.spirit.kind, focus, wait: true };
+  const S = { speaker: w.spirit.name, voice: `spirit_${w.spirit.kind}`, color: w.spirit.color, spirit: w.spirit.kind, focus, wait: true };
   const v = VOICE[w.taunt.voice];
   return [
-    { text: 'As the warden falls, the cold burns out of it...', spirit: w.spirit.kind, focus, burst: true, hold: 1.8, sfx: [['explode', { pitch: 0.5, volume: 0.6 }], 'shrine'] },
+    { text: 'As the warden falls, the cold burns out of it...', spirit: w.spirit.kind, focus, burst: true, hold: 1.8, sfx: [['explode', { pitch: 0.5, volume: 0.6 }], 'shrine'], cues: [[1, `spirit_${w.spirit.kind}`]] },
     ...w.lines.map((text) => ({ ...S, text })),
-    { text: 'The spirit melts into a warm, golden light.', spirit: w.spirit.kind, focus, fadeSpirit: true, hold: 1.6 },
-    ...w.taunt.lines.map((text) => ({ speaker: v.name, color: v.color, text, gloam: true, wait: true, shakeText: true })),
+    { text: 'The spirit melts into a warm, golden light.', spirit: w.spirit.kind, focus, fadeSpirit: true, hold: 1.6, sfx: 'twinkle' },
+    ...w.taunt.lines.map((text) => ({ speaker: v.name, voice: v.voice, color: v.color, text, gloam: true, wait: true, shakeText: true, amb: 'dark' })),
   ];
 }
 
 // Vesper at 0, risen on the sockets' light with a full bar: what he has to say about it. In-engine,
 // over his arena; he wears all four wardens before the end.
 export function vesperRiseShots() {
-  const v = VOICE.unkindled, V = { speaker: v.name, color: v.color, wait: true, shakeText: true, spotlight: true };
+  const v = VOICE.unkindled, V = { speaker: v.name, voice: v.voice, color: v.color, wait: true, shakeText: true, spotlight: true, amb: 'dark' };
   return [
-    { ...V, text: 'Did you think the fire was yours to keep from me? Every spark you carried home came here with you.', roar: '200,160,255' },
+    { ...V, sfx: 'vesper_laugh', text: 'Did you think the fire was yours to keep from me? Every spark you carried home came here with you.', roar: '200,160,255' },
     { ...V, text: 'Four lights. Four wardens. I wore them all before they ever knew my name. Let me show you.' },
   ];
 }
 
 // He dematerializes, and the frail ghost of the man he was is left standing where he fell. It lets go.
 export function vesperFallShots(focus) {
-  const G = { speaker: 'Vesper', color: '#e8e0f4', spirit: 'vesperghost', focus, wait: true };
+  const G = { speaker: 'Vesper', voice: 'ghost', color: '#e8e0f4', spirit: 'vesperghost', focus, wait: true };
   return [
     { text: 'The stolen fire pours out of him, and the cold goes with it...', spirit: 'vesperghost', focus, burst: true, hold: 1.8, sfx: [['explode', { pitch: 0.45, volume: 0.6 }], 'shrine'] },
     { ...G, text: 'Warm... It is warm. A thousand years in the dark, and I had forgotten what warm was.' },
     { ...G, text: 'I only wanted to keep it. To never be cold again. So I took it, and I have been cold ever since.' },
     { ...G, text: 'You carried every spark home instead of keeping it. That is the whole of it, isn\'t it? I never learned.' },
     { ...G, text: 'Keep the fire, little ember. Share it. I am letting go.' },
-    { text: 'The ghost of the Kindler smiled, opened his hands, and was gone.', spirit: 'vesperghost', focus, fadeSpirit: true, hold: 2.2 },
+    { text: 'The ghost of the Kindler smiled, opened his hands, and was gone.', spirit: 'vesperghost', focus, fadeSpirit: true, hold: 2.2, sfx: 'twinkle' },
   ];
 }
 
 // The Hearth takes three shards; the Spire door shows the fourth socket dark. ctx: {elder, town}
 export function hearthShots(c) {
-  const v = VOICE.unkindled, E = { speaker: c.elder, color: '#f0c850', wait: true };
+  const v = VOICE.unkindled, E = { speaker: c.elder, voice: 'elder', color: '#f0c850', wait: true, amb: 'hearth' };
   return [
     { art: 'hearth', ...E, text: 'Three shards... Set them in the coals, child. Gently.', shards: 3 },
-    { art: 'rekindle', text: 'The Hearth Ember roared back to life, and its warmth ran out along every road.', sfx: 'levelup', hold: 2.6 },
-    { art: 'healing', text: 'In the forest, the thorns drew back. The ash stopped falling. The frost let go of the high passes.', hold: 2.8 },
-    { art: 'sockets3', text: 'But far to the north, three sockets glowed on the Spire\'s great door... and the fourth stayed dark.', hold: 2.8 },
-    { art: 'eyes', speaker: v.name, color: v.color, text: 'Three, little ember. The last shard sleeps beneath the drowning water of the western fane.', wait: true, shakeText: true },
-    { art: 'eyes', speaker: v.name, color: v.color, text: 'Bring it to me. I will leave the door open.', wait: true, shakeText: true },
-    { art: 'hearth', ...E, text: `The water keeps the fourth from us. Go to ${c.town}. Its keeper has watched that water rise longer than anyone.`, shards: 3 },
+    { art: 'rekindle', text: 'The Hearth Ember roared back to life, and its warmth ran out along every road.', sfx: ['rekindle', 'levelup'], hold: 2.6, amb: 'blaze' },
+    { art: 'healing', text: 'In the forest, the thorns drew back. The ash stopped falling. The frost let go of the high passes.', hold: 2.8, amb: 'birds' },
+    { art: 'sockets3', text: 'But far to the north, three sockets glowed on the Spire\'s great door... and the fourth stayed dark.', hold: 2.8, amb: 'wind', sfx: [['beam_hum', { pitch: 0.7 }]] },
+    { art: 'eyes', speaker: v.name, voice: v.voice, color: v.color, text: 'Three, little ember. The last shard sleeps beneath the drowning water of the western fane.', wait: true, shakeText: true, amb: 'dark' },
+    { art: 'eyes', speaker: v.name, voice: v.voice, color: v.color, text: 'Bring it to me. I will leave the door open.', wait: true, shakeText: true, amb: 'dark', cues: [[2.2, 'vesper_laugh', { volume: 0.6 }]] },
+    { art: 'hearth', ...E, amb: 'fire', text: `The water keeps the fourth from us. Go to ${c.town}. Its keeper has watched that water rise longer than anyone.`, shards: 3 },
   ];
 }
 
@@ -267,11 +273,11 @@ export function hearthShots(c) {
 export function kindleShots(c) {
   const v = VOICE.unkindled;
   return [
-    { art: 'hearth', speaker: c.elder, color: '#f0c850', text: 'Four. The last one still smells of the sea. Set it beside the others, child, and stand back.', wait: true, shards: 4 },
-    { art: 'rekindle', text: 'The Hearth roared up to the rafters, brighter than anyone living had ever seen it.', sfx: 'levelup', hold: 2.6, shards: 4 },
-    { art: 'sockets4', text: 'Far to the north, all four sockets on the Spire\'s door blazed at once.', hold: 2.8, sfx: 'shrine' },
-    { art: 'spireopen', text: 'Stone ground on stone, and the great door swung inward on the dark.', hold: 3, sfx: [['gate', { pitch: 0.6 }]], shake: 2 },
-    { art: 'eyes', speaker: v.name, color: v.color, text: 'Come down, little ember.', wait: true, shakeText: true },
+    { art: 'hearth', speaker: c.elder, voice: 'elder', color: '#f0c850', text: 'Four. The last one still smells of the sea. Set it beside the others, child, and stand back.', wait: true, shards: 4, amb: 'fire' },
+    { art: 'rekindle', text: 'The Hearth roared up to the rafters, brighter than anyone living had ever seen it.', sfx: ['rekindle', 'levelup'], hold: 2.6, shards: 4, amb: 'blaze' },
+    { art: 'sockets4', text: 'Far to the north, all four sockets on the Spire\'s door blazed at once.', hold: 2.8, sfx: ['shrine', 'flame_light'], amb: 'wind' },
+    { art: 'spireopen', text: 'Stone ground on stone, and the great door swung inward on the dark.', hold: 3, sfx: [['gate', { pitch: 0.6 }], ['stone_rise', { pitch: 0.8 }]], shake: 2, amb: 'wind' },
+    { art: 'eyes', speaker: v.name, voice: v.voice, color: v.color, text: 'Come down, little ember.', wait: true, shakeText: true, amb: 'dark' },
   ];
 }
 
@@ -279,21 +285,22 @@ export function kindleShots(c) {
 // the fire comes home and the elder says what you are, the four wards heal in turn, then the credits.
 // ctx: {elder}
 export function endingShots(c) {
-  const E = { speaker: c.elder, color: '#f0c850', wait: true };
+  const E = { speaker: c.elder, voice: 'elder', color: '#f0c850', wait: true, amb: 'blaze' };
   return [
-    { art: 'spiritsring', ghost: true, text: 'Far below, the ghost of the Kindler let go, and the fire he had hoarded for a thousand years poured up out of the Spire.', hold: 2.8, sfx: 'shrine' },
-    { art: 'spiritsring', text: 'The stag of the Grove, the phoenix of the Ash, the owl of the Rime and the whale of the Tide rose to meet it, and circled the Spire, guardians once more.', hold: 3 },
-    { art: 'rekindle', shards: 0, text: 'The fire ran south along every road, and came home to the Hearth.', sfx: 'levelup', hold: 2.6 },
+    { art: 'spiritsring', ghost: true, text: 'Far below, the ghost of the Kindler let go, and the fire he had hoarded for a thousand years poured up out of the Spire.', hold: 2.8, sfx: ['shrine', 'rekindle'], amb: 'wind' },
+    { art: 'spiritsring', text: 'The stag of the Grove, the phoenix of the Ash, the owl of the Rime and the whale of the Tide rose to meet it, and circled the Spire, guardians once more.', hold: 3, amb: 'wind',
+      cues: [[0.3, 'spirit_stag'], [1.4, 'spirit_phoenix'], [2.5, 'spirit_owl'], [3.6, 'spirit_whale']] },
+    { art: 'rekindle', shards: 0, text: 'The fire ran south along every road, and came home to the Hearth.', sfx: ['rekindle', 'levelup'], hold: 2.6, amb: 'blaze' },
     { art: 'hearth', bright: true, ...E, text: 'Listen to it. Every spark he stole, home at last. Forty years I have tended this flame, and I never once heard it sing.' },
     { art: 'hearth', bright: true, ...E, text: 'There is something I have kept from you since the night I found you. I think I was afraid that saying it would make it true.' },
-    { art: 'spark', ...E, text: 'When the Kindlers split the Firstflame, one spark slipped through their fingers. It fell for a thousand years, and on the night the Hearth burned brightest, it fell into our coals.' },
-    { art: 'spark', babe: true, ...E, text: 'In the morning I found you asleep in the ashes, warm as new bread, and smiling.' },
+    { art: 'spark', ...E, amb: 'hearth', sfx: 'twinkle', text: 'When the Kindlers split the Firstflame, one spark slipped through their fingers. It fell for a thousand years, and on the night the Hearth burned brightest, it fell into our coals.' },
+    { art: 'spark', babe: true, ...E, amb: 'hearth', text: 'In the morning I found you asleep in the ashes, warm as new bread, and smiling.' },
     { art: 'hearth', bright: true, ...E, text: 'You are the Firstflame\'s last spark, child. That is why the shards never burned you, and why he called you little ember.' },
     { art: 'hearth', bright: true, ...E, text: 'He wanted the whole fire, to keep. You carried every spark home and gave it away. That is the difference, and it is everything.' },
-    { art: 'healing4', region: 0, text: 'In the Grove, the last of the thorns crumbled away, and green ran back along every trail.', hold: 2.6 },
-    { art: 'healing4', region: 1, text: 'In the wastes, the ash stopped falling, and the sky over the ridge came clear and blue.', hold: 2.6 },
-    { art: 'healing4', region: 2, text: 'On the heights, the frost let go, and meltwater ran singing down the passes.', hold: 2.6 },
-    { art: 'healing4', region: 3, text: 'And in the west, the sea remembered its song. The flood drew back, and the tide came in again, gentle as a lullaby.', hold: 3 },
-    { art: 'credits', title: 'Emberwake', sub: 'Made by Scott Fleischman, with Claude', text: 'Thank you for playing.', hold: 4.5 },
+    { art: 'healing4', region: 0, text: 'In the Grove, the last of the thorns crumbled away, and green ran back along every trail.', hold: 2.6, amb: 'birds', cues: [[0.6, 'spirit_stag', { volume: 0.5 }]] },
+    { art: 'healing4', region: 1, text: 'In the wastes, the ash stopped falling, and the sky over the ridge came clear and blue.', hold: 2.6, amb: 'wind', cues: [[0.6, 'spirit_phoenix', { volume: 0.5 }]] },
+    { art: 'healing4', region: 2, text: 'On the heights, the frost let go, and meltwater ran singing down the passes.', hold: 2.6, amb: 'water', cues: [[0.6, 'spirit_owl', { volume: 0.5 }]] },
+    { art: 'healing4', region: 3, text: 'And in the west, the sea remembered its song. The flood drew back, and the tide came in again, gentle as a lullaby.', hold: 3, amb: 'sea', cues: [[0.6, 'spirit_whale', { volume: 0.5 }]] },
+    { art: 'credits', title: 'Emberwake', sub: 'Made by Scott Fleischman, with Claude', text: 'Thank you for playing.', hold: 4.5, music: 'title', sfx: 'fanfare' },
   ];
 }

@@ -14,7 +14,7 @@ import { findFreeSpot } from '../game/physics.js';
 import { conversation, shopMenu, shrineMenu, talentMenu, chestReward, cacheReward } from '../game/talk.js';
 import { SHIELDS, WEAPONS, USE_ITEMS, ARTIFACTS } from '../data/items.js';
 import { CLASSES } from '../data/classes.js';
-import { Camera } from '../gfx/render.js';
+import { Camera, VIEW_W, VIEW_H } from '../gfx/render.js';
 import { drawBlind } from '../gfx/effects.js';
 import { approach } from '../core/math.js';
 import { Dialog, Menu, text, panel, setFont } from '../gfx/ui.js';
@@ -29,6 +29,7 @@ import { LoreJournal } from '../gfx/journal.js';
 import { LOOKS } from '../gfx/sprites.js';
 import { introShots, hearthShots, kindleShots, endingShots, learnLore, LORE_ENTRIES, stonesRead } from '../data/story.js';
 import { HERBS } from '../data/sidequests.js';
+import { voiceFor } from '../audio/voices.js';
 import { ROOM_W, ROOM_H } from '../world/dungeons.js';
 
 class MapOverlay {
@@ -209,6 +210,7 @@ export class GameScene {
     if (top) {
       top.update(dt, this);
       if (top.liveFx) this.area.updateFx(dt);
+      if (top.letterbox && !top.shot?.look) this.followCamera(dt); // a scene in the world keeps its subject in view
       if (this.uiStack.some((ui) => ui.done)) this.uiStack = this.uiStack.filter((ui) => !ui.done);
       return;
     }
@@ -232,10 +234,30 @@ export class GameScene {
     if (this.objT === undefined || (this.objT -= dt) <= 0) { this.objT = 1; this.updateObjective(); }
   }
 
+  // The camera sees as much of the world as the zoom allows (App.zoom: closer on a small screen). A
+  // dungeon room that fits sits centred; one that doesn't, zoomed in, follows like the overworld.
   followCamera(dt, snap = false) {
-    const p = this.player;
-    if (this.area.kind === 'dungeon') this.cam.follow(ROOM_W * 8, ROOM_H * 8, ROOM_W * TILE, ROOM_H * TILE, dt, true);
-    else this.cam.follow(p.x, p.y, this.area.map.pixelW, this.area.map.pixelH, dt, snap);
+    const z = this.app.zoom || 1, vw = Math.round(VIEW_W / z), vh = Math.round(VIEW_H / z), f = this.camFocus();
+    if (vw !== this.cam.vw || vh !== this.cam.vh) { this.cam.vw = vw; this.cam.vh = vh; snap = true; }
+    if (this.area.kind === 'dungeon') {
+      if (this.camRoom !== this.area.roomId) { this.camRoom = this.area.roomId; snap = true; }
+      this.cam.follow(f.x, f.y, ROOM_W * TILE, ROOM_H * TILE, dt, snap);
+    } else this.cam.follow(f.x, f.y, this.area.map.pixelW, this.area.map.pixelH, dt, snap);
+  }
+
+  // What the camera keeps in view: the player; in a warden's scenes and its death, the warden, or the
+  // spirit it leaves behind.
+  camFocus() {
+    const top = this.uiStack[this.uiStack.length - 1], s = top instanceof Cutscene && top.letterbox ? top.shot : null, b = this.area.boss;
+    if (s?.focus) return { x: s.focus.x, y: s.focus.y - 16 };
+    if ((s || this.bossDeath) && b && !b.dead) return { x: b.x, y: b.y - 16 };
+    return this.player;
+  }
+
+  // How far in the view is zoomed: play and scenes in the world are; a painted scene fills the screen.
+  viewZoom() {
+    const top = this.uiStack[this.uiStack.length - 1];
+    return top instanceof Cutscene && top.shot?.art ? 1 : this.app.zoom || 1;
   }
 
   // What the touch layer should offer: the stick and buttons in play, a back button over menus,
@@ -435,7 +457,7 @@ export class GameScene {
     this.deathT = 0;
     const lost = applyDeathPenalty(this.state);
     const where = this.state.respawn.label || 'the village';
-    this.pushUI(new Dialog([{ speaker: 'The Ember', text: `You have fallen. ${lost ? `${lost} coins slip from your purse as` : 'As'} the Ember's warmth carries you back to ${where}.` }], {
+    this.pushUI(new Dialog([{ speaker: 'The Ember', voice: 'ember', text: `You have fallen. ${lost ? `${lost} coins slip from your purse as` : 'As'} the Ember's warmth carries you back to ${where}.` }], {
       onClose: () => {
         this.player.mode = 'normal';
         this.player.iframes = 2;
@@ -489,8 +511,8 @@ export class GameScene {
   // ---------------------------------------------------------------- dialog & services
   talk(npc) {
     npc.talking = true;
-    const pages = conversation(this, npc);
-    this.audio.sfx('talk');
+    const pages = conversation(this, npc), voice = voiceFor(npc.data.name, npc.data.role);
+    this.audio.sfx('voice', { v: voice, greet: true }); // a little "hm-hm?" as they turn to you
     if (pages && pages.cutscene) {
       this.playCutscene(pages.cutscene, {
         music: 'story',
@@ -499,6 +521,7 @@ export class GameScene {
       return;
     }
     this.pushUI(new Dialog(pages, {
+      voice,
       onClose: () => {
         npc.talking = false;
         if (npc.leaving) { npc.dead = true; this.area.spawn(new Poof(npc.x, npc.y - 4, '#e8e0d0')); this.toast('They hurry toward the exit.'); }
@@ -663,7 +686,7 @@ export class GameScene {
   // The true ending (endingShots), then the win screen.
   playEnding() {
     const elder = this.world.npcs.find((n) => n.role === 'elder' && n.settlementId === 'home');
-    this.playCutscene(endingShots({ elder: elder.name }), { music: 'title', onDone: () => this.showEnding() });
+    this.playCutscene(endingShots({ elder: elder.name }), { music: 'hearth', onDone: () => this.showEnding() });
   }
 
   showEnding() {
@@ -848,11 +871,11 @@ export class GameScene {
 
 function drawBarks(u, game) {
   if (!game.area || game.area.kind === 'dungeon') return;
-  const cam = game.cam;
+  const cam = game.cam, k = VIEW_W / cam.vw; // world pixels to UI units, zoomed or not
   for (const n of game.area.npcs()) {
     const b = n.bark;
     if (!b || b.t <= 0 || n.talking) continue;
-    const x = n.x - cam.left, y = n.y - cam.top - 26 - (n.marker ? 8 : 0);
+    const x = (n.x - cam.left) * k, y = (n.y - cam.top - 26 - (n.marker ? 8 : 0)) * k;
     if (x < -60 || x > 540 || y < -20 || y > 290) continue;
     setFont(u, 6);
     const w = Math.min(150, u.measureText(b.text).width + 10);

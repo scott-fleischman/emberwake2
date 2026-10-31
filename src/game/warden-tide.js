@@ -168,13 +168,13 @@ export const moves = {
       ctx.game.cam.shake(2.5, 0.2);
     }
   },
-  // Its coral bursts off, its colour drains away, and the leeches of the mire come at its wail.
+  // Its coral bursts off, its colour drains away, and a leech of the mire comes at its wail.
   enter2(b, ctx) {
     const pal = tidePal(b);
     ctx.area.spawn(new Particles(b.x, b.y - 50, { count: 26, color: [pal.coral, pal.coralHi, pal.coralDark, `rgb(${pal.foam})`], speed: 120, life: 0.9, up: 50, gravity: 120 }));
     spray(ctx, b, b.x, b.y, 20, 80, 50);
     ctx.game.cam.shake(5, 0.4);
-    b.summon(ctx, 'lunger', 1, 2);
+    b.summon(ctx, 'lunger', 1, 1);
   },
   clear() {},
 };
